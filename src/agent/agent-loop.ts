@@ -71,10 +71,11 @@ export async function runAgentTick(params: {
   const nearbyIds = world.getCharactersAtLocation(state.locationId).filter((id) => id !== card.id);
 
   // 日程兜底：如果没有新刺激，按日程行动（不调 LLM）
-  const hasLowNeed = state.needs.hunger < 25 || state.needs.energy < 20 || state.needs.social < 15;
+  const hasLowNeed = state.needs.hunger < 25 || state.needs.energy < 20;
+  const hasLowSocial = state.needs.social < 30;
   const hasNearby = nearbyIds.length > 0;
   const recentMemoryCount = params.memory?.getRecent(card.id, 3).length ?? 0;
-  const needsLLM = hasLowNeed || hasNearby || recentMemoryCount < 2;
+  const needsLLM = hasLowNeed || hasNearby || hasLowSocial || recentMemoryCount < 2;
 
   if (!needsLLM) {
     // 按日程执行：找到当前时间段的日程，转化为行为
