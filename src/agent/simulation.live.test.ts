@@ -110,18 +110,12 @@ describe.skipIf(SKIP)("Simulation — Live (DeepSeek)", () => {
       }
     }
 
-    // 输出对话
-    if (summary.conversations.length > 0) {
-      for (const conv of summary.conversations) {
-        console.log(`\n=== 对话（${conv.messages.length} 轮）===`);
-        for (const msg of conv.messages) {
-          console.log(`  ${msg.speakerName}: ${msg.content}`);
-        }
-        console.log(`\n📝 摘要: ${conv.summary}`);
-        console.log(`❤️ 关系变化: +${conv.relationshipDelta}`);
+    // 输出信箱状态
+    for (const id of ["alice", "bob"]) {
+      const s = world.getCharacter(id)!;
+      if (s.inbox.length > 0) {
+        console.log(`\n📬 ${s.name} 的信箱:`, s.inbox.map(m => `${m.fromName}: ${m.content}`));
       }
-    } else {
-      console.log("\n（没有发生对话）");
     }
 
     // 输出最终状态
@@ -167,11 +161,10 @@ describe.skipIf(SKIP)("Simulation — Live (DeepSeek)", () => {
         console.log(`[${time}] ⏭️ ${reasons}`);
       }
 
-      // 输出对话
-      for (const conv of s.conversations) {
-        console.log(`  💬 对话 (${conv.messages.length}轮):`);
-        for (const msg of conv.messages) {
-          console.log(`     ${msg.speakerName}: ${msg.content}`);
+      // 输出 talk 行为
+      for (const r of s.results) {
+        if (r.action?.name === "talk") {
+          console.log(`  💬 ${r.characterId} → ${r.action.args.target}: ${r.action.args.message}`);
         }
       }
     }

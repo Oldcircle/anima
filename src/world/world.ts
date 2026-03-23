@@ -2,7 +2,7 @@
  * World — 世界状态管理
  */
 
-import type { Location, Weather, WorldState, CharacterState, CharacterNeeds } from "./types.js";
+import type { Location, Weather, WorldState, CharacterState, CharacterNeeds, InboxMessage } from "./types.js";
 import { tickToGameTime, type GameTime } from "../core/tick-engine.js";
 
 const DEFAULT_NEEDS: CharacterNeeds = {
@@ -76,7 +76,7 @@ export class World {
       locationId,
       needs: { ...DEFAULT_NEEDS, ...needs },
       gold: 100,
-      inConversation: false,
+      inbox: [],
     };
     this._characters.set(id, state);
 
@@ -133,5 +133,23 @@ export class World {
     const character = this._characters.get(characterId);
     if (!character) return;
     character.needs[need] = Math.max(0, Math.min(100, character.needs[need] + delta));
+  }
+
+  // --- 信箱 ---
+
+  /** 向角色信箱投递消息 */
+  sendMessage(toId: string, message: InboxMessage): void {
+    const character = this._characters.get(toId);
+    if (!character) return;
+    character.inbox.push(message);
+  }
+
+  /** 获取并清空角色信箱 */
+  consumeInbox(characterId: string): InboxMessage[] {
+    const character = this._characters.get(characterId);
+    if (!character) return [];
+    const messages = character.inbox;
+    character.inbox = [];
+    return messages;
   }
 }

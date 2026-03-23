@@ -112,19 +112,24 @@ describe("Agent Loop", () => {
     expect(events[0].description).toContain("Alice Chen");
   });
 
-  it("talk 工具更新双方社交值", async () => {
+  it("talk 工具写入对方信箱并更新社交值", async () => {
     // 先把 alice 移到 cafe（bob 在那里）
     world.moveCharacter("alice", "cafe");
 
     mockLLM.enqueueResponse("看到 Bob 了，打个招呼", [
-      { name: "talk", arguments: { target: "bob", intent: "打招呼", opening_line: "嘿 Bob！" } },
+      { name: "talk", arguments: { target: "bob", message: "嘿 Bob！" } },
     ]);
 
     await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
 
-    // 双方社交值都应该增加
-    expect(world.getCharacter("alice")!.needs.social).toBeGreaterThan(60); // 初始 60 + 15
-    expect(world.getCharacter("bob")!.needs.social).toBeGreaterThan(60); // 初始 60 + 10
+    // Alice 社交值增加
+    expect(world.getCharacter("alice")!.needs.social).toBeGreaterThan(60); // 初始 60 + 5
+    // Bob 信箱应有消息
+    const bob = world.getCharacter("bob")!;
+    expect(bob.inbox).toHaveLength(1);
+    expect(bob.inbox[0]!.fromId).toBe("alice");
+    expect(bob.inbox[0]!.fromName).toBe("Alice Chen");
+    expect(bob.inbox[0]!.content).toBe("嘿 Bob！");
   });
 
   it("LLM 收到正确的 prompt 结构", async () => {

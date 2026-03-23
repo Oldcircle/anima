@@ -75,52 +75,23 @@ export function createApiServer(config: ServerConfig) {
     }
   }
 
-  async function handlePlayerTalk(targetId: string, playerMessage: string, ws: WebSocket) {
-    const { runConversation } = await import("../agent/conversation.js");
-
-    // 创建临时玩家角色卡
-    const playerCard = {
-      id: "player",
-      name: "玩家",
-      age: 25,
-      occupation: "旅行者",
-      home: "plaza",
-      personality: { traits: ["友好"], interests: [], dislikes: [], speechStyle: "" },
-      background: "一个刚来到小镇的旅行者。",
-      dailyRoutine: {},
-      relationships: {},
-    };
-
-    const targetConfig = Array.from((simulation as any)._configs.values())
-      .find((c: any) => c.card.id === targetId) as any;
-    if (!targetConfig) {
+  function handlePlayerTalk(targetId: string, playerMessage: string, ws: WebSocket) {
+    const target = simulation.world.getCharacter(targetId);
+    if (!target) {
       ws.send(JSON.stringify({ type: "player_talk_error", data: { error: "角色不存在" } }));
       return;
     }
 
-    const gt = tickToGameTime(simulation.world.tick);
-    const conv = await runConversation({
-      initiator: playerCard,
-      target: targetConfig.card,
-      intent: "聊天",
-      openingLine: playerMessage,
-      provider: (simulation as any)._provider,
-      modelId: (simulation as any)._conversationModelId,
-      world: simulation.world,
-      gameTime: gt,
-      maxTurns: 4,
+    // 通过信箱发送消息（和 AI 角色用 talk 一样）
+    simulation.world.sendMessage(targetId, {
+      fromId: "player",
+      fromName: "玩家",
+      content: playerMessage,
+      tick: simulation.world.tick,
     });
 
-    // 存入目标角色的记忆
-    simulation.memory.add(targetId, {
-      tick: gt.tick,
-      type: "conversation",
-      content: `一个叫"玩家"的旅行者找我聊天：${playerMessage}`,
-      importance: 7,
-    });
-
-    ws.send(JSON.stringify({ type: "player_talk_result", data: conv }));
-    broadcast({ type: "conversation", data: conv });
+    ws.send(JSON.stringify({ type: "player_talk_sent", data: { targetId, message: playerMessage } }));
+    broadcast({ type: "player_talk", data: { targetId, message: playerMessage } });
   }
 
   function broadcast(msg: object) {
@@ -147,12 +118,6 @@ export function createApiServer(config: ServerConfig) {
             description: r.result?.description,
             thought: r.thought.slice(0, 80),
           })),
-        conversations: summary.conversations.map((c) => ({
-          participants: [c.initiatorId, c.targetId],
-          messages: c.messages,
-          summary: c.summary,
-          relationshipDelta: c.relationshipDelta,
-        })),
         randomEvents: (summary.randomEvents ?? []).map((re) => ({
           name: re.event.name,
           description: re.event.template.replace("{character}", re.affectedCharacters[0] ?? ""),
@@ -252,6 +217,6 @@ function getCharactersState(sim: Simulation) {
     needs: c.needs,
     gold: c.gold,
     currentAction: c.currentAction,
-    inConversation: c.inConversation,
+    inboxCount: c.inbox.length,
   }));
 }

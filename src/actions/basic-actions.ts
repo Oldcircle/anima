@@ -89,7 +89,7 @@ export const goToAction: ActionDefinition = {
 export const talkAction: ActionDefinition = {
   tool: {
     name: "talk",
-    description: "和附近的人说话、聊天。对方必须在同一个地点。",
+    description: "对某人说一句话。消息会送到对方的信箱，对方在下一个 tick 看到并决定是否回应。不会阻塞。",
     parameters: {
       type: "object",
       properties: {
@@ -97,30 +97,25 @@ export const talkAction: ActionDefinition = {
           type: "string",
           description: "对话对象的角色 ID",
         },
-        intent: {
+        message: {
           type: "string",
-          description: "对话意图（如 '打招呼', '聊天气', '打听消息'）",
-        },
-        opening_line: {
-          type: "string",
-          description: "开场白（你说的第一句话）",
+          description: "你要说的话",
         },
       },
-      required: ["target", "intent", "opening_line"],
+      required: ["target", "message"],
     },
   },
   handler: (args, ctx): ActionResult => {
     const target = args.target as string;
-    const intent = args.intent as string;
-    const openingLine = args.opening_line as string;
+    const message = args.message as string;
     return {
-      description: `和${target}聊天（${intent}）：「${openingLine}」`,
+      description: `对${target}说：「${message}」`,
       effects: [
-        { type: "need_change", targetId: ctx.characterId, field: "social", delta: 15 },
-        { type: "need_change", targetId: target, field: "social", delta: 10 },
+        { type: "need_change", targetId: ctx.characterId, field: "social", delta: 12 },
+        { type: "need_change", targetId: target, field: "social", delta: 8 },
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 1 },
+        { type: "inbox_message", targetId: target, fromName: ctx.characterId, message },
       ],
-      duration: 2,
     };
   },
 };

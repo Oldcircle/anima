@@ -12,11 +12,15 @@ export interface ActionResult {
 }
 
 export interface ActionEffect {
-  type: "need_change" | "relationship_change" | "location_change" | "mood_change";
+  type: "need_change" | "relationship_change" | "location_change" | "mood_change" | "inbox_message";
   targetId: string;
   field?: string;
   delta?: number;
   value?: string;
+  /** For inbox_message: sender name */
+  fromName?: string;
+  /** For inbox_message: message content */
+  message?: string;
 }
 
 export interface ActionContext {

@@ -71,4 +71,31 @@ describe("World", () => {
     const world = createTestWorldWithCharacters();
     expect(world.getAllCharacters()).toHaveLength(2);
   });
+
+  it("信箱：发送和消费消息", () => {
+    const world = createTestWorldWithCharacters();
+
+    // 发送消息
+    world.sendMessage("bob", { fromId: "alice", fromName: "Alice Chen", content: "你好！", tick: 10 });
+    world.sendMessage("bob", { fromId: "alice", fromName: "Alice Chen", content: "在吗？", tick: 11 });
+
+    // Bob 信箱有 2 条
+    expect(world.getCharacter("bob")!.inbox).toHaveLength(2);
+
+    // 消费信箱
+    const messages = world.consumeInbox("bob");
+    expect(messages).toHaveLength(2);
+    expect(messages[0]!.content).toBe("你好！");
+    expect(messages[1]!.content).toBe("在吗？");
+
+    // 消费后信箱为空
+    expect(world.getCharacter("bob")!.inbox).toHaveLength(0);
+    expect(world.consumeInbox("bob")).toHaveLength(0);
+  });
+
+  it("信箱：对不存在的角色发送不报错", () => {
+    const world = createTestWorldWithCharacters();
+    world.sendMessage("nobody", { fromId: "alice", fromName: "Alice", content: "test", tick: 1 });
+    expect(world.consumeInbox("nobody")).toHaveLength(0);
+  });
 });

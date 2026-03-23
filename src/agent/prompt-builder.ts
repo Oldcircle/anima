@@ -3,7 +3,7 @@
  */
 
 import type { CharacterCard } from "../character/types.js";
-import type { CharacterState, CharacterNeeds, Weather } from "../world/types.js";
+import type { CharacterState, CharacterNeeds, Weather, InboxMessage } from "../world/types.js";
 import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime } from "../core/tick-engine.js";
 import type { WorldEvent } from "../core/event-bus.js";
@@ -27,6 +27,8 @@ ${card.background.trim()}
 - 调用一个工具来执行你的行为
 - 如果需求值很低（<30），优先满足该需求
 - 如果附近有人且你的社交需求不高，优先考虑和他们说话（talk）或互动
+- 如果"有人对你说"里有消息，优先考虑用 talk 回应（也可以选择不回应）
+- talk 发出的消息不会阻塞，对方会在下一轮看到
 - 你的内心想法用普通文本表达，行为用工具调用表达
 - 保持角色一致性，用你的说话风格`;
 }
@@ -73,6 +75,7 @@ export function buildUserPrompt(params: {
   recentMemories?: string;
   weather?: Weather;
   festivalHint?: string;
+  inboxMessages?: InboxMessage[];
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
 
@@ -95,6 +98,14 @@ export function buildUserPrompt(params: {
     parts.push(`附近的人:\n  ${people}\n注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。`);
   } else {
     parts.push("附近没有其他人（无法使用 talk 工具）");
+  }
+
+  // 信箱消息
+  if (params.inboxMessages && params.inboxMessages.length > 0) {
+    const msgs = params.inboxMessages
+      .map((m) => `- ${m.fromName}(ID:${m.fromId}) 对你说：「${m.content}」`)
+      .join("\n");
+    parts.push(`\n## 有人对你说\n${msgs}\n（你可以用 talk 工具回应，也可以无视）`);
   }
 
   parts.push(`\n## 你的需求\n${formatNeeds(state.needs)}`);

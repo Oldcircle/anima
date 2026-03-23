@@ -61,21 +61,20 @@ export async function runAgentTick(params: {
     };
   }
 
-  // 如果在对话中，跳过
-  if (state.inConversation) {
-    return { characterId: card.id, thought: "", skipped: true, skipReason: "对话中" };
-  }
-
   // 获取上下文
   const location = world.getLocation(state.locationId);
   const nearbyIds = world.getCharactersAtLocation(state.locationId).filter((id) => id !== card.id);
+
+  // 消费信箱消息
+  const inboxMessages = params.world.consumeInbox(card.id);
 
   // 日程兜底：如果没有新刺激，按日程行动（不调 LLM）
   const hasLowNeed = state.needs.hunger < 25 || state.needs.energy < 20;
   const hasLowSocial = state.needs.social < 30;
   const hasNearby = nearbyIds.length > 0;
+  const hasInbox = inboxMessages.length > 0;
   const recentMemoryCount = params.memory?.getRecent(card.id, 3).length ?? 0;
-  const needsLLM = hasLowNeed || hasNearby || hasLowSocial || recentMemoryCount < 2;
+  const needsLLM = hasLowNeed || hasNearby || hasLowSocial || hasInbox || recentMemoryCount < 2;
 
   if (!needsLLM) {
     // 按日程执行：找到当前时间段的日程，转化为行为
@@ -129,6 +128,7 @@ export async function runAgentTick(params: {
     recentMemories,
     weather: world.weather,
     festivalHint: getTodayFestival(gameTime.season, gameTime.seasonDay)?.promptHint,
+    inboxMessages,
   });
 
   const request: LLMRequest = {
@@ -158,6 +158,22 @@ export async function runAgentTick(params: {
   // 执行第一个工具调用
   const toolCall = response.toolCalls[0]!;
   const result = await executeAction(toolCall, actions, card, state, world, eventBus, gameTime, thought);
+
+  // 收到的信箱消息存入记忆，并给读信者加社交
+  if (inboxMessages.length > 0) {
+    for (const msg of inboxMessages) {
+      if (params.memory) {
+        params.memory.add(card.id, {
+          tick: msg.tick,
+          type: "conversation",
+          content: `${msg.fromName}对你说：「${msg.content}」`,
+          importance: 7,
+        });
+      }
+      // 收到消息本身也提升社交
+      world.modifyNeed(card.id, "social", 5);
+    }
+  }
 
   // 存入短期记忆
   if (params.memory && result.result) {
@@ -207,6 +223,16 @@ async function executeAction(
       case "location_change":
         if (effect.value) {
           world.moveCharacter(effect.targetId, effect.value);
+        }
+        break;
+      case "inbox_message":
+        if (effect.message) {
+          world.sendMessage(effect.targetId, {
+            fromId: card.id,
+            fromName: card.name,
+            content: effect.message,
+            tick: gameTime.tick,
+          });
         }
         break;
     }

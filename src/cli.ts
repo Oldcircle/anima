@@ -91,7 +91,7 @@ const engine = new TickEngine({
     const elapsed = Date.now() - startMs;
 
     const chars = world.getAllCharacters();
-    const active = chars.filter((c) => !c.currentAction && !c.inConversation).length;
+    const active = chars.filter((c) => !c.currentAction).length;
     console.log(
       `[${formatGameTime(gameTime)}] tick=${tick} active=${active}/${chars.length} ${elapsed}ms`,
     );

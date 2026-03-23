@@ -22,44 +22,28 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 
 ---
 
-## 架构重构（当前）
+### 架构重构：信箱系统 ✅
 
-### 核心改动：回归第一性原理
+用 Inbox 替代了阻塞式 Conversation 系统：
+- 引入信箱（`CharacterState.inbox`），`talk` = 写信箱，不阻塞
+- 删除 `conversation.ts`，talk 和 eat/work 完全平等
+- prompt-builder 注入"## 有人对你说"，信箱有消息时强制调 LLM
+- server.ts 玩家 talk 也走信箱
+- 76 测试通过
 
-**问题**：现有的对话系统是特殊机制——创建 Conversation 对象、阻塞式多轮循环、世界暂停。这违反了"每个角色是独立 Agent"的原则。
+---
 
-**改动：**
+## 当前：Live 验证 + 玩家系统
 
-- [ ] **引入信箱（Inbox）系统**
-  - 每个角色有消息队列
-  - `talk` 工具 = 往目标信箱写一条消息，不阻塞
-  - 目标下一个 tick 在 prompt 中看到消息，自主决定是否回应
-  - 对话跨 tick 自然展开
-
-- [ ] **删除 conversation.ts**
-  - 移除阻塞式对话循环
-  - 移除 simulation.ts 中的对话特殊处理
-  - talk 变成和 eat/work 一样的普通工具
+- [ ] **Live 验证跨 tick 对话**（`pnpm test:live`）
+  - Alice talk("bob", "你好") → Bob 下一个 tick 看到 → 自主回应或无视
+  - 广场 3 人互相 talk，不阻塞
 
 - [ ] **玩家成为完整 Agent**
   - 有 CharacterState（位置、需求、金币、关系）
   - 前端操作 → WebSocket → 转化为工具调用
   - 点击地点 = go_to，输入文字 = talk
   - 和 AI 角色走完全相同的执行管道
-
-- [ ] **更新 prompt-builder**
-  - 新增"## 有人对你说"段落（信箱消息）
-  - 信箱有消息时强制调 LLM（不走日程兜底）
-
-- [ ] **更新测试**
-  - 信箱消息传递测试
-  - 跨 tick 对话测试
-  - 玩家工具调用测试
-
-**验收标准：**
-- Alice 调用 talk("bob", "你好") → Bob 下一个 tick 看到消息 → Bob 自己决定 talk 回去或无视
-- 广场 3 人互相 talk，不阻塞
-- 玩家输入框 → talk → NPC 下一个 tick 回复
 
 ---
 

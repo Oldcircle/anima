@@ -29,6 +29,13 @@ export interface CharacterNeeds {
   hygiene: number;   // 0-100
 }
 
+export interface InboxMessage {
+  fromId: string;
+  fromName: string;
+  content: string;
+  tick: number;
+}
+
 export interface CharacterState {
   id: string;
   name: string;
@@ -37,6 +44,6 @@ export interface CharacterState {
   gold: number;
   /** 当前正在执行的行为（多 tick 行为） */
   currentAction?: { name: string; remainingTicks: number };
-  /** 当前是否在对话中 */
-  inConversation: boolean;
+  /** 消息信箱：其他角色发来的消息 */
+  inbox: InboxMessage[];
 }

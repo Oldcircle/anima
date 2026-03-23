@@ -89,13 +89,11 @@ describe.skipIf(SKIP)("Full Day Simulation — 5 Characters", () => {
         console.log(`  ⚡ ${re.event.name}: ${re.event.template.replace("{character}", re.affectedCharacters[0] ?? "")}`);
       }
 
-      // 对话
-      for (const conv of s.conversations) {
-        console.log(`  💬 ${conv.initiatorId}↔${conv.targetId} (${conv.messages.length}轮):`);
-        for (const msg of conv.messages.slice(0, 3)) {
-          console.log(`     ${msg.speakerName}: ${msg.content.slice(0, 60)}`);
+      // talk 行为
+      for (const r of s.results) {
+        if (r.action?.name === "talk") {
+          console.log(`  💬 ${r.characterId} → ${r.action.args.target}: ${String(r.action.args.message).slice(0, 60)}`);
         }
-        if (conv.messages.length > 3) console.log(`     ...（共${conv.messages.length}轮）`);
       }
 
       // 反思
