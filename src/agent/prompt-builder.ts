@@ -71,6 +71,7 @@ export function buildUserPrompt(params: {
   allLocationNames: Array<{ id: string; name: string }>;
   recentMemories?: string;
   weather?: Weather;
+  festivalHint?: string;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
 
@@ -81,6 +82,8 @@ export function buildUserPrompt(params: {
 
   const hint = params.weather ? weatherHint(params.weather) : "";
   if (hint) parts.push(hint);
+
+  if (params.festivalHint) parts.push(`\n🎉 **${params.festivalHint}**`);
 
   if (nearbyCharacters.length > 0) {
     const people = nearbyCharacters.map((c) => {

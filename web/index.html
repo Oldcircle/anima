@@ -8,66 +8,89 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; height: 100vh; overflow: hidden; }
 
-    #app { display: grid; grid-template-rows: 48px 1fr; grid-template-columns: 1fr 360px; height: 100vh; }
+    #app { display: grid; grid-template-rows: 48px 1fr; grid-template-columns: 1fr 380px; height: 100vh; }
 
     /* 顶部状态栏 */
-    .topbar { grid-column: 1 / -1; background: #16213e; display: flex; align-items: center; padding: 0 20px; gap: 20px; border-bottom: 1px solid #0f3460; }
-    .topbar .time { font-size: 18px; font-weight: bold; color: #e94560; min-width: 280px; }
-    .topbar .speed { display: flex; gap: 8px; }
-    .topbar .speed button { background: #0f3460; border: 1px solid #e94560; color: #eee; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .topbar .speed button.active { background: #e94560; }
-    .topbar .status { margin-left: auto; color: #888; font-size: 13px; }
+    .topbar { grid-column: 1 / -1; background: #16213e; display: flex; align-items: center; padding: 0 20px; gap: 16px; border-bottom: 1px solid #0f3460; }
+    .topbar .time { font-size: 16px; font-weight: bold; color: #e94560; }
+    .topbar .weather-badge { font-size: 13px; padding: 2px 10px; border-radius: 10px; background: #1a1a3e; }
+    .topbar .speed { display: flex; gap: 4px; }
+    .topbar .speed button { background: #0f3460; border: 1px solid #333; color: #aaa; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+    .topbar .speed button:hover { border-color: #e94560; color: #eee; }
+    .topbar .speed button.active { background: #e94560; color: #fff; border-color: #e94560; }
+    .topbar .status { margin-left: auto; color: #666; font-size: 12px; }
 
-    /* 地图区域 */
-    .map-area { background: #16213e; overflow: auto; padding: 20px; }
-    .map-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; max-width: 800px; }
-    .location-card { background: #1a1a3e; border: 1px solid #0f3460; border-radius: 8px; padding: 12px; min-height: 100px; }
-    .location-card .loc-name { font-size: 14px; font-weight: bold; color: #e94560; margin-bottom: 8px; }
-    .location-card .loc-type { font-size: 11px; color: #666; margin-bottom: 6px; }
-    .location-card .characters { display: flex; flex-wrap: wrap; gap: 6px; }
-    .char-badge { background: #0f3460; border-radius: 16px; padding: 3px 10px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
-    .char-badge:hover { background: #e94560; }
+    /* 左侧主区域 */
+    .main-area { display: flex; flex-direction: column; overflow: hidden; }
+
+    /* 地图 */
+    .map-area { flex: 1; overflow: auto; padding: 16px; }
+    .map-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .location-card { background: #1a1a3e; border: 1px solid #0f3460; border-radius: 8px; padding: 10px; min-height: 80px; transition: border-color 0.3s; }
+    .location-card.has-chars { border-color: #0f3460; }
+    .location-card .loc-name { font-size: 13px; font-weight: bold; color: #e94560; margin-bottom: 6px; }
+    .location-card .characters { display: flex; flex-wrap: wrap; gap: 4px; }
+    .char-badge { background: #0f3460; border-radius: 12px; padding: 2px 8px; font-size: 11px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .char-badge:hover { background: #e94560; transform: scale(1.05); }
     .char-badge.selected { background: #e94560; }
 
+    /* 底部事件流 */
+    .event-stream { height: 180px; background: #0d1b2a; border-top: 1px solid #0f3460; overflow-y: auto; padding: 8px 16px; font-size: 12px; }
+    .event-stream .stream-item { padding: 3px 0; border-bottom: 1px solid #111; display: flex; gap: 8px; }
+    .stream-item .st-time { color: #e94560; min-width: 120px; font-size: 11px; }
+    .stream-item .st-icon { min-width: 16px; }
+    .stream-item.gossip { color: #c084fc; }
+    .stream-item.random-event { color: #fbbf24; }
+    .stream-item.conversation { color: #34d399; }
+    .stream-item.reflection { color: #60a5fa; }
+
     /* 右侧面板 */
-    .panel { background: #0f3460; border-left: 1px solid #16213e; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-    .panel h3 { color: #e94560; font-size: 14px; margin-bottom: 4px; }
-    .panel .section { background: #1a1a3e; border-radius: 8px; padding: 12px; }
-    .panel .section-title { font-size: 13px; color: #888; margin-bottom: 6px; }
+    .panel { background: #0f3460; border-left: 1px solid #16213e; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .panel h3 { color: #e94560; font-size: 13px; margin-bottom: 2px; }
+    .section { background: #1a1a3e; border-radius: 8px; padding: 10px; }
+    .section-title { font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
 
-    /* 角色信息 */
-    .char-info .name { font-size: 18px; font-weight: bold; margin-bottom: 4px; }
-    .char-info .occupation { color: #888; font-size: 13px; }
-    .char-info .location { color: #e94560; font-size: 13px; margin-top: 4px; }
+    .char-info .name { font-size: 16px; font-weight: bold; }
+    .char-info .meta { color: #888; font-size: 12px; margin-top: 2px; }
 
-    /* 需求条 */
-    .need-bar { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
-    .need-bar .label { width: 40px; color: #888; }
-    .need-bar .bar { flex: 1; height: 8px; background: #16213e; border-radius: 4px; overflow: hidden; }
-    .need-bar .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
-    .need-bar .value { width: 30px; text-align: right; font-size: 11px; color: #666; }
+    .need-bar { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 11px; }
+    .need-bar .label { width: 36px; color: #888; }
+    .need-bar .bar { flex: 1; height: 6px; background: #16213e; border-radius: 3px; overflow: hidden; }
+    .need-bar .bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+    .need-bar .value { width: 24px; text-align: right; color: #666; font-size: 10px; }
 
-    /* 事件日志 */
-    .event-log { max-height: 300px; overflow-y: auto; }
-    .event-item { font-size: 12px; padding: 4px 0; border-bottom: 1px solid #16213e; }
-    .event-item .event-time { color: #e94560; margin-right: 6px; }
-    .event-item .event-type { color: #0f9; margin-right: 4px; font-size: 11px; }
-
-    /* 对话气泡 */
-    .conversation { margin: 8px 0; padding: 8px; background: #16213e; border-radius: 8px; }
-    .conv-msg { font-size: 12px; padding: 3px 0; }
+    .conversation { margin: 6px 0; padding: 6px 8px; background: #16213e; border-radius: 6px; border-left: 2px solid #34d399; }
+    .conv-msg { font-size: 11px; padding: 2px 0; line-height: 1.4; }
     .conv-msg .speaker { color: #e94560; font-weight: bold; }
 
-    .no-selection { color: #666; text-align: center; padding: 40px 20px; font-size: 14px; }
+    /* 关系网络 */
+    .rel-item { display: flex; justify-content: space-between; align-items: center; font-size: 11px; padding: 2px 0; }
+    .rel-item .rel-name { color: #eee; }
+    .rel-item .rel-type { color: #888; font-size: 10px; }
+    .rel-item .rel-bar { width: 60px; height: 4px; background: #16213e; border-radius: 2px; overflow: hidden; }
+    .rel-item .rel-fill { height: 100%; border-radius: 2px; }
+
+    .chat-input { display: flex; gap: 4px; margin-top: 6px; }
+    .chat-input input { flex: 1; background: #16213e; border: 1px solid #0f3460; color: #eee; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
+    .chat-input button { background: #e94560; border: none; color: #fff; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+
+    .tab-bar { display: flex; gap: 2px; margin-bottom: 8px; }
+    .tab-bar button { background: #1a1a3e; border: none; color: #888; padding: 4px 10px; border-radius: 4px 4px 0 0; cursor: pointer; font-size: 11px; }
+    .tab-bar button.active { background: #e94560; color: #fff; }
+
+    .no-selection { color: #555; text-align: center; padding: 30px 16px; font-size: 13px; }
+    .btn-back { background: #16213e; border: 1px solid #333; color: #aaa; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; width: 100%; margin-top: 4px; }
+    .btn-back:hover { border-color: #e94560; color: #eee; }
   </style>
 </head>
 <body>
   <div id="app">
     <div class="topbar">
       <div class="time" id="game-time">-- 连接中 --</div>
+      <span class="weather-badge" id="weather-badge"></span>
       <div class="speed">
         <button onclick="setSpeed(0)">⏸</button>
-        <button onclick="setSpeed(0.5)">0.5x</button>
+        <button onclick="setSpeed(0.5)">½</button>
         <button class="active" onclick="setSpeed(1)">1x</button>
         <button onclick="setSpeed(2)">2x</button>
         <button onclick="setSpeed(5)">5x</button>
@@ -75,198 +98,224 @@
       <div class="status" id="status">连接中...</div>
     </div>
 
-    <div class="map-area">
-      <div class="map-grid" id="map-grid"></div>
+    <div class="main-area">
+      <div class="map-area">
+        <div class="map-grid" id="map-grid"></div>
+      </div>
+      <div class="event-stream" id="event-stream"></div>
     </div>
 
     <div class="panel" id="panel">
-      <div class="no-selection">点击角色查看详情</div>
+      <div class="no-selection">点击地图上的角色名查看详情<br><br>角色每 ~15 秒行动一次</div>
     </div>
   </div>
 
   <script>
     let state = null;
     let selectedCharId = null;
-    let events = [];
+    let streamItems = [];
     let conversations = [];
+    let relationships = [];
     let wsConnection = null;
+    let panelTab = 'info';
 
-    // --- WebSocket ---
+    const weatherEmoji = { sunny: '☀️ 晴', cloudy: '☁️ 多云', rainy: '🌧️ 雨', stormy: '⛈️ 暴风雨', snowy: '❄️ 雪' };
+
     function connect() {
       const ws = new WebSocket(`ws://${location.host}`);
       wsConnection = ws;
-      ws.onopen = () => { document.getElementById('status').textContent = '已连接'; };
-      ws.onclose = () => {
-        document.getElementById('status').textContent = '断开连接，重连中...';
-        setTimeout(connect, 2000);
-      };
+      ws.onopen = () => { document.getElementById('status').textContent = '● 已连接'; document.getElementById('status').style.color = '#0f9'; };
+      ws.onclose = () => { document.getElementById('status').textContent = '● 断开'; document.getElementById('status').style.color = '#f44'; setTimeout(connect, 2000); };
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
-        if (msg.type === 'snapshot') {
-          state = msg.data;
-          render();
-        } else if (msg.type === 'tick') {
-          state = { ...state, ...msg.data, tick: msg.data.tick, gameTime: msg.data.gameTime, formattedTime: msg.data.formattedTime };
-          // 更新角色位置
-          if (msg.data.characters) state.characters = msg.data.characters;
-          // 更新地点信息
-          if (state.locations && msg.data.characters) {
-            for (const loc of state.locations) { loc.presentCharacters = []; }
-            for (const ch of msg.data.characters) {
-              const loc = state.locations.find(l => l.id === ch.locationId);
-              if (loc) loc.presentCharacters.push(ch.id);
-            }
-          }
-          // 收集事件
-          for (const evt of (msg.data.events || [])) {
-            events.push({ ...evt, time: msg.data.formattedTime, tick: msg.data.tick });
-          }
-          if (events.length > 100) events = events.slice(-100);
-          // 收集对话
-          for (const conv of (msg.data.conversations || [])) {
-            conversations.push({ ...conv, time: msg.data.formattedTime });
-          }
-          if (conversations.length > 20) conversations = conversations.slice(-20);
-          render();
-        }
+        if (msg.type === 'snapshot') { state = msg.data; render(); }
+        else if (msg.type === 'tick') { handleTick(msg.data); }
       };
     }
     connect();
 
-    // --- 渲染 ---
-    function render() {
-      if (!state) return;
-      renderTime();
-      renderMap();
-      renderPanel();
+    function handleTick(d) {
+      state = { ...state, ...d, tick: d.tick, formattedTime: d.formattedTime };
+      if (d.characters) state.characters = d.characters;
+      if (d.weather) state.weather = d.weather;
+      if (d.relationships) relationships = d.relationships;
+
+      // 更新地点角色列表
+      if (state.locations && d.characters) {
+        for (const loc of state.locations) loc.presentCharacters = [];
+        for (const ch of d.characters) {
+          const loc = state.locations.find(l => l.id === ch.locationId);
+          if (loc) loc.presentCharacters.push(ch.id);
+        }
+      }
+
+      // 事件流
+      for (const evt of (d.events || []))
+        streamItems.push({ time: d.formattedTime, icon: '🎬', text: `${evt.characterId}: ${evt.description || evt.thought}`, cls: '' });
+      for (const re of (d.randomEvents || []))
+        streamItems.push({ time: d.formattedTime, icon: '⚡', text: re.description, cls: 'random-event' });
+      for (const g of (d.gossips || []))
+        streamItems.push({ time: d.formattedTime, icon: '🗣', text: `${g.from} 告诉 ${g.to}: ${g.about}`, cls: 'gossip' });
+      for (const conv of (d.conversations || [])) {
+        conversations.push({ ...conv, time: d.formattedTime });
+        const preview = conv.messages[0] ? `${conv.messages[0].speakerName}: ${conv.messages[0].content.slice(0,40)}...` : '';
+        streamItems.push({ time: d.formattedTime, icon: '💬', text: `对话 (${conv.messages.length}轮) ${preview}`, cls: 'conversation' });
+      }
+      for (const ref of (d.reflections || []))
+        if (ref.insights.length) streamItems.push({ time: d.formattedTime, icon: '🧠', text: `${ref.characterId} 反思: ${ref.insights[0]}`, cls: 'reflection' });
+
+      if (streamItems.length > 200) streamItems = streamItems.slice(-200);
+      if (conversations.length > 30) conversations = conversations.slice(-30);
+      render();
     }
 
-    function renderTime() {
-      document.getElementById('game-time').textContent =
-        `${state.formattedTime}  |  ${state.weather ?? 'sunny'}  |  tick ${state.tick}`;
+    function render() {
+      if (!state) return;
+      // 顶栏
+      document.getElementById('game-time').textContent = state.formattedTime ?? '--';
+      document.getElementById('weather-badge').textContent = weatherEmoji[state.weather] ?? state.weather ?? '';
+
+      renderMap();
+      renderStream();
+      renderPanel();
     }
 
     function renderMap() {
       const grid = document.getElementById('map-grid');
       if (!state.locations) return;
+      const emoji = { residential: '🏠', commercial: '🏪', public: '🏛', nature: '🌿' };
 
       grid.innerHTML = state.locations.map(loc => {
         const chars = (state.characters || []).filter(c => c.locationId === loc.id);
-        const charBadges = chars.map(c =>
-          `<span class="char-badge ${c.id === selectedCharId ? 'selected' : ''}"
-                 onclick="selectChar('${c.id}')">${c.name}</span>`
+        const badges = chars.map(c =>
+          `<span class="char-badge ${c.id === selectedCharId ? 'selected' : ''}" onclick="selectChar('${c.id}')">${c.name.split(' ')[0]}</span>`
         ).join('');
-
-        const typeEmoji = { residential: '🏠', commercial: '🏪', public: '🏛', nature: '🌿', special: '⭐' };
-
-        return `<div class="location-card">
-          <div class="loc-name">${typeEmoji[loc.type] || ''} ${loc.name}</div>
-          <div class="characters">${charBadges || '<span style="color:#444;font-size:12px">空</span>'}</div>
+        return `<div class="location-card ${chars.length ? 'has-chars' : ''}">
+          <div class="loc-name">${emoji[loc.type]||''} ${loc.name}</div>
+          <div class="characters">${badges || '<span style="color:#333;font-size:11px">-</span>'}</div>
         </div>`;
       }).join('');
     }
 
+    function renderStream() {
+      const el = document.getElementById('event-stream');
+      const items = streamItems.slice(-30).reverse();
+      el.innerHTML = items.map(i =>
+        `<div class="stream-item ${i.cls}"><span class="st-time">${i.time}</span><span class="st-icon">${i.icon}</span><span>${i.text}</span></div>`
+      ).join('') || '<div style="color:#444;padding:20px;text-align:center">等待事件...</div>';
+    }
+
     function renderPanel() {
       const panel = document.getElementById('panel');
-
-      if (!selectedCharId) {
-        // 没有选中角色时显示事件日志
-        panel.innerHTML = `
-          <h3>事件日志</h3>
-          <div class="section event-log">
-            ${events.slice(-20).reverse().map(e =>
-              `<div class="event-item">
-                <span class="event-time">${e.time}</span>
-                <span class="event-type">${e.action || ''}</span>
-                ${e.description || e.thought || ''}
-              </div>`
-            ).join('') || '<div style="color:#666;font-size:12px">等待事件...</div>'}
-          </div>
-          ${conversations.length > 0 ? `
-          <h3>最近对话</h3>
-          ${conversations.slice(-3).reverse().map(c => `
-            <div class="conversation">
-              ${c.messages.map(m => `<div class="conv-msg"><span class="speaker">${m.speakerName}:</span> ${m.content}</div>`).join('')}
-            </div>
-          `).join('')}` : ''}
-        `;
-        return;
-      }
+      if (!selectedCharId) { renderGlobalPanel(panel); return; }
 
       const ch = (state.characters || []).find(c => c.id === selectedCharId);
       if (!ch) { panel.innerHTML = '<div class="no-selection">角色不存在</div>'; return; }
 
       const loc = (state.locations || []).find(l => l.id === ch.locationId);
-      const charEvents = events.filter(e => e.characterId === ch.id).slice(-10).reverse();
       const charConvs = conversations.filter(c => c.participants?.includes(ch.id)).slice(-3).reverse();
-
-      const needColor = (v) => v > 60 ? '#0f9' : v > 30 ? '#fa0' : '#f44';
+      const charRels = relationships.filter(r => r.a === ch.id || r.b === ch.id);
+      const needColor = v => v > 60 ? '#34d399' : v > 30 ? '#fbbf24' : '#ef4444';
+      const relColor = v => v > 50 ? '#34d399' : v > 20 ? '#60a5fa' : v > 0 ? '#888' : '#ef4444';
 
       panel.innerHTML = `
         <div class="section char-info">
           <div class="name">${ch.name}</div>
-          <div class="location">📍 ${loc?.name || ch.locationId}  💰 ${ch.gold ?? 100}</div>
-          ${ch.currentAction ? `<div style="color:#fa0;font-size:12px;margin-top:4px">🔄 ${ch.currentAction.name} (还剩 ${ch.currentAction.remainingTicks} tick)</div>` : ''}
+          <div class="meta">📍 ${loc?.name || ch.locationId} &nbsp; 💰 ${ch.gold ?? 100}
+          ${ch.currentAction ? `<br>🔄 ${ch.currentAction.name} (${ch.currentAction.remainingTicks} tick)` : ''}</div>
         </div>
 
         <div class="section">
           <div class="section-title">需求</div>
-          ${['hunger', 'energy', 'social', 'happiness', 'hygiene'].map(k => {
+          ${['hunger','energy','social','happiness','hygiene'].map(k => {
             const v = ch.needs[k] ?? 0;
-            const label = { hunger: '饥饿', energy: '精力', social: '社交', happiness: '快乐', hygiene: '卫生' }[k];
-            return `<div class="need-bar">
-              <span class="label">${label}</span>
-              <div class="bar"><div class="bar-fill" style="width:${v}%;background:${needColor(v)}"></div></div>
-              <span class="value">${Math.round(v)}</span>
-            </div>`;
+            const l = {hunger:'饥饿',energy:'精力',social:'社交',happiness:'快乐',hygiene:'卫生'}[k];
+            return `<div class="need-bar"><span class="label">${l}</span><div class="bar"><div class="bar-fill" style="width:${v}%;background:${needColor(v)}"></div></div><span class="value">${Math.round(v)}</span></div>`;
           }).join('')}
         </div>
 
-        <div class="section">
-          <div class="section-title">最近行为</div>
-          <div class="event-log">
-            ${charEvents.map(e =>
-              `<div class="event-item"><span class="event-time">${e.time}</span>${e.description || e.thought || ''}</div>`
-            ).join('') || '<div style="color:#666;font-size:12px">暂无</div>'}
-          </div>
-        </div>
-
-        ${charConvs.length > 0 ? `
-        <div class="section">
-          <div class="section-title">最近对话</div>
-          ${charConvs.map(c => `
-            <div class="conversation">
-              ${c.messages.map(m => `<div class="conv-msg"><span class="speaker">${m.speakerName}:</span> ${m.content}</div>`).join('')}
-            </div>
-          `).join('')}
+        ${charRels.length > 0 ? `<div class="section">
+          <div class="section-title">关系</div>
+          ${charRels.map(r => {
+            const other = r.a === ch.id ? r.b : r.a;
+            const pct = Math.max(0, (r.level + 100) / 2);
+            return `<div class="rel-item">
+              <span class="rel-name" style="cursor:pointer" onclick="selectChar('${other}')">${other}</span>
+              <span class="rel-type">${r.type} (${r.level})</span>
+              <div class="rel-bar"><div class="rel-fill" style="width:${pct}%;background:${relColor(r.level)}"></div></div>
+            </div>`;
+          }).join('')}
         </div>` : ''}
 
-        <div class="section" style="margin-top:8px">
-          <div class="section-title">和 ${ch.name} 说话</div>
-          <div style="display:flex;gap:6px">
-            <input id="player-input" type="text" placeholder="输入你想说的..."
-              style="flex:1;background:#16213e;border:1px solid #0f3460;color:#eee;padding:6px 10px;border-radius:4px;font-size:13px"
-              onkeydown="if(event.key==='Enter')sendPlayerMsg('${ch.id}')">
-            <button onclick="sendPlayerMsg('${ch.id}')" style="background:#e94560;border:none;color:#fff;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px">发送</button>
+        ${charConvs.length > 0 ? `<div class="section">
+          <div class="section-title">最近对话</div>
+          ${charConvs.map(c => `<div class="conversation">${c.messages.slice(0,4).map(m =>
+            `<div class="conv-msg"><span class="speaker">${m.speakerName.split(' ')[0]}:</span> ${m.content}</div>`
+          ).join('')}${c.messages.length>4?`<div style="color:#666;font-size:10px">...共${c.messages.length}轮</div>`:''}</div>`).join('')}
+        </div>` : ''}
+
+        <div class="section">
+          <div class="section-title">和 ${ch.name.split(' ')[0]} 说话</div>
+          <div class="chat-input">
+            <input id="player-input" type="text" placeholder="说点什么..." onkeydown="if(event.key==='Enter')sendPlayerMsg('${ch.id}')">
+            <button onclick="sendPlayerMsg('${ch.id}')">发送</button>
           </div>
-          <div id="player-conv" style="margin-top:8px;font-size:12px;color:#aaa"></div>
+          <div id="player-conv" style="margin-top:6px;font-size:11px;color:#aaa"></div>
         </div>
 
-        <button onclick="selectChar(null)" style="background:#16213e;border:1px solid #e94560;color:#eee;padding:8px;border-radius:4px;cursor:pointer;margin-top:8px">返回全局视图</button>
+        <button class="btn-back" onclick="selectChar(null)">← 返回全局视图</button>
       `;
     }
 
-    function selectChar(id) {
-      selectedCharId = id;
-      render();
+    function renderGlobalPanel(panel) {
+      // 关系网络
+      const relHtml = relationships.length > 0 ? `
+        <div class="section">
+          <div class="section-title">关系网络</div>
+          ${relationships.map(r => {
+            const pct = Math.max(0, (r.level + 100) / 2);
+            const color = r.level > 50 ? '#34d399' : r.level > 20 ? '#60a5fa' : '#888';
+            return `<div class="rel-item">
+              <span class="rel-name" style="cursor:pointer" onclick="selectChar('${r.a}')">${r.a}</span>
+              <span class="rel-type">${r.type} ${r.level}</span>
+              <span class="rel-name" style="cursor:pointer" onclick="selectChar('${r.b}')">${r.b}</span>
+            </div>`;
+          }).join('')}
+        </div>` : '';
+
+      // 角色总览
+      const charsHtml = (state.characters || []).map(c => {
+        const loc = (state.locations || []).find(l => l.id === c.locationId);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px;cursor:pointer;border-bottom:1px solid #16213e" onclick="selectChar('${c.id}')">
+          <span>${c.name}</span>
+          <span style="color:#888">${loc?.name?.slice(0,6)||c.locationId} 💰${c.gold??100}</span>
+        </div>`;
+      }).join('');
+
+      const convHtml = conversations.slice(-2).reverse().map(c => `
+        <div class="conversation">
+          ${c.messages.slice(0,3).map(m => `<div class="conv-msg"><span class="speaker">${m.speakerName.split(' ')[0]}:</span> ${m.content}</div>`).join('')}
+          ${c.messages.length>3?`<div style="color:#666;font-size:10px">...共${c.messages.length}轮</div>`:''}
+        </div>
+      `).join('');
+
+      panel.innerHTML = `
+        <div class="section">
+          <div class="section-title">角色</div>
+          ${charsHtml}
+        </div>
+        ${relHtml}
+        ${convHtml ? `<h3>最近对话</h3>${convHtml}` : ''}
+      `;
     }
+
+    function selectChar(id) { selectedCharId = id; panelTab = 'info'; render(); }
 
     function setSpeed(speed) {
       document.querySelectorAll('.speed button').forEach(b => b.classList.remove('active'));
       event.target.classList.add('active');
-      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      if (wsConnection?.readyState === WebSocket.OPEN)
         wsConnection.send(JSON.stringify({ type: 'set_speed', data: { speed } }));
-      }
     }
 
     function sendPlayerMsg(targetId) {
@@ -274,23 +323,18 @@
       const msg = input.value.trim();
       if (!msg) return;
       input.value = '';
-
       const convDiv = document.getElementById('player-conv');
-      convDiv.innerHTML = '<div style="color:#e94560">发送中...</div>';
-
-      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      convDiv.innerHTML = '<div style="color:#e94560">思考中...</div>';
+      if (wsConnection?.readyState === WebSocket.OPEN) {
         wsConnection.send(JSON.stringify({ type: 'player_talk', data: { targetId, message: msg } }));
-
-        // 临时监听回复
         const handler = (e) => {
           const data = JSON.parse(e.data);
           if (data.type === 'player_talk_result') {
             wsConnection.removeEventListener('message', handler);
-            const conv = data.data;
-            convDiv.innerHTML = conv.messages.map(m =>
-              `<div class="conv-msg"><span class="speaker">${m.speakerName}:</span> ${m.content}</div>`
+            convDiv.innerHTML = data.data.messages.map(m =>
+              `<div class="conv-msg"><span class="speaker">${m.speakerName.split(' ')[0]}:</span> ${m.content}</div>`
             ).join('');
-            conversations.push({ ...conv, time: state?.formattedTime ?? '' });
+            conversations.push({ ...data.data, time: state?.formattedTime ?? '' });
           }
         };
         wsConnection.addEventListener('message', handler);

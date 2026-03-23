@@ -14,6 +14,7 @@ import type { ActionDefinition, ActionResult } from "../actions/types.js";
 import type { RelationshipManager } from "../world/relationships.js";
 import type { ShortTermMemory } from "../memory/short-term.js";
 import { getWorkIncome, getConsumptionCost } from "../world/economy.js";
+import { getTodayFestival } from "../world/festivals.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
 import { v4 as uuid } from "uuid";
 
@@ -126,6 +127,7 @@ export async function runAgentTick(params: {
     allLocationNames,
     recentMemories,
     weather: world.weather,
+    festivalHint: getTodayFestival(gameTime.season, gameTime.seasonDay)?.promptHint,
   });
 
   const request: LLMRequest = {

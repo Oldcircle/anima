@@ -153,6 +153,25 @@ export function createApiServer(config: ServerConfig) {
           summary: c.summary,
           relationshipDelta: c.relationshipDelta,
         })),
+        randomEvents: (summary.randomEvents ?? []).map((re) => ({
+          name: re.event.name,
+          description: re.event.template.replace("{character}", re.affectedCharacters[0] ?? ""),
+          affected: re.affectedCharacters,
+        })),
+        gossips: (summary.gossips ?? []).map((g) => ({
+          from: g.spreadBy,
+          to: g.spreadTo,
+          about: g.originalEvent.description,
+        })),
+        reflections: (summary.reflections ?? []).map((r) => ({
+          characterId: r.characterId,
+          insights: r.insights,
+          mood: r.mood,
+        })),
+        weather: simulation.world.weather,
+        relationships: simulation.relationships.getAll().map((r) => ({
+          a: r.characterA, b: r.characterB, level: r.level, type: r.type,
+        })),
       },
     });
   });

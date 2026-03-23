@@ -14,6 +14,7 @@ import { RelationshipManager } from "../world/relationships.js";
 import { rollWeather } from "../world/weather.js";
 import { rollRandomEvents, type RandomEvent } from "../world/events.js";
 import { processGossipSpread, type GossipItem } from "../world/gossip.js";
+import { getTodayFestival, type Festival } from "../world/festivals.js";
 import { ShortTermMemory } from "../memory/short-term.js";
 import { runAgentTick, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runConversation, type ConversationResult } from "./conversation.js";
@@ -96,10 +97,26 @@ export class Simulation {
 
   /** 运行单个 tick */
   async runOneTick(gameTime: GameTime): Promise<TickSummary> {
-    // 0. 每天凌晨更新天气
+    // 0. 每天凌晨更新天气 + 检查节日
     if (gameTime.hour === 0 && gameTime.minute === 0) {
       const newWeather = rollWeather(gameTime.season);
       this.world.setWeather(newWeather);
+    }
+
+    const festival = getTodayFestival(gameTime.season, gameTime.seasonDay);
+    // 节日效果在早上 8 点应用一次
+    if (festival && gameTime.hour === 8 && gameTime.minute === 0) {
+      for (const c of this.world.getAllCharacters()) {
+        for (const eff of festival.effects) {
+          this.world.modifyNeed(c.id, eff.field, eff.delta);
+        }
+        this.memory.add(c.id, {
+          tick: gameTime.tick,
+          type: "observation",
+          content: `今天是${festival.name}！${festival.description}`,
+          importance: 8,
+        });
+      }
     }
 
     // 1. 衰减需求
