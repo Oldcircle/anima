@@ -183,7 +183,43 @@ export class Simulation {
       }
     }
 
-    // 3.5 八卦传播
+    // 3.5 反应轮：信箱有新消息的角色获得额外决策机会
+    const MAX_REACTION_ROUNDS = 3;
+    for (let round = 0; round < MAX_REACTION_ROUNDS; round++) {
+      // 找到信箱有新消息的角色
+      const reactors: Array<{ id: string; config: AgentConfig }> = [];
+      for (const [id, config] of this._configs) {
+        const state = this.world.getCharacter(id);
+        if (!state) continue;
+        if (state.inbox.length === 0) continue;
+        // 只有长时间行为（工作/睡觉 等 >1h）才阻止反应
+        if (state.currentAction && state.currentAction.remainingTicks > 4) continue;
+        reactors.push({ id, config });
+      }
+
+      if (reactors.length === 0) break; // 没有人需要反应
+
+      // 并行执行反应
+      const reactionPromises = reactors.map(({ config }) =>
+        runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory }),
+      );
+      const reactionResults = await Promise.all(reactionPromises);
+      results.push(...reactionResults);
+
+      // 处理反应中产生的 talk 关系变化
+      for (const r of reactionResults) {
+        if (r.action?.name === "talk" && r.action.args.target) {
+          const targetId = this._resolveCharacterId(r.action.args.target as string);
+          this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, r.result?.description ?? "回复");
+        }
+      }
+
+      // 如果没有人回复 talk，停止反应轮
+      const hasNewTalk = reactionResults.some((r) => r.action?.name === "talk");
+      if (!hasNewTalk) break;
+    }
+
+    // 4. 八卦传播
     const locationCharMap = new Map<string, string[]>();
     for (const loc of this.world.getAllLocations()) {
       if (loc.presentCharacters.length > 1) {

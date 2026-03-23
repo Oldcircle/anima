@@ -128,6 +128,51 @@ describe("Simulation", () => {
     // 这里主要验证机制存在
   });
 
+  it("反应轮：信箱有消息 → 角色在同 tick 内回复", async () => {
+    world.moveCharacter("alice", "cafe");
+    world.moveCharacter("bob", "cafe");
+
+    // 先手动往 Bob 信箱写一条消息
+    world.sendMessage("bob", { fromId: "alice", fromName: "Alice Chen", content: "嘿Bob！", tick: 48 });
+
+    // 所有 LLM 调用都返回 talk（无论哪个角色调用）
+    mockLLM.setDefaultResponse("回复", [
+      { name: "talk", arguments: { target: "alice", message: "你好！" } },
+    ]);
+
+    const summary = await sim.runOneTick(tickToGameTime(48));
+
+    // 总结果应该 > 2（正常 2 + 反应轮至少 1）
+    expect(summary.results.length).toBeGreaterThan(2);
+
+    // 至少有人在反应轮中 talk 了
+    const allTalks = summary.results.filter((r) => r.action?.name === "talk");
+    expect(allTalks.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("反应轮：角色可以选择不回复", async () => {
+    world.moveCharacter("alice", "cafe");
+    world.moveCharacter("bob", "cafe");
+
+    // Alice 对 Bob 说话
+    mockLLM.enqueueResponse("打招呼", [
+      { name: "talk", arguments: { target: "bob", message: "嘿！" } },
+    ]);
+    mockLLM.enqueueResponse("吃饭", [
+      { name: "eat", arguments: { location: "cafe" } },
+    ]);
+    // 反应轮：Bob 选择吃饭而非回复（已读不回）
+    mockLLM.enqueueResponse("还是吃饭", [
+      { name: "eat", arguments: { location: "cafe" } },
+    ]);
+
+    const summary = await sim.runOneTick(tickToGameTime(48));
+
+    // Bob 没有 talk 回去，反应轮应该在 1 轮后停止
+    const bobTalks = summary.results.filter((r) => r.characterId === "bob" && r.action?.name === "talk");
+    expect(bobTalks).toHaveLength(0);
+  });
+
   it("runTicks 运行多个 tick", async () => {
     mockLLM.setDefaultResponse("想想...", [
       { name: "work", arguments: {} },

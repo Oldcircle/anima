@@ -33,11 +33,15 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 
 ---
 
-## 当前：Live 验证 + 玩家系统
+## 当前：反应轮 + 玩家系统
 
-- [ ] **Live 验证跨 tick 对话**（`pnpm test:live`）
-  - Alice talk("bob", "你好") → Bob 下一个 tick 看到 → 自主回应或无视
-  - 广场 3 人互相 talk，不阻塞
+- [ ] **反应轮（Reaction Rounds）**
+  - 正常决策后，检查信箱有新消息的角色
+  - 给他们额外决策机会（独立 LLM 调用）
+  - 如果回复 talk → 对方又有新消息 → 再一轮
+  - 最多 MAX_REACTION_ROUNDS 轮（3-4 轮）
+  - 对话在同一个 tick 内自然展开
+  - 验收：Alice talk Bob → Bob 同 tick 回复 → Alice 再接话
 
 - [ ] **玩家成为完整 Agent**
   - 有 CharacterState（位置、需求、金币、关系）
