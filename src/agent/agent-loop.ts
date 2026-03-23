@@ -68,6 +68,40 @@ export async function runAgentTick(params: {
   // 获取上下文
   const location = world.getLocation(state.locationId);
   const nearbyIds = world.getCharactersAtLocation(state.locationId).filter((id) => id !== card.id);
+
+  // 日程兜底：如果没有新刺激，按日程行动（不调 LLM）
+  const hasLowNeed = state.needs.hunger < 25 || state.needs.energy < 20 || state.needs.social < 15;
+  const hasNearby = nearbyIds.length > 0;
+  const recentMemoryCount = params.memory?.getRecent(card.id, 3).length ?? 0;
+  const needsLLM = hasLowNeed || hasNearby || recentMemoryCount < 2;
+
+  if (!needsLLM) {
+    // 按日程执行：找到当前时间段的日程，转化为行为
+    const hourStr = `${String(gameTime.hour).padStart(2, "0")}:00`;
+    const routine = card.dailyRoutine[hourStr];
+    if (routine) {
+      // 简单映射日程到默认工具
+      const defaultAction = routine.includes("营业") || routine.includes("工作") || routine.includes("钓鱼") || routine.includes("烤")
+        ? { name: "work", arguments: { activity: routine } }
+        : routine.includes("午餐") || routine.includes("吃")
+        ? { name: "eat", arguments: { location: state.locationId } }
+        : routine.includes("散步") || routine.includes("探索")
+        ? { name: "explore", arguments: { area: routine } }
+        : routine.includes("阅读") || routine.includes("读")
+        ? { name: "read", arguments: { book: routine } }
+        : null;
+
+      if (defaultAction) {
+        const actionDef = actions.find((a) => a.tool.name === defaultAction.name);
+        if (actionDef) {
+          return await executeAction(
+            defaultAction as any, actions, card, state, world, eventBus, gameTime,
+            `（按日程）${routine}`,
+          );
+        }
+      }
+    }
+  }
   const nearbyCharacters = nearbyIds
     .map((id) => world.getCharacter(id))
     .filter((c): c is CharacterState => c !== undefined)
