@@ -229,6 +229,7 @@ function getCharactersState(sim: Simulation) {
     name: c.name,
     locationId: c.locationId,
     needs: c.needs,
+    gold: c.gold,
     currentAction: c.currentAction,
     inConversation: c.inConversation,
   }));

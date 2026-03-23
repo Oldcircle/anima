@@ -11,7 +11,8 @@ import type { TickEngine, GameTime } from "../core/tick-engine.js";
 import type { LLMProvider } from "../providers/types.js";
 import type { ActionDefinition } from "../actions/types.js";
 import { RelationshipManager } from "../world/relationships.js";
-import { rollWeather, weatherDescription } from "../world/weather.js";
+import { rollWeather } from "../world/weather.js";
+import { rollRandomEvents, type RandomEvent } from "../world/events.js";
 import { ShortTermMemory } from "../memory/short-term.js";
 import { runAgentTick, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runConversation, type ConversationResult } from "./conversation.js";
@@ -32,6 +33,7 @@ export interface TickSummary {
   results: AgentTickResult[];
   conversations: ConversationResult[];
   reflections?: ReflectionResult[];
+  randomEvents?: Array<{ event: RandomEvent; affectedCharacters: string[] }>;
 }
 
 export type SimulationListener = (summary: TickSummary) => void;
@@ -102,7 +104,43 @@ export class Simulation {
     this.world.decayNeeds();
     this.world.setTick(gameTime.tick);
 
+    // 1.5 随机事件
+    const triggeredEvents: Array<{ event: RandomEvent; affectedCharacters: string[] }> = [];
+    const randomEvents = rollRandomEvents({
+      hour: gameTime.hour,
+      season: gameTime.season,
+      weather: this.world.weather,
+    });
+    for (const event of randomEvents) {
+      const allChars = this.world.getAllCharacters();
+      // 随机选一个角色作为事件主角
+      const target = allChars[Math.floor(Math.random() * allChars.length)];
+      if (!target) continue;
+
+      const affected: string[] = [];
+      if (event.scope === "location") {
+        const charsAtLoc = this.world.getCharactersAtLocation(target.locationId);
+        for (const cid of charsAtLoc) {
+          for (const eff of event.effects) {
+            this.world.modifyNeed(cid, eff.field, eff.delta);
+          }
+          affected.push(cid);
+          const desc = event.template.replace("{character}", target.name);
+          this.memory.add(cid, { tick: gameTime.tick, type: "observation", content: desc, importance: 5 });
+        }
+      } else {
+        for (const eff of event.effects) {
+          this.world.modifyNeed(target.id, eff.field, eff.delta);
+        }
+        affected.push(target.id);
+        const desc = event.template.replace("{character}", target.name);
+        this.memory.add(target.id, { tick: gameTime.tick, type: "observation", content: desc, importance: 5 });
+      }
+      triggeredEvents.push({ event, affectedCharacters: affected });
+    }
+
     // 2. 并行决策所有未忙碌角色
+    const isNight = gameTime.hour >= 23 || gameTime.hour < 5;
     const results: AgentTickResult[] = [];
     const promises: Promise<AgentTickResult>[] = [];
 
@@ -111,6 +149,20 @@ export class Simulation {
       if (!state) continue;
       if (state.inConversation) {
         results.push({ characterId: id, thought: "", skipped: true, skipReason: "对话中" });
+        continue;
+      }
+
+      // 夜间自动睡觉（不调 LLM，节省 token）
+      if (isNight && !state.currentAction) {
+        // 送角色回家睡觉
+        const homeId = config.card.home;
+        if (state.locationId !== homeId) {
+          this.world.moveCharacter(id, homeId);
+        }
+        state.currentAction = { name: "sleep", remainingTicks: 20 }; // ~5 小时
+        this.world.modifyNeed(id, "energy", 100);
+        this.world.modifyNeed(id, "hygiene", 10);
+        results.push({ characterId: id, thought: "该睡觉了", skipped: true, skipReason: "夜间休息" });
         continue;
       }
 
@@ -185,7 +237,10 @@ export class Simulation {
       reflections = await Promise.all(reflectionPromises);
     }
 
-    const summary: TickSummary = { tick: gameTime.tick, gameTime, results, conversations, reflections };
+    const summary: TickSummary = {
+      tick: gameTime.tick, gameTime, results, conversations, reflections,
+      randomEvents: triggeredEvents.length > 0 ? triggeredEvents : undefined,
+    };
 
     // 通知监听器
     for (const listener of this._listeners) {

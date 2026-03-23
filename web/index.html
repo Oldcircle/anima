@@ -205,7 +205,7 @@
       panel.innerHTML = `
         <div class="section char-info">
           <div class="name">${ch.name}</div>
-          <div class="location">📍 ${loc?.name || ch.locationId}</div>
+          <div class="location">📍 ${loc?.name || ch.locationId}  💰 ${ch.gold ?? 100}</div>
           ${ch.currentAction ? `<div style="color:#fa0;font-size:12px;margin-top:4px">🔄 ${ch.currentAction.name} (还剩 ${ch.currentAction.remainingTicks} tick)</div>` : ''}
         </div>
 

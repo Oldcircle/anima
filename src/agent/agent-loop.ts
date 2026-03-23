@@ -13,6 +13,7 @@ import type { LLMProvider, LLMRequest, ToolCall } from "../providers/types.js";
 import type { ActionDefinition, ActionResult } from "../actions/types.js";
 import type { RelationshipManager } from "../world/relationships.js";
 import type { ShortTermMemory } from "../memory/short-term.js";
+import { getWorkIncome, getConsumptionCost } from "../world/economy.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
 import { v4 as uuid } from "uuid";
 
@@ -172,6 +173,14 @@ async function executeAction(
         }
         break;
     }
+  }
+
+  // 经济效果
+  if (toolCall.name === "work") {
+    state.gold += getWorkIncome(card.occupation);
+  } else if (toolCall.name === "eat" || toolCall.name === "drink") {
+    const cost = getConsumptionCost(toolCall.name, state.locationId);
+    state.gold = Math.max(0, state.gold - cost);
   }
 
   // 设置多 tick 行为
