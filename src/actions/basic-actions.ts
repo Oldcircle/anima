@@ -152,10 +152,15 @@ export const workAction: ActionDefinition = {
   },
 };
 
+import { ALL_SOCIAL_ACTIONS } from "./social-actions.js";
+import { ALL_LEISURE_ACTIONS } from "./leisure-actions.js";
+
 export const ALL_BASIC_ACTIONS: ActionDefinition[] = [
   eatAction,
   sleepAction,
   goToAction,
   talkAction,
   workAction,
+  ...ALL_SOCIAL_ACTIONS,
+  ...ALL_LEISURE_ACTIONS,
 ];

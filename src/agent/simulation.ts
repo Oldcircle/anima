@@ -15,6 +15,7 @@ import { rollWeather, weatherDescription } from "../world/weather.js";
 import { ShortTermMemory } from "../memory/short-term.js";
 import { runAgentTick, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runConversation, type ConversationResult } from "./conversation.js";
+import { runReflection, type ReflectionResult } from "./reflection.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -30,6 +31,7 @@ export interface TickSummary {
   gameTime: GameTime;
   results: AgentTickResult[];
   conversations: ConversationResult[];
+  reflections?: ReflectionResult[];
 }
 
 export type SimulationListener = (summary: TickSummary) => void;
@@ -164,7 +166,26 @@ export class Simulation {
       }
     }
 
-    const summary: TickSummary = { tick: gameTime.tick, gameTime, results, conversations };
+    // 4. 每天 23:00 触发反思
+    let reflections: ReflectionResult[] | undefined;
+    if (gameTime.hour === 23 && gameTime.minute === 0) {
+      const dayStartTick = gameTime.tick - 92; // 当天 00:00 起
+      reflections = [];
+      const reflectionPromises = Array.from(this._configs.values()).map((config) =>
+        runReflection({
+          card: config.card,
+          memory: this.memory,
+          relationships: this.relationships,
+          provider: this._provider,
+          modelId: this._conversationModelId,
+          dayStartTick,
+          dayEndTick: gameTime.tick,
+        }),
+      );
+      reflections = await Promise.all(reflectionPromises);
+    }
+
+    const summary: TickSummary = { tick: gameTime.tick, gameTime, results, conversations, reflections };
 
     // 通知监听器
     for (const listener of this._listeners) {

@@ -64,7 +64,63 @@ export function createApiServer(config: ServerConfig) {
         }
         break;
       }
+      case "player_talk": {
+        // 玩家对某个角色说话
+        const { targetId, message } = msg.data ?? {};
+        if (targetId && message) {
+          handlePlayerTalk(targetId, message, ws);
+        }
+        break;
+      }
     }
+  }
+
+  async function handlePlayerTalk(targetId: string, playerMessage: string, ws: WebSocket) {
+    const { runConversation } = await import("../agent/conversation.js");
+
+    // 创建临时玩家角色卡
+    const playerCard = {
+      id: "player",
+      name: "玩家",
+      age: 25,
+      occupation: "旅行者",
+      home: "plaza",
+      personality: { traits: ["友好"], interests: [], dislikes: [], speechStyle: "" },
+      background: "一个刚来到小镇的旅行者。",
+      dailyRoutine: {},
+      relationships: {},
+    };
+
+    const targetConfig = Array.from((simulation as any)._configs.values())
+      .find((c: any) => c.card.id === targetId) as any;
+    if (!targetConfig) {
+      ws.send(JSON.stringify({ type: "player_talk_error", data: { error: "角色不存在" } }));
+      return;
+    }
+
+    const gt = tickToGameTime(simulation.world.tick);
+    const conv = await runConversation({
+      initiator: playerCard,
+      target: targetConfig.card,
+      intent: "聊天",
+      openingLine: playerMessage,
+      provider: (simulation as any)._provider,
+      modelId: (simulation as any)._conversationModelId,
+      world: simulation.world,
+      gameTime: gt,
+      maxTurns: 4,
+    });
+
+    // 存入目标角色的记忆
+    simulation.memory.add(targetId, {
+      tick: gt.tick,
+      type: "conversation",
+      content: `一个叫"玩家"的旅行者找我聊天：${playerMessage}`,
+      importance: 7,
+    });
+
+    ws.send(JSON.stringify({ type: "player_talk_result", data: conv }));
+    broadcast({ type: "conversation", data: conv });
   }
 
   function broadcast(msg: object) {
