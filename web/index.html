@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anima — AI 生命模拟</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; height: 100vh; overflow: hidden; }
+
+    #app { display: grid; grid-template-rows: 48px 1fr; grid-template-columns: 1fr 360px; height: 100vh; }
+
+    /* 顶部状态栏 */
+    .topbar { grid-column: 1 / -1; background: #16213e; display: flex; align-items: center; padding: 0 20px; gap: 20px; border-bottom: 1px solid #0f3460; }
+    .topbar .time { font-size: 18px; font-weight: bold; color: #e94560; min-width: 280px; }
+    .topbar .speed { display: flex; gap: 8px; }
+    .topbar .speed button { background: #0f3460; border: 1px solid #e94560; color: #eee; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .topbar .speed button.active { background: #e94560; }
+    .topbar .status { margin-left: auto; color: #888; font-size: 13px; }
+
+    /* 地图区域 */
+    .map-area { background: #16213e; overflow: auto; padding: 20px; }
+    .map-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; max-width: 800px; }
+    .location-card { background: #1a1a3e; border: 1px solid #0f3460; border-radius: 8px; padding: 12px; min-height: 100px; }
+    .location-card .loc-name { font-size: 14px; font-weight: bold; color: #e94560; margin-bottom: 8px; }
+    .location-card .loc-type { font-size: 11px; color: #666; margin-bottom: 6px; }
+    .location-card .characters { display: flex; flex-wrap: wrap; gap: 6px; }
+    .char-badge { background: #0f3460; border-radius: 16px; padding: 3px 10px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+    .char-badge:hover { background: #e94560; }
+    .char-badge.selected { background: #e94560; }
+
+    /* 右侧面板 */
+    .panel { background: #0f3460; border-left: 1px solid #16213e; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .panel h3 { color: #e94560; font-size: 14px; margin-bottom: 4px; }
+    .panel .section { background: #1a1a3e; border-radius: 8px; padding: 12px; }
+    .panel .section-title { font-size: 13px; color: #888; margin-bottom: 6px; }
+
+    /* 角色信息 */
+    .char-info .name { font-size: 18px; font-weight: bold; margin-bottom: 4px; }
+    .char-info .occupation { color: #888; font-size: 13px; }
+    .char-info .location { color: #e94560; font-size: 13px; margin-top: 4px; }
+
+    /* 需求条 */
+    .need-bar { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
+    .need-bar .label { width: 40px; color: #888; }
+    .need-bar .bar { flex: 1; height: 8px; background: #16213e; border-radius: 4px; overflow: hidden; }
+    .need-bar .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+    .need-bar .value { width: 30px; text-align: right; font-size: 11px; color: #666; }
+
+    /* 事件日志 */
+    .event-log { max-height: 300px; overflow-y: auto; }
+    .event-item { font-size: 12px; padding: 4px 0; border-bottom: 1px solid #16213e; }
+    .event-item .event-time { color: #e94560; margin-right: 6px; }
+    .event-item .event-type { color: #0f9; margin-right: 4px; font-size: 11px; }
+
+    /* 对话气泡 */
+    .conversation { margin: 8px 0; padding: 8px; background: #16213e; border-radius: 8px; }
+    .conv-msg { font-size: 12px; padding: 3px 0; }
+    .conv-msg .speaker { color: #e94560; font-weight: bold; }
+
+    .no-selection { color: #666; text-align: center; padding: 40px 20px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="topbar">
+      <div class="time" id="game-time">-- 连接中 --</div>
+      <div class="speed">
+        <button onclick="setSpeed(0)">⏸</button>
+        <button onclick="setSpeed(0.5)">0.5x</button>
+        <button class="active" onclick="setSpeed(1)">1x</button>
+        <button onclick="setSpeed(2)">2x</button>
+        <button onclick="setSpeed(5)">5x</button>
+      </div>
+      <div class="status" id="status">连接中...</div>
+    </div>
+
+    <div class="map-area">
+      <div class="map-grid" id="map-grid"></div>
+    </div>
+
+    <div class="panel" id="panel">
+      <div class="no-selection">点击角色查看详情</div>
+    </div>
+  </div>
+
+  <script>
+    let state = null;
+    let selectedCharId = null;
+    let events = [];
+    let conversations = [];
+
+    // --- WebSocket ---
+    function connect() {
+      const ws = new WebSocket(`ws://${location.host}`);
+      ws.onopen = () => { document.getElementById('status').textContent = '已连接'; };
+      ws.onclose = () => {
+        document.getElementById('status').textContent = '断开连接，重连中...';
+        setTimeout(connect, 2000);
+      };
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'snapshot') {
+          state = msg.data;
+          render();
+        } else if (msg.type === 'tick') {
+          state = { ...state, ...msg.data, tick: msg.data.tick, gameTime: msg.data.gameTime, formattedTime: msg.data.formattedTime };
+          // 更新角色位置
+          if (msg.data.characters) state.characters = msg.data.characters;
+          // 更新地点信息
+          if (state.locations && msg.data.characters) {
+            for (const loc of state.locations) { loc.presentCharacters = []; }
+            for (const ch of msg.data.characters) {
+              const loc = state.locations.find(l => l.id === ch.locationId);
+              if (loc) loc.presentCharacters.push(ch.id);
+            }
+          }
+          // 收集事件
+          for (const evt of (msg.data.events || [])) {
+            events.push({ ...evt, time: msg.data.formattedTime, tick: msg.data.tick });
+          }
+          if (events.length > 100) events = events.slice(-100);
+          // 收集对话
+          for (const conv of (msg.data.conversations || [])) {
+            conversations.push({ ...conv, time: msg.data.formattedTime });
+          }
+          if (conversations.length > 20) conversations = conversations.slice(-20);
+          render();
+        }
+      };
+    }
+    connect();
+
+    // --- 渲染 ---
+    function render() {
+      if (!state) return;
+      renderTime();
+      renderMap();
+      renderPanel();
+    }
+
+    function renderTime() {
+      document.getElementById('game-time').textContent =
+        `${state.formattedTime}  |  ${state.weather ?? 'sunny'}  |  tick ${state.tick}`;
+    }
+
+    function renderMap() {
+      const grid = document.getElementById('map-grid');
+      if (!state.locations) return;
+
+      grid.innerHTML = state.locations.map(loc => {
+        const chars = (state.characters || []).filter(c => c.locationId === loc.id);
+        const charBadges = chars.map(c =>
+          `<span class="char-badge ${c.id === selectedCharId ? 'selected' : ''}"
+                 onclick="selectChar('${c.id}')">${c.name}</span>`
+        ).join('');
+
+        const typeEmoji = { residential: '🏠', commercial: '🏪', public: '🏛', nature: '🌿', special: '⭐' };
+
+        return `<div class="location-card">
+          <div class="loc-name">${typeEmoji[loc.type] || ''} ${loc.name}</div>
+          <div class="characters">${charBadges || '<span style="color:#444;font-size:12px">空</span>'}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderPanel() {
+      const panel = document.getElementById('panel');
+
+      if (!selectedCharId) {
+        // 没有选中角色时显示事件日志
+        panel.innerHTML = `
+          <h3>事件日志</h3>
+          <div class="section event-log">
+            ${events.slice(-20).reverse().map(e =>
+              `<div class="event-item">
+                <span class="event-time">${e.time}</span>
+                <span class="event-type">${e.action || ''}</span>
+                ${e.description || e.thought || ''}
+              </div>`
+            ).join('') || '<div style="color:#666;font-size:12px">等待事件...</div>'}
+          </div>
+          ${conversations.length > 0 ? `
+          <h3>最近对话</h3>
+          ${conversations.slice(-3).reverse().map(c => `
+            <div class="conversation">
+              ${c.messages.map(m => `<div class="conv-msg"><span class="speaker">${m.speakerName}:</span> ${m.content}</div>`).join('')}
+            </div>
+          `).join('')}` : ''}
+        `;
+        return;
+      }
+
+      const ch = (state.characters || []).find(c => c.id === selectedCharId);
+      if (!ch) { panel.innerHTML = '<div class="no-selection">角色不存在</div>'; return; }
+
+      const loc = (state.locations || []).find(l => l.id === ch.locationId);
+      const charEvents = events.filter(e => e.characterId === ch.id).slice(-10).reverse();
+      const charConvs = conversations.filter(c => c.participants?.includes(ch.id)).slice(-3).reverse();
+
+      const needColor = (v) => v > 60 ? '#0f9' : v > 30 ? '#fa0' : '#f44';
+
+      panel.innerHTML = `
+        <div class="section char-info">
+          <div class="name">${ch.name}</div>
+          <div class="location">📍 ${loc?.name || ch.locationId}</div>
+          ${ch.currentAction ? `<div style="color:#fa0;font-size:12px;margin-top:4px">🔄 ${ch.currentAction.name} (还剩 ${ch.currentAction.remainingTicks} tick)</div>` : ''}
+        </div>
+
+        <div class="section">
+          <div class="section-title">需求</div>
+          ${['hunger', 'energy', 'social', 'happiness', 'hygiene'].map(k => {
+            const v = ch.needs[k] ?? 0;
+            const label = { hunger: '饥饿', energy: '精力', social: '社交', happiness: '快乐', hygiene: '卫生' }[k];
+            return `<div class="need-bar">
+              <span class="label">${label}</span>
+              <div class="bar"><div class="bar-fill" style="width:${v}%;background:${needColor(v)}"></div></div>
+              <span class="value">${Math.round(v)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+
+        <div class="section">
+          <div class="section-title">最近行为</div>
+          <div class="event-log">
+            ${charEvents.map(e =>
+              `<div class="event-item"><span class="event-time">${e.time}</span>${e.description || e.thought || ''}</div>`
+            ).join('') || '<div style="color:#666;font-size:12px">暂无</div>'}
+          </div>
+        </div>
+
+        ${charConvs.length > 0 ? `
+        <div class="section">
+          <div class="section-title">最近对话</div>
+          ${charConvs.map(c => `
+            <div class="conversation">
+              ${c.messages.map(m => `<div class="conv-msg"><span class="speaker">${m.speakerName}:</span> ${m.content}</div>`).join('')}
+            </div>
+          `).join('')}
+        </div>` : ''}
+
+        <button onclick="selectChar(null)" style="background:#16213e;border:1px solid #e94560;color:#eee;padding:8px;border-radius:4px;cursor:pointer;margin-top:auto">返回全局视图</button>
+      `;
+    }
+
+    function selectChar(id) {
+      selectedCharId = id;
+      render();
+    }
+
+    function setSpeed(speed) {
+      document.querySelectorAll('.speed button').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      // TODO: send speed change to server
+    }
+  </script>
+</body>
+</html>

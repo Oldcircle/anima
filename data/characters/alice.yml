@@ -1,0 +1,29 @@
+id: "alice"
+name: "Alice Chen"
+age: 28
+occupation: "花店老板"
+home: "home_alice"
+
+personality:
+  traits: ["温柔", "内向", "细心", "固执"]
+  interests: ["园艺", "阅读", "烘焙"]
+  dislikes: ["噪音", "浪费"]
+  speech_style: "说话轻声细语，经常用花的比喻"
+
+background: |
+  从城市搬来三年了，开了镇上唯一的花店。
+  和 Elliott 有过一段感情但已经结束。
+  最好的朋友是面包店的 Maria。
+  喜欢安静的生活，每天早起照料花园。
+
+daily_routine:
+  "06:00": "起床，照料花园"
+  "08:00": "开门营业"
+  "12:00": "午餐，通常在咖啡馆"
+  "13:00": "继续营业"
+  "18:00": "关门，散步到海边"
+  "20:00": "在家阅读或烘焙"
+  "23:00": "睡觉"
+
+relationships:
+  bob: { level: 5, type: "friend" }

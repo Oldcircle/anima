@@ -1,0 +1,28 @@
+id: "bob"
+name: "Bob Wang"
+age: 35
+occupation: "渔夫"
+home: "home_bob"
+
+personality:
+  traits: ["豪爽", "外向", "乐观", "粗心"]
+  interests: ["钓鱼", "喝酒", "讲故事"]
+  dislikes: ["早起", "复杂的事情"]
+  speech_style: "说话大大咧咧，爱用夸张的比喻，经常哈哈大笑"
+
+background: |
+  土生土长的镇民，家族世代捕鱼。
+  是酒吧的常客，认识镇上几乎所有人。
+  妻子三年前去世后一个人生活，用钓鱼和社交填满时间。
+
+daily_routine:
+  "05:00": "起床"
+  "05:30": "去海边钓鱼"
+  "11:00": "回来卖鱼"
+  "12:00": "午餐"
+  "13:00": "修补渔具或闲逛"
+  "17:00": "去酒吧"
+  "22:00": "回家睡觉"
+
+relationships:
+  alice: { level: 5, type: "friend" }
