@@ -89,10 +89,12 @@
     let selectedCharId = null;
     let events = [];
     let conversations = [];
+    let wsConnection = null;
 
     // --- WebSocket ---
     function connect() {
       const ws = new WebSocket(`ws://${location.host}`);
+      wsConnection = ws;
       ws.onopen = () => { document.getElementById('status').textContent = '已连接'; };
       ws.onclose = () => {
         document.getElementById('status').textContent = '断开连接，重连中...';
@@ -251,7 +253,9 @@
     function setSpeed(speed) {
       document.querySelectorAll('.speed button').forEach(b => b.classList.remove('active'));
       event.target.classList.add('active');
-      // TODO: send speed change to server
+      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+        wsConnection.send(JSON.stringify({ type: 'set_speed', data: { speed } }));
+      }
     }
   </script>
 </body>

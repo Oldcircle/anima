@@ -24,7 +24,11 @@ const DATA_DIR = join(import.meta.dirname, "..", "data");
 const LOCATIONS = [
   { id: "home_alice", name: "Alice 的家", type: "residential" as const, presentCharacters: [] },
   { id: "home_bob", name: "Bob 的家", type: "residential" as const, presentCharacters: [] },
+  { id: "home_maria", name: "Maria 的家", type: "residential" as const, presentCharacters: [] },
+  { id: "home_lao_chen", name: "老陈的家", type: "residential" as const, presentCharacters: [] },
+  { id: "home_emily", name: "Emily 的家", type: "residential" as const, presentCharacters: [] },
   { id: "flower_shop", name: "Alice的花店", type: "commercial" as const, openHours: { open: 8, close: 18 }, presentCharacters: [] },
+  { id: "bakery", name: "Maria的面包店", type: "commercial" as const, openHours: { open: 7, close: 17 }, presentCharacters: [] },
   { id: "cafe", name: "咖啡馆", type: "commercial" as const, openHours: { open: 7, close: 22 }, presentCharacters: [] },
   { id: "plaza", name: "广场", type: "public" as const, presentCharacters: [] },
   { id: "shop", name: "杂货店", type: "commercial" as const, openHours: { open: 8, close: 20 }, presentCharacters: [] },
@@ -65,14 +69,6 @@ const simulation = new Simulation(world, eventBus, {
   modelId: "deepseek-chat",
 });
 
-// --- 启动 API 服务器 ---
-const api = createApiServer({
-  port: PORT,
-  simulation,
-  staticDir: join(import.meta.dirname, "..", "web"),
-});
-api.start();
-
 // --- 启动 Tick 循环 ---
 const engine = new TickEngine({
   startTick: 23, // will increment to 24 on first tick
@@ -90,7 +86,17 @@ const engine = new TickEngine({
   },
 });
 
+// --- 启动 API 服务器 ---
+const api = createApiServer({
+  port: PORT,
+  simulation,
+  engine,
+  staticDir: join(import.meta.dirname, "..", "web"),
+});
+api.start();
+
 console.log(`\n🌍 Anima 模拟启动`);
+console.log(`👥 角色: ${characters.map(c => c.name).join(", ")}`);
 console.log(`⏱️  速率: 1x (现实 1 分钟 = 游戏 1 小时)`);
 console.log(`🌐 前端: http://localhost:${PORT}`);
 console.log(`📡 API: http://localhost:${PORT}/api/state`);

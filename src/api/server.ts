@@ -10,12 +10,14 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import type { Simulation, TickSummary } from "../agent/simulation.js";
+import type { TickEngine } from "../core/tick-engine.js";
 import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime, tickToGameTime } from "../core/tick-engine.js";
 
 export interface ServerConfig {
   port: number;
   simulation: Simulation;
+  engine?: TickEngine;
   staticDir?: string;
 }
 
@@ -32,8 +34,38 @@ export function createApiServer(config: ServerConfig) {
     clients.add(ws);
     // 发送当前世界状态快照
     ws.send(JSON.stringify({ type: "snapshot", data: getWorldSnapshot(simulation) }));
+
+    ws.on("message", (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        handleClientMessage(msg, ws);
+      } catch {}
+    });
     ws.on("close", () => clients.delete(ws));
   });
+
+  function handleClientMessage(msg: { type: string; data?: any }, ws: WebSocket) {
+    switch (msg.type) {
+      case "set_speed": {
+        const speed = msg.data?.speed;
+        if (config.engine && typeof speed === "number") {
+          config.engine.setSpeed(speed as any);
+          broadcast({ type: "speed_changed", data: { speed } });
+        }
+        break;
+      }
+      case "get_character": {
+        const id = msg.data?.id;
+        if (id) {
+          const character = simulation.world.getCharacter(id);
+          const memories = simulation.memory.getRecent(id, 20);
+          const relationships = simulation.relationships.getRelationshipsOf(id);
+          ws.send(JSON.stringify({ type: "character_detail", data: { ...character, memories, relationships } }));
+        }
+        break;
+      }
+    }
+  }
 
   function broadcast(msg: object) {
     const data = JSON.stringify(msg);

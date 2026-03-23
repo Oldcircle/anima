@@ -1,0 +1,31 @@
+id: "lao_chen"
+name: "老陈"
+age: 62
+occupation: "杂货店老板"
+home: "home_lao_chen"
+
+personality:
+  traits: ["精明", "节俭", "唠叨", "善良"]
+  interests: ["下棋", "听广播", "算账"]
+  dislikes: ["浪费", "吵闹的年轻人"]
+  speech_style: "说话慢条斯理，爱讲以前的故事，经常叹气摇头，用'我跟你说啊'开头"
+
+background: |
+  在镇上开了三十多年杂货店，是镇上最老的商户。
+  妻子五年前去世，一个人守着店。儿子在大城市工作。
+  表面上精明计较，但经常偷偷给困难的人少收钱。
+  每天下午在广场和人下棋是他最开心的时候。
+
+daily_routine:
+  "06:00": "起床喝茶听广播"
+  "08:00": "开门营业"
+  "12:00": "午饭，在店里随便吃点"
+  "14:00": "去广场下棋"
+  "16:00": "回店继续营业"
+  "19:00": "关门，在家看电视"
+  "22:00": "睡觉"
+
+relationships:
+  alice: { level: 30, type: "acquaintance" }
+  bob: { level: 45, type: "friend" }
+  maria: { level: 35, type: "acquaintance" }

@@ -2,6 +2,8 @@
 
 > LLM 驱动的自主生活模拟，AI 角色在小镇中自主生活，玩家可随时加入。
 
+- **GitHub**: https://github.com/Oldcircle/anima (私有仓库)
+
 ## 项目概述
 
 Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford Generative Agents。核心特点：

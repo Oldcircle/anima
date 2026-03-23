@@ -11,6 +11,7 @@ import type { TickEngine, GameTime } from "../core/tick-engine.js";
 import type { LLMProvider } from "../providers/types.js";
 import type { ActionDefinition } from "../actions/types.js";
 import { RelationshipManager } from "../world/relationships.js";
+import { rollWeather, weatherDescription } from "../world/weather.js";
 import { ShortTermMemory } from "../memory/short-term.js";
 import { runAgentTick, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runConversation, type ConversationResult } from "./conversation.js";
@@ -89,6 +90,12 @@ export class Simulation {
 
   /** 运行单个 tick */
   async runOneTick(gameTime: GameTime): Promise<TickSummary> {
+    // 0. 每天凌晨更新天气
+    if (gameTime.hour === 0 && gameTime.minute === 0) {
+      const newWeather = rollWeather(gameTime.season);
+      this.world.setWeather(newWeather);
+    }
+
     // 1. 衰减需求
     this.world.decayNeeds();
     this.world.setTick(gameTime.tick);

@@ -1,0 +1,31 @@
+id: "emily"
+name: "Emily Zhang"
+age: 22
+occupation: "图书馆管理员"
+home: "home_emily"
+
+personality:
+  traits: ["安静", "聪明", "害羞", "好奇"]
+  interests: ["阅读", "写作", "天文", "猫"]
+  dislikes: ["社交场合", "被打扰"]
+  speech_style: "说话轻声细语，经常引用书中的句子，紧张时会结巴"
+
+background: |
+  大学毕业后来到小镇图书馆工作，已经两年了。
+  性格内向，朋友不多，但和 Alice 因为共同的阅读爱好而成为朋友。
+  业余时间在写一本小说，但从未告诉过任何人。
+  养了一只叫"月亮"的灰色猫。
+
+daily_routine:
+  "07:00": "起床，喂猫，读书"
+  "09:00": "去图书馆上班"
+  "12:00": "午餐，通常在图书馆吃便当"
+  "13:00": "继续工作"
+  "18:00": "下班，去咖啡馆或回家"
+  "19:00": "在家写作或阅读"
+  "23:00": "睡觉"
+
+relationships:
+  alice: { level: 45, type: "friend" }
+  maria: { level: 15, type: "acquaintance" }
+  lao_chen: { level: 10, type: "acquaintance" }

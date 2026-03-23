@@ -1,0 +1,30 @@
+id: "maria"
+name: "Maria Lopez"
+age: 32
+occupation: "面包店老板"
+home: "home_maria"
+
+personality:
+  traits: ["热情", "爽朗", "勤劳", "八卦"]
+  interests: ["烘焙", "唱歌", "社交"]
+  dislikes: ["冷漠", "偷懒"]
+  speech_style: "说话热情洋溢，语速快，爱用食物比喻，时不时冒出西班牙语感叹词"
+
+background: |
+  从南方城市来到小镇五年了，开了一家面包店。
+  是 Alice 最好的朋友，两人经常在咖啡馆聊天。
+  性格开朗，认识镇上所有人，是小镇的"消息中心"。
+  丈夫在城里工作，周末才回来。
+
+daily_routine:
+  "04:00": "起床开始烤面包"
+  "07:00": "面包店开门"
+  "12:00": "午休，去咖啡馆或广场"
+  "13:00": "继续营业"
+  "17:00": "关门，去广场散步聊天"
+  "20:00": "在家做晚饭"
+  "22:00": "睡觉"
+
+relationships:
+  alice: { level: 80, type: "best_friend" }
+  bob: { level: 40, type: "friend" }

@@ -3,10 +3,11 @@
  */
 
 import type { CharacterCard } from "../character/types.js";
-import type { CharacterState, CharacterNeeds } from "../world/types.js";
+import type { CharacterState, CharacterNeeds, Weather } from "../world/types.js";
 import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime } from "../core/tick-engine.js";
 import type { WorldEvent } from "../core/event-bus.js";
+import { weatherDescription, weatherHint } from "../world/weather.js";
 
 export function buildSystemPrompt(card: CharacterCard): string {
   return `你是 ${card.name}，${card.age} 岁，${card.occupation}。
@@ -69,12 +70,17 @@ export function buildUserPrompt(params: {
   locationName: string;
   allLocationNames: Array<{ id: string; name: string }>;
   recentMemories?: string;
+  weather?: Weather;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
 
   const parts: string[] = [];
 
-  parts.push(`## 当前状态\n时间: ${formatGameTime(gameTime)}\n位置: ${locationName}（你已经在这里了）`);
+  const weatherStr = params.weather ? `  天气: ${weatherDescription(params.weather)}` : "";
+  parts.push(`## 当前状态\n时间: ${formatGameTime(gameTime)}${weatherStr}\n位置: ${locationName}（你已经在这里了）`);
+
+  const hint = params.weather ? weatherHint(params.weather) : "";
+  if (hint) parts.push(hint);
 
   if (nearbyCharacters.length > 0) {
     const people = nearbyCharacters.map((c) => {

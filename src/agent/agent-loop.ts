@@ -90,6 +90,7 @@ export async function runAgentTick(params: {
     locationName: location?.name ?? state.locationId,
     allLocationNames,
     recentMemories,
+    weather: world.weather,
   });
 
   const request: LLMRequest = {
