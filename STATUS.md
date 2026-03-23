@@ -1,71 +1,74 @@
 # Anima — 开发状态
 
-## 当前阶段：Phase 3 + 5 部分完成
+## 当前阶段：Phase 3 + 5 大部分完成
 
 **最后更新**：2026-03-23
 
-## 已完成
+## 完成概览
 
-### Phase 0 ✅ 基础骨架
-时间系统、事件总线、世界状态、记忆模块（OpenClaw 适配）、多 provider 抽象层
+| Phase | 内容 | 状态 |
+|-------|------|------|
+| 0 | 基础骨架 | ✅ |
+| 1 | 单角色验证 | ✅ |
+| 2 | 多角色 + 对话 | ✅ |
+| 3 | 世界丰富 | 90% |
+| 4 | 前端 | ✅ |
+| 5 | 打磨 | 60% |
 
-### Phase 1 ✅ 单角色验证
-角色卡 YAML、行为工具、Agent 决策循环、DeepSeek 集成
+## 本轮新增
 
-### Phase 2 ✅ 多角色 + 对话
-多角色并行、真实多轮对话、关系系统、短期记忆、角色 ID 模糊匹配
-
-### Phase 3 部分 ✅ 世界丰富
-- [x] 天气系统（季节加权随机，影响角色决策）
-- [x] 12 个行为工具（eat/sleep/go_to/talk/work/gossip/give_gift/comfort/read/explore/drink/hobby）
-- [ ] 经济系统
-- [ ] 随机事件 + 节日
-
-### Phase 4 ✅ 前端
-WebSocket 实时推送 + HTTP API + Web 前端（地图/面板/事件日志/时间控制）
-
-### Phase 5 部分 ✅ 打磨
-- [x] 反思机制（每日 23:00 自动生成洞察存入记忆）
-- [x] 玩家对话（前端输入框 → WebSocket → NPC 回复）
-- [x] 速度控制（前端暂停/加速按钮）
-- [ ] 存档/读档
-- [ ] 关系网络图
-
-## 角色
-
-| 角色 | 职业 | 特点 |
-|------|------|------|
-| Alice Chen | 花店老板 | 温柔内向，用花比喻 |
-| Bob Wang | 渔夫 | 豪爽外向，用鱼比喻 |
-| Maria Lopez | 面包店老板 | 热情八卦，消息中心 |
-| 老陈 | 杂货店老板 | 精明唠叨，爱下棋 |
-| Emily Zhang | 图书馆管理员 | 害羞写作者，养猫 |
+- **存档/读档**（SQLite 持久化）
+  - SIGINT 自动保存世界状态、角色、记忆、关系、事件
+  - 启动时自动检测并恢复存档
+  - 每游戏日自动存档
+- **Failover 机制**（主模型失败自动降级到备选）
+- **八卦传播系统**（目击者在同地点传播事件给其他角色）
+- **经济系统**（工作赚金币，消费扣金币）
+- **数据库测试**（6 个单元测试）
 
 ## 测试状态
 
 ```
-单元+集成: 9 files, 71 tests passed
-Live 测试:  2 files, 4 tests passed (DeepSeek API)
+单元+集成: 10 files, 77 tests passed
+Live 测试:  2 files, 4 tests passed
+Sim 测试:   1 file, 1 test passed (5角色全天)
 ```
-
-## Live 验证亮点
-
-- Emily 早上 6 点喂猫"月亮"（hobby）
-- 老陈每天先泡茶再开店
-- Alice 和 Bob 在咖啡馆自发对话 5 轮，约定互送鱼和花
-- Bob 找酒保吹牛"今天怎么这么冷清"
-- Maria 凌晨 4 点烤面包
 
 ## 启动方式
 
 ```bash
 cd ~/Opensource/projects/ai/anima
 pnpm dev    # http://localhost:3001
+# Ctrl+C 自动存档，下次启动自动读档
 ```
 
-## 下次继续
+## 剩余开发项
 
-- 经济系统（买卖、金币）
-- 随机事件（节日、天气灾害、新居民）
-- 存档/读档
-- 长期记忆持久化（SQLite）
+| 优先级 | 功能 | 状态 |
+|--------|------|------|
+| 中 | 节日系统 | 未开始 |
+| 中 | 7 天模拟测试 | 未开始 |
+| 中 | 关系网络图（前端） | 未开始 |
+| 中 | 记忆可视化（前端） | 未开始 |
+| 低 | 长期记忆向量搜索 | 未开始 |
+| 低 | 更多 LLM 提供商 | 未开始 |
+| 低 | Canvas 2D 地图 | 未开始 |
+
+## 文件清单
+
+```
+src/
+├── core/           tick-engine, event-bus
+├── memory/         temporal-decay, mmr, short-term
+├── world/          types, world, relationships, weather, events, gossip, economy
+├── character/      types, loader
+├── actions/        types, basic-actions, social-actions, leisure-actions
+├── agent/          agent-loop, prompt-builder, conversation, simulation, reflection
+├── providers/      types, provider-registry, openai-compatible, failover
+├── persistence/    database, save-load
+├── api/            server
+├── cli.ts          启动入口
+web/                前端 HTML
+data/characters/    5 个角色 YAML
+test/helpers/       mock-llm, test-world
+```

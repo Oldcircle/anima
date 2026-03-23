@@ -13,12 +13,15 @@ import { ALL_BASIC_ACTIONS } from "./actions/basic-actions.js";
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { createApiServer } from "./api/server.js";
 import { loadCharactersFromDir } from "./character/loader.js";
-import { readdirSync } from "node:fs";
+import { saveGame, loadGame } from "./persistence/save-load.js";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 // --- 配置 ---
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const DATA_DIR = join(import.meta.dirname, "..", "data");
+const SAVE_FILE = join(DATA_DIR, "save.db");
+const AUTO_SAVE_INTERVAL = 96; // 每游戏日自动存档
 
 // --- 地点 ---
 const LOCATIONS = [
@@ -69,9 +72,18 @@ const simulation = new Simulation(world, eventBus, {
   modelId: "deepseek-chat",
 });
 
+// --- 尝试读档 ---
+let startTick = 23;
+if (existsSync(SAVE_FILE)) {
+  const loaded = loadGame(simulation, SAVE_FILE);
+  if (loaded) {
+    startTick = world.tick - 1; // tick 会在第一次执行时 +1
+  }
+}
+
 // --- 启动 Tick 循环 ---
 const engine = new TickEngine({
-  startTick: 23, // will increment to 24 on first tick
+  startTick,
   speed: 1,
   onTick: async (tick, gameTime) => {
     const startMs = Date.now();
@@ -83,7 +95,20 @@ const engine = new TickEngine({
     console.log(
       `[${formatGameTime(gameTime)}] tick=${tick} active=${active}/${chars.length} ${elapsed}ms`,
     );
+
+    // 自动存档（每游戏日）
+    if (tick % AUTO_SAVE_INTERVAL === 0) {
+      try { saveGame(simulation, SAVE_FILE); } catch (e) { console.error("存档失败:", e); }
+    }
   },
+});
+
+// 退出时存档
+process.on("SIGINT", () => {
+  console.log("\n正在保存...");
+  try { saveGame(simulation, SAVE_FILE); } catch {}
+  engine.stop();
+  process.exit(0);
 });
 
 // --- 启动 API 服务器 ---

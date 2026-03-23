@@ -13,6 +13,7 @@ import type { ActionDefinition } from "../actions/types.js";
 import { RelationshipManager } from "../world/relationships.js";
 import { rollWeather } from "../world/weather.js";
 import { rollRandomEvents, type RandomEvent } from "../world/events.js";
+import { processGossipSpread, type GossipItem } from "../world/gossip.js";
 import { ShortTermMemory } from "../memory/short-term.js";
 import { runAgentTick, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runConversation, type ConversationResult } from "./conversation.js";
@@ -34,6 +35,7 @@ export interface TickSummary {
   conversations: ConversationResult[];
   reflections?: ReflectionResult[];
   randomEvents?: Array<{ event: RandomEvent; affectedCharacters: string[] }>;
+  gossips?: GossipItem[];
 }
 
 export type SimulationListener = (summary: TickSummary) => void;
@@ -218,6 +220,20 @@ export class Simulation {
       }
     }
 
+    // 3.5 八卦传播
+    const locationCharMap = new Map<string, string[]>();
+    for (const loc of this.world.getAllLocations()) {
+      if (loc.presentCharacters.length > 1) {
+        locationCharMap.set(loc.id, [...loc.presentCharacters]);
+      }
+    }
+    const gossips = processGossipSpread({
+      recentEvents: this.eventBus.history.slice(-20),
+      charactersAtLocation: locationCharMap,
+      memory: this.memory,
+      currentTick: gameTime.tick,
+    });
+
     // 4. 每天 23:00 触发反思
     let reflections: ReflectionResult[] | undefined;
     if (gameTime.hour === 23 && gameTime.minute === 0) {
@@ -240,6 +256,7 @@ export class Simulation {
     const summary: TickSummary = {
       tick: gameTime.tick, gameTime, results, conversations, reflections,
       randomEvents: triggeredEvents.length > 0 ? triggeredEvents : undefined,
+      gossips: gossips.length > 0 ? gossips : undefined,
     };
 
     // 通知监听器

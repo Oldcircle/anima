@@ -3,3 +3,6 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .env
+data/save.db
+data/save.db-wal
+data/save.db-shm
