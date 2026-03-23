@@ -1,6 +1,6 @@
 # Anima — 开发状态
 
-## 当前阶段：Phase 3 + 5 大部分完成
+## 当前阶段：Phase 3 + 5 基本完成
 
 **最后更新**：2026-03-23
 
@@ -11,64 +11,64 @@
 | 0 | 基础骨架 | ✅ |
 | 1 | 单角色验证 | ✅ |
 | 2 | 多角色 + 对话 | ✅ |
-| 3 | 世界丰富 | 90% |
+| 3 | 世界丰富 | ✅ |
 | 4 | 前端 | ✅ |
-| 5 | 打磨 | 60% |
+| 5 | 打磨 | 80% |
 
-## 本轮新增
+## 已实现功能
 
-- **存档/读档**（SQLite 持久化）
-  - SIGINT 自动保存世界状态、角色、记忆、关系、事件
-  - 启动时自动检测并恢复存档
-  - 每游戏日自动存档
-- **Failover 机制**（主模型失败自动降级到备选）
-- **八卦传播系统**（目击者在同地点传播事件给其他角色）
-- **经济系统**（工作赚金币，消费扣金币）
-- **数据库测试**（6 个单元测试）
+**核心系统：**
+- Tick 引擎（变速/暂停，1 real min = 1 game hour）
+- 5 个 AI 角色自主生活
+- 12 种行为工具（日常/工作/社交/休闲）
+- 真实多轮对话（5-7 轮，角色风格一致）
+- 关系系统（自动演化，对话/送礼/安慰影响）
+- 短期记忆（行为 + 对话 + 观察注入 prompt）
+- 反思机制（每日 23:00 生成洞察）
 
-## 测试状态
+**世界系统：**
+- 天气（季节加权随机，影响决策）
+- 随机事件（8 种，条件触发）
+- 节日系统（4 个季节节日）
+- 经济系统（工作赚钱，消费扣钱）
+- 八卦传播（目击者 → 同地点传播）
+- 夜间自动休息（23:00-05:00）
+
+**基础设施：**
+- 存档/读档（SQLite，SIGINT 自动保存）
+- Failover（模型失败自动降级）
+- LLM 调用优化（日程兜底，减少 50%+ API 调用）
+- WebSocket 实时推送 + HTTP REST API
+
+**前端：**
+- 地图视图（地点卡片 + 角色徽章）
+- 底部事件流（行为/事件/八卦/对话/反思，颜色区分）
+- 全局面板（角色列表 + 关系网络）
+- 角色详情（需求条 + 关系条 + 对话历史）
+- 玩家对话（输入框 → NPC 回复）
+- 时间控制（暂停/加速）
+- 天气显示
+
+## 测试
 
 ```
-单元+集成: 10 files, 77 tests passed
-Live 测试:  2 files, 4 tests passed
-Sim 测试:   1 file, 1 test passed (5角色全天)
+单元+集成: 10 files, 77 tests
+Live: 4 tests  |  Sim: 1 test (5角色全天)
 ```
 
-## 启动方式
+## 启动
 
 ```bash
 cd ~/Opensource/projects/ai/anima
 pnpm dev    # http://localhost:3001
-# Ctrl+C 自动存档，下次启动自动读档
 ```
 
-## 剩余开发项
+## 剩余
 
-| 优先级 | 功能 | 状态 |
-|--------|------|------|
-| 中 | 节日系统 | 未开始 |
-| 中 | 7 天模拟测试 | 未开始 |
-| 中 | 关系网络图（前端） | 未开始 |
-| 中 | 记忆可视化（前端） | 未开始 |
-| 低 | 长期记忆向量搜索 | 未开始 |
-| 低 | 更多 LLM 提供商 | 未开始 |
-| 低 | Canvas 2D 地图 | 未开始 |
-
-## 文件清单
-
-```
-src/
-├── core/           tick-engine, event-bus
-├── memory/         temporal-decay, mmr, short-term
-├── world/          types, world, relationships, weather, events, gossip, economy
-├── character/      types, loader
-├── actions/        types, basic-actions, social-actions, leisure-actions
-├── agent/          agent-loop, prompt-builder, conversation, simulation, reflection
-├── providers/      types, provider-registry, openai-compatible, failover
-├── persistence/    database, save-load
-├── api/            server
-├── cli.ts          启动入口
-web/                前端 HTML
-data/characters/    5 个角色 YAML
-test/helpers/       mock-llm, test-world
-```
+| 功能 | 状态 |
+|------|------|
+| 7 天模拟测试 | 未开始 |
+| 记忆可视化 | 未开始 |
+| 长期记忆向量搜索 | 未开始 |
+| 更多 LLM 提供商 | 未开始 |
+| Canvas 2D 地图 | 未开始 |
