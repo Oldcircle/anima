@@ -98,4 +98,20 @@ describe("World", () => {
     world.sendMessage("nobody", { fromId: "alice", fromName: "Alice", content: "test", tick: 1 });
     expect(world.consumeInbox("nobody")).toHaveLength(0);
   });
+
+  it("短期意图会设置并在过期后自动清除", () => {
+    const world = createTestWorldWithCharacters();
+    world.setIntent("alice", {
+      kind: "reply",
+      source: "message",
+      targetId: "bob",
+      summary: "Bob 刚刚跟你说了话。",
+      createdTick: 10,
+      expiresAt: 12,
+    });
+
+    expect(world.getCurrentIntent("alice", 11)?.targetId).toBe("bob");
+    expect(world.getCurrentIntent("alice", 13)).toBeUndefined();
+    expect(world.getCharacter("alice")!.currentIntent).toBeUndefined();
+  });
 });

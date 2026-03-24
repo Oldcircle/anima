@@ -54,6 +54,9 @@ export async function runAgentTick(params: {
     return { characterId: card.id, thought: "", skipped: true, skipReason: "角色不存在" };
   }
 
+  // 清理过期的短期意图
+  world.getCurrentIntent(card.id, gameTime.tick);
+
   // 如果正在执行多 tick 行为，跳过（惰性决策）
   if (state.currentAction && state.currentAction.remainingTicks > 0) {
     state.currentAction.remainingTicks--;
@@ -71,6 +74,17 @@ export async function runAgentTick(params: {
 
   // 消费信箱消息
   const inboxMessages = params.world.consumeInbox(card.id);
+  if (inboxMessages.length > 0) {
+    const latest = inboxMessages[inboxMessages.length - 1]!;
+    world.setIntent(card.id, {
+      kind: "reply",
+      source: "message",
+      targetId: latest.fromId,
+      createdTick: gameTime.tick,
+      expiresAt: gameTime.tick + 6,
+      summary: `${latest.fromName} 刚刚对你说了话，这件事还挂在你心上。你可以回应，也可以装作没听见。`,
+    });
+  }
 
   const nearbyCharacters = nearbyIds
     .map((id) => world.getCharacter(id))
@@ -166,6 +180,8 @@ export async function runAgentTick(params: {
       relatedCharacterId: toolCall.name === "talk" ? toolCall.arguments.target as string : undefined,
     });
   }
+
+  syncIntentAfterAction(world, card.id, toolCall, result.result, gameTime.tick);
 
   return result;
 }
@@ -316,4 +332,56 @@ function describeObservableAction(name: string, action: string): string {
     talk: "在跟人说话",
   };
   return descriptions[action] ?? `在${action}`;
+}
+
+function syncIntentAfterAction(
+  world: World,
+  characterId: string,
+  toolCall: ToolCall,
+  result: ActionResult | undefined,
+  tick: number,
+): void {
+  if (!result) return;
+
+  if (result.success === false) {
+    world.setIntent(characterId, {
+      kind: "recover",
+      source: "action",
+      targetId: typeof toolCall.arguments.target === "string" ? toolCall.arguments.target : undefined,
+      createdTick: tick,
+      expiresAt: tick + 4,
+      summary: `你刚才尝试 ${toolCall.name} 但没成功：${result.description}。这件事让你有点挂心，得换个办法。`,
+    });
+    return;
+  }
+
+  if (toolCall.name === "talk" && typeof toolCall.arguments.target === "string") {
+    world.setIntent(characterId, {
+      kind: "follow_up",
+      source: "action",
+      targetId: toolCall.arguments.target,
+      createdTick: tick,
+      expiresAt: tick + 6,
+      summary: `你刚刚当面对 ${toolCall.arguments.target} 说了话，现在会下意识留意对方会不会回应。`,
+    });
+    return;
+  }
+
+  if (toolCall.name === "go_to" && typeof toolCall.arguments.location === "string") {
+    world.setIntent(characterId, {
+      kind: "plan",
+      source: "movement",
+      createdTick: tick,
+      expiresAt: tick + 3,
+      summary: `你刚到 ${toolCall.arguments.location}，想先看看这里的气氛、人和可能发生的事。`,
+    });
+    return;
+  }
+
+  if (toolCall.name === "eat" || toolCall.name === "sleep" || toolCall.name === "wash") {
+    const currentIntent = world.getCurrentIntent(characterId, tick);
+    if (currentIntent?.kind === "recover") {
+      world.clearIntent(characterId);
+    }
+  }
 }

@@ -6,6 +6,15 @@
 
 **最后更新**：2026-03-24
 
+### 本轮已完成：第一性原理收口（第一阶段）
+
+- [x] Prompt 改成“可见事实 / 主观感觉 / 短期挂念”三层结构
+- [x] 关系不再在 prompt 里直接暴露亲密度数值，优先改为主观感觉描述
+- [x] `CharacterState.currentIntent`：消息、失败动作、移动会留下可过期的短期意图
+- [x] `talk` 明确为同场当面说话，在场角色可通过 observation 记忆“看见了什么”
+- [x] 新增测试：`prompt-builder.test.ts`
+- [x] 验证：`pnpm build` 通过，`pnpm test` 通过（149 tests）
+
 ### 背景
 
 与 SillyTavern（夏瑾 Pro 预设）深度对比后发现：Anima 对话质量差距的根因不是架构，而是**给 Agent 的世界太贫瘠**。角色看到的是报表（数值+标签），不是世界。真实人类决策时有环境感知、对人的标签、心理猜测等丰富上下文，Agent 也需要。
@@ -41,7 +50,7 @@
 - [x] `simulation.ts` 反应轮集成：检测活跃对话 → 使用对话模式 prompt
 - [x] 对话记录 + 自动清理过期对话
 
-**测试：146 个全部通过**（`pnpm test` + `pnpm build` 全绿）
+**测试：149 个全部通过**（`pnpm test` + `pnpm build` 全绿）
 Live/模拟测试已改名为 `*.live.test.ts`，不被默认 `pnpm test` 包含，通过 `pnpm test:live` 单独跑。
 
 ### Live 验证结果（2026-03-24）

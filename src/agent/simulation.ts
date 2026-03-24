@@ -7,6 +7,7 @@
 import type { CharacterCard } from "../character/types.js";
 import type { World } from "../world/world.js";
 import type { EventBus } from "../core/event-bus.js";
+import type { WorldEvent } from "../core/event-bus.js";
 import type { GameTime } from "../core/tick-engine.js";
 import type { LLMProvider } from "../providers/types.js";
 import type { ActionDefinition } from "../actions/types.js";
@@ -73,6 +74,10 @@ export class Simulation {
     this._actions = config.actions;
     this._playerId = config.playerId;
 
+    this.eventBus.on((event) => {
+      this.recordWitnessObservations(event);
+    });
+
     for (const card of config.characters) {
       // 玩家不注册为 AI Agent（不调 LLM）
       if (card.id === config.playerId) continue;
@@ -91,6 +96,21 @@ export class Simulation {
       const idx = this._listeners.indexOf(listener);
       if (idx >= 0) this._listeners.splice(idx, 1);
     };
+  }
+
+  private recordWitnessObservations(event: WorldEvent): void {
+    if (!isSociallyObservableEvent(event.type)) return;
+
+    for (const witnessId of event.witnesses) {
+      if (witnessId === event.targetId) continue;
+      this.memory.add(witnessId, {
+        tick: event.tick,
+        type: "observation",
+        content: `你看到${event.description}`,
+        importance: event.type === "action.steal" ? 8 : 5,
+        relatedCharacterId: event.actorId,
+      });
+    }
   }
 
   /** 运行单个 tick */
@@ -544,4 +564,16 @@ export class Simulation {
     console.warn(`[resolveCharacterId] "${raw}" 无法匹配任何角色`);
     return raw;
   }
+}
+
+function isSociallyObservableEvent(type: string): boolean {
+  return [
+    "action.talk",
+    "action.gossip",
+    "action.give_gift",
+    "action.comfort",
+    "action.argue",
+    "action.steal",
+    "action.beg",
+  ].includes(type);
 }

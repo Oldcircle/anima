@@ -46,6 +46,15 @@ export interface InboxMessage {
   tick: number;
 }
 
+export interface CharacterIntent {
+  kind: "reply" | "follow_up" | "recover" | "plan";
+  summary: string;
+  source: "message" | "action" | "movement";
+  targetId?: string;
+  createdTick: number;
+  expiresAt: number;
+}
+
 export interface CharacterState {
   id: string;
   name: string;
@@ -54,6 +63,8 @@ export interface CharacterState {
   gold: number;
   /** 当前正在执行的行为（多 tick 行为） */
   currentAction?: { name: string; remainingTicks: number };
+  /** 当前还挂在心上的短期意图/未完事务，会自然过期 */
+  currentIntent?: CharacterIntent;
   /** 消息信箱：其他角色发来的消息 */
   inbox: InboxMessage[];
 }

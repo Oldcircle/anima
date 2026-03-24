@@ -99,7 +99,7 @@ export const goToAction: ActionDefinition = {
 export const talkAction: ActionDefinition = {
   tool: {
     name: "talk",
-    description: "对同一地点的某人说一句话。对方必须在你当前的位置才能交谈。消息会送到对方的信箱，对方在下一个 tick 看到并决定是否回应。不会阻塞。",
+    description: "在当前地点当面对某人说一句话。对方必须在你当前的位置才能交谈。消息会送到对方的信箱，对方在下一个 tick 看到并决定是否回应。不会阻塞，在场的人也可能注意到。",
     parameters: {
       type: "object",
       properties: {
@@ -129,7 +129,7 @@ export const talkAction: ActionDefinition = {
     }
 
     return {
-      description: `对${target}说：「${message}」`,
+      description: `当面向${target}说：「${message}」`,
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "social", delta: 12 },
         { type: "need_change", targetId: target, field: "social", delta: 8 },

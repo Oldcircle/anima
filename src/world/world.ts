@@ -2,7 +2,7 @@
  * World — 世界状态管理
  */
 
-import type { Location, Weather, WorldState, CharacterState, CharacterNeeds, InboxMessage } from "./types.js";
+import type { Location, Weather, WorldState, CharacterState, CharacterNeeds, InboxMessage, CharacterIntent } from "./types.js";
 import { tickToGameTime, type GameTime } from "../core/tick-engine.js";
 
 const DEFAULT_NEEDS: CharacterNeeds = {
@@ -133,6 +133,30 @@ export class World {
     const character = this._characters.get(characterId);
     if (!character) return;
     character.needs[need] = Math.max(0, Math.min(100, character.needs[need] + delta));
+  }
+
+  /** 设置角色当前短期意图 */
+  setIntent(characterId: string, intent?: CharacterIntent): void {
+    const character = this._characters.get(characterId);
+    if (!character) return;
+    character.currentIntent = intent;
+  }
+
+  /** 获取当前仍有效的短期意图；过期会自动清除 */
+  getCurrentIntent(characterId: string, tick = this._state.tick): CharacterIntent | undefined {
+    const character = this._characters.get(characterId);
+    if (!character?.currentIntent) return undefined;
+    if (character.currentIntent.expiresAt < tick) {
+      character.currentIntent = undefined;
+      return undefined;
+    }
+    return character.currentIntent;
+  }
+
+  clearIntent(characterId: string): void {
+    const character = this._characters.get(characterId);
+    if (!character) return;
+    character.currentIntent = undefined;
   }
 
   // --- 信箱 ---

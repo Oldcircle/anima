@@ -154,6 +154,30 @@ function buildConstraintWarnings(state: CharacterState, locationType: string): s
   return warnings;
 }
 
+function describeRelationshipFeel(type?: string): string {
+  switch (type) {
+    case "best_friend":
+      return "你和这个人已经非常亲近，相处时会自然放松下来。";
+    case "close_friend":
+      return "你对这个人有明显的亲近感，愿意多停留一会儿。";
+    case "friend":
+      return "你和这个人已经算熟悉了，说话不会太拘谨。";
+    case "acquaintance":
+      return "你对这个人有些印象，算是点头之交。";
+    case "rival":
+      return "你和这个人之间有些紧绷，最好留意自己的分寸。";
+    case "romantic":
+      return "这个人会牵动你的情绪，你很难完全当作普通朋友。";
+    default:
+      return "你对这个人还不算熟，只能凭眼前的举止慢慢判断。";
+  }
+}
+
+function formatCurrentIntent(state: CharacterState): string {
+  if (!state.currentIntent) return "";
+  return `## 你心里还挂着的事\n${state.currentIntent.summary}`;
+}
+
 export function buildUserPrompt(params: {
   card: CharacterCard;
   state: CharacterState;
@@ -204,37 +228,41 @@ export function buildUserPrompt(params: {
     parts.push("\n" + warnings.join("\n"));
   }
 
-  // 附近的人 — 有印象时用叙事描述，否则用标签 + 可观察状态
+  const intentText = formatCurrentIntent(state);
+  if (intentText) {
+    parts.push(`\n${intentText}`);
+  }
+
+  // 附近的人：先写可见事实，再写主观感觉/印象
   if (nearbyCharacters.length > 0) {
+    const visiblePeople = nearbyCharacters.map((c) => {
+      const actionDesc = c.currentAction ? `——${c.currentAction}` : "——此刻没有明显动作";
+      return `- ${c.name}(ID:${c.id}) ${actionDesc}`;
+    }).join("\n");
+    parts.push(`\n## 你现在看见了谁\n${visiblePeople}`);
+    parts.push("你只能根据对方此刻的表情、动作、语气和过往记忆来判断他们，不要把猜测当成事实。");
+
     const hasAnyImpression = params.impressions && nearbyCharacters.some((c) =>
       params.impressions!.get(card.id, c.id),
     );
 
     if (hasAnyImpression) {
-      // 印象模式：用叙事描述
-      parts.push(`\n## 你对在场的人的印象`);
+      parts.push(`\n## 你对他们的主观感觉`);
       for (const c of nearbyCharacters) {
         const impText = params.impressions!.formatForPrompt(card.id, c.id);
-        const actionDesc = c.currentAction ? `（${c.currentAction}）` : "";
         if (impText) {
-          parts.push(`**${c.name}**(ID:${c.id})${actionDesc}\n${impText}`);
+          parts.push(`**${c.name}**(ID:${c.id})\n${impText}`);
         } else {
-          const rel = c.relationship;
-          const relInfo = rel ? `[${rel.type}, 亲密度:${rel.level}]` : "[陌生人]";
-          parts.push(`- ${c.name}(ID:${c.id}) ${relInfo}${actionDesc ? `——${c.currentAction}` : ""}（你还不太了解这个人）`);
+          parts.push(`- ${c.name}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type)}`);
         }
       }
     } else {
-      // 无印象：原来的标签模式
       const people = nearbyCharacters.map((c) => {
-        const rel = c.relationship;
-        const relInfo = rel ? `[${rel.type}, 亲密度:${rel.level}]` : "[陌生人]";
-        const actionDesc = c.currentAction ? `——${c.currentAction}` : "";
-        return `- ${c.name}(ID:${c.id}) ${relInfo}${actionDesc}`;
+        return `- ${c.name}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type)}`;
       }).join("\n");
-      parts.push(`\n在场的人:\n${people}`);
+      parts.push(`\n## 你对他们的主观感觉\n${people}`);
     }
-    parts.push(`注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。`);
+    parts.push(`注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。talk 是在当前地点当面开口说话，在场的人也可能注意到。`);
   } else {
     if (state.needs.social < 20) {
       parts.push("\n附近没有其他人。你已经很久没和人说话了，感到非常孤独。也许应该去广场、咖啡馆或酒吧等有人的地方看看。");
@@ -248,7 +276,7 @@ export function buildUserPrompt(params: {
     const msgs = params.inboxMessages
       .map((m) => `- ${m.fromName}(ID:${m.fromId}) 对你说：「${m.content}」`)
       .join("\n");
-    parts.push(`\n## 有人对你说\n${msgs}\n（你可以用 talk 工具回应，也可以无视）`);
+    parts.push(`\n## 有人对你说\n${msgs}\n（这些话刚刚在你耳边发生。你可以用 talk 回应，也可以无视或转身离开。）`);
   }
 
   // 需求值
