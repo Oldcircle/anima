@@ -170,7 +170,7 @@ export async function runAgentTick(params: {
     }
   }
 
-  // 存入短期记忆
+  // 存入短期记忆：行为结果
   if (params.memory && result.result) {
     const isFailed = result.result.success === false;
     params.memory.add(card.id, {
@@ -179,6 +179,16 @@ export async function runAgentTick(params: {
       content: isFailed ? `[失败] ${result.result.description}` : result.result.description,
       importance: isFailed ? 8 : toolCall.name === "talk" ? 7 : 4,
       relatedCharacterId: toolCall.name === "talk" ? toolCall.arguments.target as string : undefined,
+    });
+  }
+
+  // 存入短期记忆：内心想法（让角色记住自己想过什么）
+  if (params.memory && thought && thought.length > 5) {
+    params.memory.add(card.id, {
+      tick: gameTime.tick,
+      type: "thought",
+      content: truncateThought(thought, 150),
+      importance: 3,
     });
   }
 
@@ -316,6 +326,25 @@ async function executeAction(
     action: { name: toolCall.name, args: toolCall.arguments },
     result,
   };
+}
+
+/** 截断思考文本，在中文句号/！/？处断开 */
+function truncateThought(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const slice = text.slice(0, maxChars);
+  // 找最后一个句子结束符
+  const lastSentenceEnd = Math.max(
+    slice.lastIndexOf("。"),
+    slice.lastIndexOf("！"),
+    slice.lastIndexOf("？"),
+    slice.lastIndexOf("."),
+    slice.lastIndexOf("!"),
+    slice.lastIndexOf("?"),
+  );
+  if (lastSentenceEnd > maxChars * 0.4) {
+    return slice.slice(0, lastSentenceEnd + 1);
+  }
+  return slice + "…";
 }
 
 /** 将 action name 转为第三人称可观察的描述 */
