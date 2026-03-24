@@ -5,6 +5,8 @@
  * - 环境感知 + 内心独白分级
  * - 对话模式
  * - 印象系统（异步生成）
+ *
+ * 实时输出每个 tick 的决策。
  */
 
 import { describe, it, expect } from "vitest";
@@ -18,8 +20,8 @@ import { ALL_BASIC_ACTIONS } from "../actions/basic-actions.js";
 import { OpenAICompatibleProvider } from "../providers/openai-compatible.js";
 import { loadCharactersFromDir } from "../character/loader.js";
 import { loadLocationsFromDir } from "../world/location-loader.js";
-import { tickToGameTime } from "../core/tick-engine.js";
 import { join } from "node:path";
+import { SimReporter } from "../../test/helpers/sim-reporter.js";
 
 const hasKey = !!process.env.DEEPSEEK_API_KEY;
 const describeIf = hasKey ? describe : describe.skip;
@@ -51,76 +53,25 @@ describeIf("半天 Live 模拟 (P0+P1)", () => {
       playerId: "player",
     });
 
-    const startTick = 24; // 06:00
-    const endTick = 60;   // 15:00 (36 ticks = 9 hours)
+    // 实时输出
+    const reporter = new SimReporter(world, sim, {
+      totalTicks: 36,
+      label: "半天模拟 (06:00 → 15:00) — P0+P1 验证",
+      playerId: "player",
+    });
 
-    let totalActions = 0;
-    let totalTalks = 0;
-    let totalSkipped = 0;
-    const dialogues: string[] = [];
+    // 运行 36 tick
+    await sim.runTicks(36, 24);
+    await sim.waitForBackgroundTasks();
 
-    console.log("=== 半天模拟开始 (06:00 → 15:00) ===\n");
-
-    for (let tick = startTick; tick < endTick; tick++) {
-      const gt = tickToGameTime(tick);
-      const summary = await sim.runOneTick(gt);
-
-      for (const r of summary.results) {
-        if (r.skipped) {
-          totalSkipped++;
-          continue;
-        }
-        totalActions++;
-        if (r.action?.name === "talk") {
-          totalTalks++;
-          const target = r.action.args.target as string;
-          const msg = r.action.args.message as string;
-          const charState = world.getCharacter(r.characterId);
-          dialogues.push(`[${gt.hour}:${String(gt.minute).padStart(2, "0")}] ${charState?.name ?? r.characterId} → ${target}: ${msg?.slice(0, 80)}...`);
-        }
-      }
-    }
-
-    // 等一下让异步印象生成完成
-    await new Promise((r) => setTimeout(r, 5000));
-
-    console.log(`\n=== 半天模拟结束 ===`);
-    console.log(`总行为: ${totalActions}, 跳过: ${totalSkipped}, 对话: ${totalTalks}`);
-    console.log(`\n--- 对话记录 ---`);
-    for (const d of dialogues) console.log(d);
-
-    // 检查印象系统
-    console.log(`\n--- 印象系统 (${sim.impressions.size} 条) ---`);
-    const allImpressions = sim.impressions.getAll();
-    for (const { observerId, impression } of allImpressions) {
-      console.log(`${observerId} → ${impression.characterId}: ${impression.summary} [${impression.mentalLabel}]`);
-      if (impression.observations.length > 0) {
-        console.log(`  观察: ${impression.observations.join("; ")}`);
-      }
-      if (impression.unresolved.length > 0) {
-        console.log(`  疑惑: ${impression.unresolved.join("; ")}`);
-      }
-    }
-
-    // 检查对话追踪器
-    console.log(`\n--- 关系网络 ---`);
-    const chars = world.getAllCharacters().filter(c => c.id !== "player");
-    for (const a of chars) {
-      for (const b of chars) {
-        if (a.id >= b.id) continue;
-        const rel = sim.relationships.get(a.id, b.id);
-        if (rel && rel.level > 0) {
-          console.log(`${a.name} ↔ ${b.name}: ${rel.type} (${rel.level})`);
-        }
-      }
-    }
+    reporter.printSummary();
+    reporter.writeLog("sim-halfday");
+    reporter.dispose();
 
     // 基本断言
-    expect(totalActions).toBeGreaterThan(30);
-    expect(totalTalks).toBeGreaterThan(3);
+    expect(reporter.stats.totalActions).toBeGreaterThan(30);
+    expect(reporter.stats.talks.length).toBeGreaterThan(3);
 
-    // 印象可能已生成（异步，取决于对话轮次是否够 4 轮）
-    console.log(`\n印象总数: ${sim.impressions.size}`);
-
-  }, 600_000); // 10 分钟超时
+    console.log(`\n  印象总数: ${sim.impressions.size}`);
+  }, 600_000);
 });

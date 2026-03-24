@@ -201,6 +201,8 @@ export function buildUserPrompt(params: {
   atmosphere?: LocationAtmosphere;
   /** 印象系统（如有） */
   impressions?: ImpressionStore;
+  /** 角色 ID → 显示名映射（用于回忆中的人名解析） */
+  characterNames?: Map<string, string>;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
@@ -248,13 +250,23 @@ export function buildUserPrompt(params: {
 
     if (hasAnyImpression) {
       parts.push(`\n## 你对他们的主观感觉`);
+      const curiosities: string[] = [];
       for (const c of nearbyCharacters) {
         const impText = params.impressions!.formatForPrompt(card.id, c.id);
         if (impText) {
           parts.push(`**${c.name}**(ID:${c.id})\n${impText}`);
+          // 收集未解疑惑，作为对话驱动力
+          const imp = params.impressions!.get(card.id, c.id);
+          if (imp && imp.unresolved.length > 0) {
+            curiosities.push(`关于${c.name}：${imp.unresolved[0]}`);
+          }
         } else {
           parts.push(`- ${c.name}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type)}`);
         }
+      }
+      // 注入未解疑惑作为对话方向提示
+      if (curiosities.length > 0) {
+        parts.push(`\n你心里有些好奇的事：${curiosities.join("；")}。如果有合适的时机，也许可以自然地聊到这些话题——但不要突兀地追问。`);
       }
     } else {
       const people = nearbyCharacters.map((c) => {
@@ -264,7 +276,15 @@ export function buildUserPrompt(params: {
     }
     parts.push(`注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。talk 是在当前地点当面开口说话，在场的人也可能注意到。`);
   } else {
-    if (state.needs.social < 20) {
+    // 独处时，如果有记忆中的人，提供回忆线索帮助决策
+    const remembered = params.impressions?.getAllFor(card.id) ?? [];
+    if (remembered.length > 0 && state.needs.social < 35) {
+      const resolveName = (id: string) => params.characterNames?.get(id) ?? id;
+      const hints = remembered.slice(0, 3).map((imp) =>
+        `${resolveName(imp.characterId)}: ${imp.summary.slice(0, 40)}`
+      ).join("；");
+      parts.push(`\n附近没有其他人。你想起一些人：${hints}。也许可以去找他们聊聊。`);
+    } else if (state.needs.social < 20) {
       parts.push("\n附近没有其他人。你已经很久没和人说话了，感到非常孤独。也许应该去广场、咖啡馆或酒吧等有人的地方看看。");
     } else {
       parts.push("\n附近没有其他人。");

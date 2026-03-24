@@ -119,6 +119,7 @@ export async function runAgentTick(params: {
     inboxMessages,
     atmosphere: location?.atmosphere,
     impressions: params.impressions,
+    characterNames: new Map(world.getAllCharacters().map((c) => [c.id, c.name])),
   });
 
   // 对话模式：如果提供了 conversationRequest，使用它替代标准 prompt

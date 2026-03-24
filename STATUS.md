@@ -1,12 +1,22 @@
 # Anima — 开发状态
 
-## 当前：活人感深度改造（五层方案）
+## 当前：P1 印象系统强化 + 测试改造
 
 详见 DESIGN.md §7.3 + PLAN.md 实施任务
 
 **最后更新**：2026-03-24
 
-### 本轮已完成：第一性原理收口（第一阶段）
+### 本轮已完成：P1 印象系统深化 + 测试可读性改造
+
+- [x] **SimReporter 共享工具**：`test/helpers/sim-reporter.ts`，实时 per-tick 输出、ID→名字解析、进度条、彩色终端、统计收集、Markdown 日志生成
+- [x] **重构 3 个模拟测试**：full-day / halfday / seven-day 全部改用 SimReporter，每个 tick 实时输出决策，不再等到最后才 dump
+- [x] **首次印象阈值降低**：2 条交换即可触发首次印象生成（更新仍需 4 条 + 冷却）
+- [x] **未解疑惑驱动对话**：prompt 注入"你心里有些好奇的事"，引导角色自然探索对他人的疑惑
+- [x] **独处回忆**：社交需求低时，prompt 提示记忆中的人（带印象摘要），引导主动社交
+- [x] **角色名解析**：prompt-builder 接受 characterNames 映射，回忆中的人用名字而非 ID
+- [x] 验证：`pnpm build` 通过，`pnpm test` 通过（151 tests）
+
+### 已完成：第一性原理收口（第一阶段）
 
 - [x] Prompt 改成“可见事实 / 主观感觉 / 短期挂念”三层结构
 - [x] 关系不再在 prompt 里直接暴露亲密度数值，优先改为主观感觉描述
@@ -14,6 +24,32 @@
 - [x] `talk` 明确为同场当面说话，在场角色可通过 observation 记忆“看见了什么”
 - [x] 新增测试：`prompt-builder.test.ts`
 - [x] 验证：`pnpm build` 通过，`pnpm test` 通过（149 tests）
+
+### 本轮已完成：印象稳定性 + 半天报告改进
+
+- [x] `generateImpression()` 增加更宽松的解析 + 启发式回退，避免模型格式轻微漂移时直接丢失印象
+- [x] `Simulation.waitForBackgroundTasks()`：测试/日志可明确等待后台印象任务，不再靠 `sleep(5s)` 盲等
+- [x] `sim-halfday.live.test.ts` 改为生成 markdown 日志到 `logs/sim-halfday-*.md`
+- [x] 半天日志按“概要 / 行为分布 / 主要对话对 / 对话摘录 / 印象 / 关系 / 风险 / 时间线”组织，便于扫读
+- [x] 新增测试：`impression-updater.test.ts`
+- [x] 验证：`pnpm build` 通过，`pnpm test` 通过（151 tests）
+
+### 最新半天 Live 结果（2026-03-24）
+
+日志：`logs/sim-halfday-20260324-164807.md`
+
+| 指标 | 值 |
+|---|---|
+| 总行为 | 78 |
+| 总跳过 | 153 |
+| 对话次数 | 21 |
+| 印象数 | 2 |
+| 约束失败 | 1 |
+
+观察：
+- Maria ↔ Alice 形成了明显主线，对话 19 次，关系达到 `best_friend (90)`
+- Bob ↔ 祥子有低强度接触，已出现 `acquaintance (10)`
+- 角色并非全部平均活跃，Emily / 老陈在社交上仍偏安静，后续适合从“观察与社会推理”切入补强
 
 ### 背景
 
@@ -73,9 +109,10 @@ Live/模拟测试已改名为 `*.live.test.ts`，不被默认 `pnpm test` 包含
 
 ### 下次继续入口
 
-1. **P1 人物印象系统**：`CharacterImpression` 数据结构 + 互动后反思 + prompt 注入
-2. 可选：调整对话模式触发阈值、temperature、token 预算
-3. 可选：P2 观察与社会推理
+1. **P1 Live 验证**：跑半天/一日模拟，验证首次 vs 多次见面的行为差异、疑惑驱动对话是否生效
+2. **P2 观察与社会推理**：从"看到"走向"解读"，涌现无声关怀行为
+3. 可选：调整对话模式触发阈值、temperature、token 预算
+4. 可选：印象持久化（SQLite 存储，跨存档保留）
 
 ## 第一性原理
 

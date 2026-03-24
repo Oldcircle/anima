@@ -100,6 +100,7 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 ### 当前优先级调整
 
 - [x] 先做“局部感知 + 短期意图 + 旁观观察”的第一阶段收口
+- [x] 印象更新与半天 live 报告链路收稳（等待后台任务、日志结构化、解析回退）
 - [ ] 继续推进 P1：人物印象系统从“可注入”走向“稳定更新 + 更强主观性”
 - [ ] 继续推进 P2：观察与社会推理，从“看到”走向“解读”
 
@@ -125,10 +126,13 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 
 ### P1：人物印象系统
 
-- [ ] `CharacterImpression` 数据结构（summary/observations/mentalLabel/unresolved）
-- [ ] `CharacterState` 新增 `impressions: Map<string, CharacterImpression>`
-- [ ] 互动后反思步骤：LLM 生成/更新印象
-- [ ] `prompt-builder.ts` 注入印象替代纯数字关系
+- [x] `CharacterImpression` 数据结构（summary/observations/mentalLabel/unresolved）
+- [x] `ImpressionStore`：存储/合并/格式化，替代 CharacterState 内联
+- [x] 互动后反思步骤：LLM 生成/更新印象（`impression-updater.ts`）
+- [x] `prompt-builder.ts` 注入印象替代纯数字关系
+- [x] 首次印象阈值降低：2 条交换即可触发首次印象（更新仍需 4 条）
+- [x] 未解疑惑驱动对话：prompt 注入"你心里好奇的事"引导自然探索
+- [x] 独处时回忆：社交需求低时，prompt 提示记忆中的人
 - [ ] Live 验证：角色首次 vs 第五次见面的差异
 
 ### P2：观察与社会推理

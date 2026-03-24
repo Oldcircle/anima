@@ -49,6 +49,7 @@ export class Simulation {
   private _actions: ActionDefinition[];
   private _listeners: SimulationListener[] = [];
   private _playerId?: string;
+  private _backgroundTasks = new Set<Promise<unknown>>();
 
   world: World;
   eventBus: EventBus;
@@ -96,6 +97,22 @@ export class Simulation {
       const idx = this._listeners.indexOf(listener);
       if (idx >= 0) this._listeners.splice(idx, 1);
     };
+  }
+
+  /** 等待所有后台印象/衍生任务完成，便于测试和日志收尾 */
+  async waitForBackgroundTasks(): Promise<void> {
+    while (this._backgroundTasks.size > 0) {
+      const batch = Array.from(this._backgroundTasks);
+      await Promise.allSettled(batch);
+    }
+  }
+
+  private _trackBackgroundTask<T>(promise: Promise<T>): Promise<T> {
+    const tracked = promise.finally(() => {
+      this._backgroundTasks.delete(tracked);
+    });
+    this._backgroundTasks.add(tracked);
+    return tracked;
   }
 
   private recordWitnessObservations(event: WorldEvent): void {
@@ -304,10 +321,11 @@ export class Simulation {
         if (processedPairs.has(pairKey)) continue;
 
         const history = this.conversations.getHistory(r.characterId, targetId);
-        // 至少 4 条交换 + 冷却期（同一对每 4 tick / 游戏 1 小时最多更新一次）
+        // 首次印象只需 2 条交换，更新需 4 条 + 冷却期（每 4 tick / 游戏 1 小时最多更新一次）
         const existingImp = this.impressions.get(r.characterId, targetId);
+        const minExchanges = existingImp ? 4 : 2;
         const cooldownOk = !existingImp || (gameTime.tick - existingImp.lastUpdated) >= 4;
-        if (history.length >= 4 && cooldownOk) {
+        if (history.length >= minExchanges && cooldownOk) {
           processedPairs.add(pairKey);
           const cardA = this._configs.get(r.characterId)?.card;
           const cardB = this._configs.get(targetId)?.card;
@@ -328,7 +346,7 @@ export class Simulation {
     }
     // Fire-and-forget: 印象生成不阻塞 tick 循环
     if (impressionPromises.length > 0) {
-      Promise.all(impressionPromises).catch((err) => {
+      this._trackBackgroundTask(Promise.all(impressionPromises)).catch((err) => {
         console.warn(`[tick ${gameTime.tick}] 印象生成失败:`, err?.message ?? err);
       });
     }

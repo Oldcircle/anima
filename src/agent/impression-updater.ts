@@ -70,14 +70,15 @@ ${dialogueLines}
       modelId,
     );
 
-    return parseImpressionResponse(response.content, targetCard.id, tick);
+    return parseImpressionResponse(response.content, targetCard.id, tick)
+      ?? buildFallbackImpression(targetCard.id, targetCard.name, exchanges, existingImpression, tick);
   } catch {
-    return null;
+    return buildFallbackImpression(targetCard.id, targetCard.name, exchanges, existingImpression, tick);
   }
 }
 
 /** 解析 LLM 返回的印象文本 */
-function parseImpressionResponse(text: string, targetId: string, tick: number): CharacterImpression {
+function parseImpressionResponse(text: string, targetId: string, tick: number): CharacterImpression | null {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
   let summary = "";
@@ -86,25 +87,30 @@ function parseImpressionResponse(text: string, targetId: string, tick: number): 
   const unresolved: string[] = [];
 
   for (const line of lines) {
-    if (line.startsWith("总结：") || line.startsWith("总结:")) {
-      summary = line.replace(/^总结[：:]/, "").trim();
-    } else if (line.startsWith("观察：") || line.startsWith("观察:")) {
-      const obs = line.replace(/^观察[：:]/, "").trim();
+    if (matchesLabel(line, ["总结", "整体印象", "印象"])) {
+      summary = stripLabel(line).trim();
+    } else if (matchesLabel(line, ["观察", "细节"])) {
+      const obs = stripLabel(line).trim();
       observations.push(...obs.split(/[；;]/).map((s) => s.trim()).filter(Boolean));
-    } else if (line.startsWith("标签：") || line.startsWith("标签:")) {
-      mentalLabel = line.replace(/^标签[：:]/, "").trim();
-    } else if (line.startsWith("疑惑：") || line.startsWith("疑惑:")) {
-      const q = line.replace(/^疑惑[：:]/, "").trim();
+    } else if (matchesLabel(line, ["标签", "判断"])) {
+      mentalLabel = stripLabel(line).trim();
+    } else if (matchesLabel(line, ["疑惑", "好奇"])) {
+      const q = stripLabel(line).trim();
       if (q !== "无" && q !== "暂无" && q.length > 0) {
         unresolved.push(...q.split(/[；;]/).map((s) => s.trim()).filter(Boolean));
       }
     }
   }
 
-  // 如果解析失败，用整段文本作为 summary
-  if (!summary && lines.length > 0) {
-    summary = lines[0]!.slice(0, 100);
+  // 如果模型没按格式回复，尝试把第一句当 summary
+  if (!summary) {
+    const candidate = lines.find((line) => line.length >= 8 && !line.includes("：") && !line.includes(":"));
+    if (candidate) {
+      summary = candidate.slice(0, 100);
+    }
   }
+
+  if (!summary) return null;
 
   return {
     characterId: targetId,
@@ -114,6 +120,59 @@ function parseImpressionResponse(text: string, targetId: string, tick: number): 
     unresolved: unresolved.slice(0, 3),
     lastUpdated: tick,
   };
+}
+
+function matchesLabel(line: string, labels: string[]): boolean {
+  return labels.some((label) => line.startsWith(`${label}：`) || line.startsWith(`${label}:`));
+}
+
+function stripLabel(line: string): string {
+  return line.replace(/^[^：:]+[：:]/, "");
+}
+
+function buildFallbackImpression(
+  targetId: string,
+  targetName: string,
+  exchanges: ConversationExchange[],
+  existingImpression: CharacterImpression | undefined,
+  tick: number,
+): CharacterImpression {
+  const targetUtterances = exchanges
+    .filter((e) => e.speakerId === targetId)
+    .map((e) => e.message.trim())
+    .filter(Boolean);
+
+  const sample = targetUtterances[0] ?? exchanges[0]?.message ?? "";
+  const observations = targetUtterances
+    .slice(0, 2)
+    .map((msg) => `你记得对方说过「${msg.slice(0, 24)}${msg.length > 24 ? "…" : ""}」`);
+
+  const label = inferMentalLabel(targetUtterances, existingImpression?.mentalLabel);
+  const summary = existingImpression?.summary
+    ? `${existingImpression.summary} 这次接触让这个印象更具体了一些。`
+    : `${targetName}给你的感觉是${label === "谨慎的人" ? "有些克制和谨慎" : label === "热情的人" ? "比你预想中更热情外放" : "还需要再接触才能看清"}。`;
+
+  const unresolved = existingImpression?.unresolved?.slice(0, 2) ?? [];
+  if (unresolved.length === 0 && targetUtterances.length <= 1) {
+    unresolved.push("还不确定对方真正想和你保持什么距离");
+  }
+
+  return {
+    characterId: targetId,
+    summary,
+    observations: observations.slice(0, 5),
+    mentalLabel: label,
+    unresolved: unresolved.slice(0, 3),
+    lastUpdated: tick,
+  };
+}
+
+function inferMentalLabel(messages: string[], previous?: string): string {
+  const joined = messages.join(" ");
+  if (/[!！]/.test(joined) || /hola|哈哈|当然|太好了/i.test(joined)) return "热情的人";
+  if (/请|失礼|容我|抱歉|……|\.\.\./.test(joined)) return "谨慎的人";
+  if (messages.every((m) => m.length <= 12) && messages.length > 0) return "话不多的人";
+  return previous || "待了解";
 }
 
 /**
