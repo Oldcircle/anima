@@ -68,41 +68,6 @@ export async function runAgentTick(params: {
   // 消费信箱消息
   const inboxMessages = params.world.consumeInbox(card.id);
 
-  // 日程兜底：如果没有新刺激，按日程行动（不调 LLM）
-  const hasLowNeed = state.needs.hunger < 25 || state.needs.energy < 20;
-  const hasLowSocial = state.needs.social < 30;
-  const hasNearby = nearbyIds.length > 0;
-  const hasInbox = inboxMessages.length > 0;
-  const recentMemoryCount = params.memory?.getRecent(card.id, 3).length ?? 0;
-  const needsLLM = hasLowNeed || hasNearby || hasLowSocial || hasInbox || recentMemoryCount < 2;
-
-  if (!needsLLM) {
-    // 按日程执行：找到当前时间段的日程，转化为行为
-    const hourStr = `${String(gameTime.hour).padStart(2, "0")}:00`;
-    const routine = card.dailyRoutine[hourStr];
-    if (routine) {
-      // 简单映射日程到默认工具
-      const defaultAction = routine.includes("营业") || routine.includes("工作") || routine.includes("钓鱼") || routine.includes("烤")
-        ? { name: "work", arguments: { activity: routine } }
-        : routine.includes("午餐") || routine.includes("吃")
-        ? { name: "eat", arguments: { location: state.locationId } }
-        : routine.includes("散步") || routine.includes("探索")
-        ? { name: "explore", arguments: { area: routine } }
-        : routine.includes("阅读") || routine.includes("读")
-        ? { name: "read", arguments: { book: routine } }
-        : null;
-
-      if (defaultAction) {
-        const actionDef = actions.find((a) => a.tool.name === defaultAction.name);
-        if (actionDef) {
-          return await executeAction(
-            defaultAction as any, actions, card, state, world, eventBus, gameTime,
-            `（按日程）${routine}`,
-          );
-        }
-      }
-    }
-  }
   const nearbyCharacters = nearbyIds
     .map((id) => world.getCharacter(id))
     .filter((c): c is CharacterState => c !== undefined)
@@ -124,6 +89,7 @@ export async function runAgentTick(params: {
     nearbyCharacters,
     recentEvents,
     locationName: location?.name ?? state.locationId,
+    locationType: location?.type ?? "public",
     allLocationNames,
     recentMemories,
     weather: world.weather,
@@ -144,8 +110,7 @@ export async function runAgentTick(params: {
   try {
     response = await provider.chat(request, modelId);
   } catch (err) {
-    // LLM 失败时回退到日程兜底
-    return handleFallback(card, state, gameTime, world, eventBus);
+    return { characterId: card.id, thought: "", skipped: true, skipReason: "LLM 调用失败" };
   }
 
   const thought = response.content;
@@ -168,6 +133,7 @@ export async function runAgentTick(params: {
           type: "conversation",
           content: `${msg.fromName}对你说：「${msg.content}」`,
           importance: 7,
+          relatedCharacterId: msg.fromId,
         });
       }
       // 收到消息本身也提升社交
@@ -177,11 +143,13 @@ export async function runAgentTick(params: {
 
   // 存入短期记忆
   if (params.memory && result.result) {
+    const isFailed = result.result.success === false;
     params.memory.add(card.id, {
       tick: gameTime.tick,
       type: "event",
-      content: result.result.description,
-      importance: toolCall.name === "talk" ? 7 : 4,
+      content: isFailed ? `[失败] ${result.result.description}` : result.result.description,
+      importance: isFailed ? 8 : toolCall.name === "talk" ? 7 : 4,
+      relatedCharacterId: toolCall.name === "talk" ? toolCall.arguments.target as string : undefined,
     });
   }
 
@@ -203,14 +171,40 @@ async function executeAction(
     return { characterId: card.id, thought, skipped: true, skipReason: `未知行为: ${toolCall.name}` };
   }
 
+  const location = world.getLocation(state.locationId);
   const ctx = {
     characterId: card.id,
     locationId: state.locationId,
+    locationType: location?.type ?? "public",
     tick: gameTime.tick,
     nearbyCharacters: world.getCharactersAtLocation(state.locationId).filter((id) => id !== card.id),
+    gold: state.gold,
+    needs: { ...state.needs },
   };
 
   const result = actionDef.handler(toolCall.arguments, ctx);
+
+  // 约束失败：不应用效果，不设 duration，但广播事件和存记忆
+  if (result.success === false) {
+    const event: WorldEvent = {
+      id: uuid(),
+      tick: gameTime.tick,
+      type: `action.${toolCall.name}.failed`,
+      actorId: card.id,
+      locationId: state.locationId,
+      description: `${card.name} ${result.description}`,
+      effects: [],
+      witnesses: world.getCharactersAtLocation(state.locationId).filter((id) => id !== card.id),
+    };
+    await eventBus.emit(event);
+
+    return {
+      characterId: card.id,
+      thought,
+      action: { name: toolCall.name, args: toolCall.arguments },
+      result,
+    };
+  }
 
   // 应用效果
   for (const effect of result.effects) {
@@ -244,6 +238,18 @@ async function executeAction(
   } else if (toolCall.name === "eat" || toolCall.name === "drink") {
     const cost = getConsumptionCost(toolCall.name, state.locationId);
     state.gold = Math.max(0, state.gold - cost);
+  } else if (toolCall.name === "give_gift") {
+    state.gold = Math.max(0, state.gold - 20);
+  } else if (toolCall.name === "steal") {
+    const stolenAmount = (result as any)._stolenAmount;
+    if (typeof stolenAmount === "number") {
+      state.gold += stolenAmount;
+    }
+  } else if (toolCall.name === "beg") {
+    const begAmount = (result as any)._begAmount;
+    if (typeof begAmount === "number") {
+      state.gold += begAmount;
+    }
   }
 
   // 设置多 tick 行为
@@ -281,21 +287,3 @@ async function executeAction(
   };
 }
 
-/** 日程兜底：LLM 失败时按日程执行 */
-function handleFallback(
-  card: CharacterCard,
-  state: CharacterState,
-  gameTime: GameTime,
-  world: World,
-  eventBus: EventBus,
-): AgentTickResult {
-  const hourStr = `${String(gameTime.hour).padStart(2, "0")}:00`;
-  const routine = card.dailyRoutine[hourStr];
-
-  return {
-    characterId: card.id,
-    thought: `（日程兜底）${routine ?? "自由活动"}`,
-    skipped: true,
-    skipReason: "LLM 失败，使用日程兜底",
-  };
-}

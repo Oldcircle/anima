@@ -24,6 +24,8 @@ export interface SimulationConfig {
   actions: ActionDefinition[];
   provider: LLMProvider;
   modelId: string;
+  /** 玩家角色 ID（如果有）。玩家不调 LLM，由前端操控 */
+  playerId?: string;
 }
 
 export interface TickSummary {
@@ -42,11 +44,14 @@ export class Simulation {
   private _provider: LLMProvider;
   private _actions: ActionDefinition[];
   private _listeners: SimulationListener[] = [];
+  private _playerId?: string;
 
   world: World;
   eventBus: EventBus;
   relationships: RelationshipManager;
   memory: ShortTermMemory;
+
+  get playerId(): string | undefined { return this._playerId; }
 
   constructor(
     world: World,
@@ -59,19 +64,17 @@ export class Simulation {
     this.memory = new ShortTermMemory();
     this._provider = config.provider;
     this._actions = config.actions;
+    this._playerId = config.playerId;
 
     for (const card of config.characters) {
+      // 玩家不注册为 AI Agent（不调 LLM）
+      if (card.id === config.playerId) continue;
       this._configs.set(card.id, {
         card,
         actions: config.actions,
         provider: config.provider,
         modelId: config.modelId,
       });
-
-      // 从角色卡初始化关系
-      for (const [otherId, rel] of Object.entries(card.relationships)) {
-        this.relationships.set(card.id, otherId, rel.level, rel.type as any);
-      }
     }
   }
 
@@ -147,27 +150,12 @@ export class Simulation {
     }
 
     // 2. 并行决策所有未忙碌角色
-    const isNight = gameTime.hour >= 23 || gameTime.hour < 5;
     const results: AgentTickResult[] = [];
     const promises: Promise<AgentTickResult>[] = [];
 
     for (const [id, config] of this._configs) {
       const state = this.world.getCharacter(id);
       if (!state) continue;
-
-      // 夜间自动睡觉（不调 LLM，节省 token）
-      if (isNight && !state.currentAction) {
-        // 送角色回家睡觉
-        const homeId = config.card.home;
-        if (state.locationId !== homeId) {
-          this.world.moveCharacter(id, homeId);
-        }
-        state.currentAction = { name: "sleep", remainingTicks: 20 }; // ~5 小时
-        this.world.modifyNeed(id, "energy", 100);
-        this.world.modifyNeed(id, "hygiene", 10);
-        results.push({ characterId: id, thought: "该睡觉了", skipped: true, skipReason: "夜间休息" });
-        continue;
-      }
 
       promises.push(runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory }));
     }
@@ -266,6 +254,145 @@ export class Simulation {
     return summary;
   }
 
+  /**
+   * 执行玩家动作 — 和 AI 角色走完全相同的执行管道
+   * @returns ActionResult if action found, null if unknown action
+   */
+  async executePlayerAction(
+    actionName: string,
+    args: Record<string, unknown>,
+  ): Promise<import("./agent-loop.js").AgentTickResult | null> {
+    if (!this._playerId) return null;
+
+    const state = this.world.getCharacter(this._playerId);
+    if (!state) return null;
+
+    const actionDef = this._actions.find((a) => a.tool.name === actionName);
+    if (!actionDef) return null;
+
+    const location = this.world.getLocation(state.locationId);
+    const ctx: import("../actions/types.js").ActionContext = {
+      characterId: this._playerId,
+      locationId: state.locationId,
+      locationType: location?.type ?? "public",
+      tick: this.world.tick,
+      nearbyCharacters: this.world.getCharactersAtLocation(state.locationId).filter((id) => id !== this._playerId),
+      gold: state.gold,
+      needs: { ...state.needs },
+    };
+
+    const result = actionDef.handler(args, ctx);
+
+    // 约束失败：广播事件但不应用效果
+    if (result.success === false) {
+      const event: import("../core/event-bus.js").WorldEvent = {
+        id: crypto.randomUUID(),
+        tick: this.world.tick,
+        type: `action.${actionName}.failed`,
+        actorId: this._playerId,
+        locationId: state.locationId,
+        description: `${state.name} ${result.description}`,
+        effects: [],
+        witnesses: this.world.getCharactersAtLocation(state.locationId).filter((id) => id !== this._playerId),
+      };
+      await this.eventBus.emit(event);
+
+      return {
+        characterId: this._playerId,
+        thought: "",
+        action: { name: actionName, args },
+        result,
+      };
+    }
+
+    // 应用效果（和 agent-loop 中的 executeAction 一致）
+    for (const effect of result.effects) {
+      switch (effect.type) {
+        case "need_change":
+          if (effect.field && effect.delta !== undefined) {
+            this.world.modifyNeed(effect.targetId, effect.field as any, effect.delta);
+          }
+          break;
+        case "location_change":
+          if (effect.value) {
+            this.world.moveCharacter(effect.targetId, effect.value);
+          }
+          break;
+        case "inbox_message":
+          if (effect.message) {
+            this.world.sendMessage(effect.targetId, {
+              fromId: this._playerId,
+              fromName: state.name,
+              content: effect.message,
+              tick: this.world.tick,
+            });
+          }
+          break;
+      }
+    }
+
+    // 经济效果
+    const { getWorkIncome, getConsumptionCost } = await import("../world/economy.js");
+    if (actionName === "work") {
+      state.gold += getWorkIncome("冒险者"); // 玩家默认职业
+    } else if (actionName === "eat" || actionName === "drink") {
+      const cost = getConsumptionCost(actionName, state.locationId);
+      state.gold = Math.max(0, state.gold - cost);
+    } else if (actionName === "give_gift") {
+      state.gold = Math.max(0, state.gold - 20);
+    }
+
+    // 多 tick 行为
+    if (result.duration && result.duration > 1) {
+      state.currentAction = { name: actionName, remainingTicks: result.duration - 1 };
+    } else {
+      state.currentAction = undefined;
+    }
+
+    // 广播事件
+    const event: import("../core/event-bus.js").WorldEvent = {
+      id: crypto.randomUUID(),
+      tick: this.world.tick,
+      type: `action.${actionName}`,
+      actorId: this._playerId,
+      targetId: args.target as string | undefined,
+      locationId: state.locationId,
+      description: `${state.name} ${result.description}`,
+      effects: result.effects.map((e) => ({
+        type: e.type, targetId: e.targetId, field: e.field, delta: e.delta, value: e.value,
+      })),
+      witnesses: this.world.getCharactersAtLocation(state.locationId).filter((id) => id !== this._playerId),
+    };
+    await this.eventBus.emit(event);
+
+    // talk 产生关系变化
+    if (actionName === "talk" && args.target) {
+      const targetId = this._resolveCharacterId(args.target as string);
+      this.relationships.modify(this._playerId, targetId, 3, this.world.tick, result.description);
+    }
+
+    // 存入玩家记忆
+    this.memory.add(this._playerId, {
+      tick: this.world.tick,
+      type: "event",
+      content: result.description,
+      importance: actionName === "talk" ? 7 : 4,
+      relatedCharacterId: actionName === "talk" ? args.target as string : undefined,
+    });
+
+    return {
+      characterId: this._playerId,
+      thought: "",
+      action: { name: actionName, args },
+      result,
+    };
+  }
+
+  /** 获取玩家可用的行为列表 */
+  getPlayerActions(): Array<{ name: string; description: string }> {
+    return this._actions.map((a) => ({ name: a.tool.name, description: a.tool.description }));
+  }
+
   /** 运行 N 个 tick */
   async runTicks(count: number, startTick: number): Promise<TickSummary[]> {
     const { tickToGameTime } = await import("../core/tick-engine.js");
@@ -279,20 +406,23 @@ export class Simulation {
   }
 
   /** 把 LLM 返回的 target（可能是 ID 或名字）解析为角色 ID */
-  private _resolveCharacterId(raw: string): string {
-    // 1. 直接匹配 ID
+  _resolveCharacterId(raw: string): string {
+    // 1. 直接匹配 ID（AI 角色或玩家）
     if (this._configs.has(raw)) return raw;
+    if (this._playerId === raw) return raw;
+    const charByRaw = this.world.getCharacter(raw);
+    if (charByRaw) return raw;
 
     // 2. 按名字匹配（忽略大小写）
     const lower = raw.toLowerCase();
-    for (const [id, config] of this._configs) {
-      if (config.card.name.toLowerCase() === lower) return id;
+    for (const c of this.world.getAllCharacters()) {
+      if (c.name.toLowerCase() === lower) return c.id;
     }
 
     // 3. 部分匹配（名字包含）
-    for (const [id, config] of this._configs) {
-      if (config.card.name.toLowerCase().includes(lower) || lower.includes(config.card.name.toLowerCase())) {
-        return id;
+    for (const c of this.world.getAllCharacters()) {
+      if (c.name.toLowerCase().includes(lower) || lower.includes(c.name.toLowerCase())) {
+        return c.id;
       }
     }
 

@@ -9,6 +9,8 @@ export interface ActionResult {
   effects: ActionEffect[];
   /** 行为占用的 tick 数（默认 1） */
   duration?: number;
+  /** 行为是否成功执行（默认 true）。false 表示前置条件不满足 */
+  success?: boolean;
 }
 
 export interface ActionEffect {
@@ -26,8 +28,11 @@ export interface ActionEffect {
 export interface ActionContext {
   characterId: string;
   locationId: string;
+  locationType: string;
   tick: number;
   nearbyCharacters: string[];
+  gold: number;
+  needs: { hunger: number; energy: number; social: number; happiness: number; hygiene: number };
 }
 
 /** 工具调用参数 → 行为结果 */

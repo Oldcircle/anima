@@ -64,34 +64,70 @@ export function createApiServer(config: ServerConfig) {
         }
         break;
       }
+      case "player_action": {
+        // 玩家执行任意动作（走和 AI 同一管道）
+        const { action, args } = msg.data ?? {};
+        if (action && args) {
+          handlePlayerAction(action, args, ws);
+        }
+        break;
+      }
       case "player_talk": {
-        // 玩家对某个角色说话
+        // 兼容旧 API：转化为 player_action
         const { targetId, message } = msg.data ?? {};
         if (targetId && message) {
-          handlePlayerTalk(targetId, message, ws);
+          handlePlayerAction("talk", { target: targetId, message }, ws);
         }
+        break;
+      }
+      case "get_player_actions": {
+        ws.send(JSON.stringify({ type: "player_actions", data: simulation.getPlayerActions() }));
         break;
       }
     }
   }
 
-  function handlePlayerTalk(targetId: string, playerMessage: string, ws: WebSocket) {
-    const target = simulation.world.getCharacter(targetId);
-    if (!target) {
-      ws.send(JSON.stringify({ type: "player_talk_error", data: { error: "角色不存在" } }));
+  async function handlePlayerAction(actionName: string, args: Record<string, unknown>, ws: WebSocket) {
+    if (!simulation.playerId) {
+      ws.send(JSON.stringify({ type: "player_action_error", data: { error: "玩家未加入世界" } }));
       return;
     }
 
-    // 通过信箱发送消息（和 AI 角色用 talk 一样）
-    simulation.world.sendMessage(targetId, {
-      fromId: "player",
-      fromName: "玩家",
-      content: playerMessage,
-      tick: simulation.world.tick,
-    });
+    const playerState = simulation.world.getCharacter(simulation.playerId);
+    if (!playerState) {
+      ws.send(JSON.stringify({ type: "player_action_error", data: { error: "玩家状态不存在" } }));
+      return;
+    }
 
-    ws.send(JSON.stringify({ type: "player_talk_sent", data: { targetId, message: playerMessage } }));
-    broadcast({ type: "player_talk", data: { targetId, message: playerMessage } });
+    // 检查玩家是否在执行多 tick 行为
+    if (playerState.currentAction && playerState.currentAction.remainingTicks > 0) {
+      ws.send(JSON.stringify({
+        type: "player_action_error",
+        data: { error: `正在${playerState.currentAction.name}中，还需要 ${playerState.currentAction.remainingTicks} 个 tick` },
+      }));
+      return;
+    }
+
+    const result = await simulation.executePlayerAction(actionName, args);
+    if (!result) {
+      ws.send(JSON.stringify({ type: "player_action_error", data: { error: `未知行为: ${actionName}` } }));
+      return;
+    }
+
+    ws.send(JSON.stringify({ type: "player_action_result", data: result }));
+    broadcast({
+      type: "player_action",
+      data: {
+        action: result.action,
+        result: result.result,
+        playerState: {
+          locationId: playerState.locationId,
+          needs: playerState.needs,
+          gold: playerState.gold,
+          currentAction: playerState.currentAction,
+        },
+      },
+    });
   }
 
   function broadcast(msg: object) {
@@ -170,6 +206,28 @@ export function createApiServer(config: ServerConfig) {
 
   app.get("/api/relationships", (_req, res) => {
     res.json(simulation.relationships.getAll());
+  });
+
+  // 玩家 API
+  app.get("/api/player", (_req, res) => {
+    if (!simulation.playerId) return res.status(404).json({ error: "玩家未加入世界" });
+    const state = simulation.world.getCharacter(simulation.playerId);
+    if (!state) return res.status(404).json({ error: "玩家状态不存在" });
+    const memories = simulation.memory.getRecent(simulation.playerId, 20);
+    const relationships = simulation.relationships.getRelationshipsOf(simulation.playerId);
+    res.json({ ...state, memories, relationships });
+  });
+
+  app.get("/api/player/actions", (_req, res) => {
+    res.json(simulation.getPlayerActions());
+  });
+
+  app.post("/api/player/action", async (req, res) => {
+    const { action, args } = req.body ?? {};
+    if (!action || !args) return res.status(400).json({ error: "需要 action 和 args" });
+    const result = await simulation.executePlayerAction(action, args);
+    if (!result) return res.status(400).json({ error: `未知行为: ${action}` });
+    res.json(result);
   });
 
   // 静态文件

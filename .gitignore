@@ -6,3 +6,5 @@ dist/
 data/save.db
 data/save.db-wal
 data/save.db-shm
+logs/
+sim-*-log.txt

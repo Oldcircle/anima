@@ -49,7 +49,7 @@ export const exploreAction: ActionDefinition = {
 export const drinkAction: ActionDefinition = {
   tool: {
     name: "drink",
-    description: "喝酒或饮料。在酒吧或咖啡馆。",
+    description: "喝酒或饮料。在酒吧（12金币）或咖啡馆（8金币）消费。",
     parameters: {
       type: "object",
       properties: {
@@ -57,14 +57,21 @@ export const drinkAction: ActionDefinition = {
       },
     },
   },
-  handler: (args, ctx): ActionResult => ({
-    description: `喝了${args.beverage ?? "一杯饮料"}`,
-    effects: [
-      { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 8 },
-      { type: "need_change", targetId: ctx.characterId, field: "hunger", delta: 5 },
-    ],
-    duration: 2,
-  }),
+  handler: (args, ctx): ActionResult => {
+    const cost = ctx.locationId === "bar" ? 12 : 8;
+    if (ctx.gold < cost) {
+      return { description: `想喝${args.beverage ?? "饮料"}，但钱不够（需要${cost}金币，只有${ctx.gold}）`, effects: [], success: false };
+    }
+    return {
+      description: `喝了${args.beverage ?? "一杯饮料"}`,
+      effects: [
+        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 8 },
+        { type: "need_change", targetId: ctx.characterId, field: "hunger", delta: 5 },
+        { type: "need_change", targetId: ctx.characterId, field: "energy", delta: 5 },
+      ],
+      duration: 2,
+    };
+  },
 };
 
 export const hobbyAction: ActionDefinition = {

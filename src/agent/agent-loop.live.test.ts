@@ -35,16 +35,7 @@ const aliceCard: CharacterCard = {
   },
   background:
     "从城市搬来三年了，开了镇上唯一的花店。最好的朋友是面包店的 Maria。喜欢安静的生活。",
-  dailyRoutine: {
-    "06:00": "起床，照料花园",
-    "08:00": "开门营业",
-    "12:00": "午餐，通常在咖啡馆",
-    "13:00": "继续营业",
-    "18:00": "关门，散步到海边",
-    "20:00": "在家阅读或烘焙",
-    "23:00": "睡觉",
-  },
-  relationships: { bob: { level: 5, type: "friend" } },
+  relationships: {},
 };
 
 describe.skipIf(SKIP)("Agent Loop — Live (DeepSeek)", () => {

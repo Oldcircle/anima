@@ -21,8 +21,7 @@ const aliceCard: CharacterCard = {
     speechStyle: "轻声细语",
   },
   background: "开了镇上唯一的花店",
-  dailyRoutine: { "08:00": "开门营业", "12:00": "午餐", "18:00": "散步" },
-  relationships: { bob: { level: 5, type: "friend" } },
+  relationships: {},
 };
 
 describe("Agent Loop", () => {
@@ -89,12 +88,12 @@ describe("Agent Loop", () => {
     expect(r2.skipReason).toContain("执行中");
   });
 
-  it("LLM 失败时回退到日程兜底", async () => {
-    // 不设置任何响应，让 mock 返回空 toolCalls
+  it("LLM 未调用工具时返回 skipped", async () => {
     mockLLM.setDefaultResponse("嗯...", []);
 
     const result = await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
     expect(result.skipped).toBe(true);
+    expect(result.skipReason).toContain("未调用工具");
   });
 
   it("事件被广播到 EventBus", async () => {

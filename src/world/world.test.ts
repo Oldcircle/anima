@@ -44,7 +44,7 @@ describe("World", () => {
 
     const aliceAfter = world.getCharacter("alice")!.needs;
     expect(aliceAfter.hunger).toBe(aliceBefore.hunger - 2);
-    expect(aliceAfter.energy).toBe(aliceBefore.energy - 1);
+    expect(aliceAfter.energy).toBe(aliceBefore.energy - 0.5);
     expect(aliceAfter.social).toBe(aliceBefore.social - 1);
     expect(aliceAfter.happiness).toBe(aliceBefore.happiness); // 快乐不自动衰减
     expect(aliceAfter.hygiene).toBe(aliceBefore.hygiene - 0.5);

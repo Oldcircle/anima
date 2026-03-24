@@ -11,20 +11,32 @@ export function loadCharacterFromYAML(filePath: string): CharacterCard {
   const raw = readFileSync(filePath, "utf-8");
   const data = parseYAML(raw);
 
+  const personality = data.personality ?? {};
+
   return {
     id: data.id,
     name: data.name,
     age: data.age,
     occupation: data.occupation,
     home: data.home,
+    appearance: data.appearance,
     personality: {
-      traits: data.personality?.traits ?? [],
-      interests: data.personality?.interests ?? [],
-      dislikes: data.personality?.dislikes ?? [],
-      speechStyle: data.personality?.speech_style ?? "",
+      traits: personality.traits ?? [],
+      interests: personality.interests ?? [],
+      dislikes: personality.dislikes ?? [],
+      speechStyle: personality.speech_style ?? personality.speechStyle ?? "",
+      coreTraits: personality.core_traits,
+      psychology: personality.psychology,
+      stressResponse: personality.stress_response,
+      speech: personality.speech ? {
+        style: personality.speech.style ?? "",
+        habits: personality.speech.habits ?? [],
+        examples: personality.speech.examples ?? [],
+      } : undefined,
     },
     background: data.background ?? "",
-    dailyRoutine: data.daily_routine ?? {},
+    backstory: data.backstory,
+    preferences: data.preferences,
     relationships: data.relationships ?? {},
   };
 }

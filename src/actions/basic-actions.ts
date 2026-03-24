@@ -1,13 +1,16 @@
 /**
- * Basic Actions — 基础行为工具（Phase 1: eat, sleep, go_to, talk, work）
+ * Basic Actions — 基础行为工具（eat, sleep, go_to, talk, work, wash）
+ *
+ * 约束检查在 handler 内：不满足前置条件 → success: false
  */
 
 import type { ActionDefinition, ActionResult, ActionContext } from "./types.js";
+import { getConsumptionCost } from "../world/economy.js";
 
 export const eatAction: ActionDefinition = {
   tool: {
     name: "eat",
-    description: "去吃饭，恢复饥饿值。可以在咖啡馆、酒吧或家里吃。",
+    description: "去吃饭，恢复饥饿值。在家免费，在商业地点需要 15 金币。",
     parameters: {
       type: "object",
       properties: {
@@ -26,13 +29,18 @@ export const eatAction: ActionDefinition = {
   handler: (args, ctx): ActionResult => {
     const food = (args.food as string) ?? "一顿简单的饭";
     const location = args.location as string;
+    const cost = getConsumptionCost("eat", location);
+    if (cost > 0 && ctx.gold < cost) {
+      return { description: `想在${location}吃饭，但钱不够（需要${cost}金币，只有${ctx.gold}）`, effects: [], success: false };
+    }
     return {
       description: `在${location}吃了${food}`,
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "hunger", delta: 50 },
+        { type: "need_change", targetId: ctx.characterId, field: "energy", delta: 10 },
         { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 5 },
       ],
-      duration: 2, // 30 分钟
+      duration: 2,
     };
   },
 };
@@ -40,20 +48,22 @@ export const eatAction: ActionDefinition = {
 export const sleepAction: ActionDefinition = {
   tool: {
     name: "sleep",
-    description: "回家睡觉，恢复精力。只能在晚上或精力很低时使用。",
+    description: "回家睡觉，恢复精力。必须在自己家里才能睡。",
     parameters: {
       type: "object",
       properties: {},
     },
   },
   handler: (_args, ctx): ActionResult => {
+    if (ctx.locationType !== "residential") {
+      return { description: "这里不是家，睡不了，得先回家", effects: [], success: false };
+    }
     return {
       description: "回家睡觉了",
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "energy", delta: 100 },
-        { type: "need_change", targetId: ctx.characterId, field: "hygiene", delta: -5 },
       ],
-      duration: 32, // 8 小时
+      duration: 32,
     };
   },
 };
@@ -123,7 +133,7 @@ export const talkAction: ActionDefinition = {
 export const workAction: ActionDefinition = {
   tool: {
     name: "work",
-    description: "在工作地点工作（花店、渔场等），赚取金币。",
+    description: "在工作地点工作（花店、渔场等），赚取金币。精力太低（<10）时干不动。",
     parameters: {
       type: "object",
       properties: {
@@ -135,6 +145,9 @@ export const workAction: ActionDefinition = {
     },
   },
   handler: (args, ctx): ActionResult => {
+    if (ctx.needs.energy < 10) {
+      return { description: "太累了，干不动活，需要先休息", effects: [], success: false };
+    }
     const activity = (args.activity as string) ?? "工作";
     return {
       description: `在工作：${activity}`,
@@ -142,13 +155,38 @@ export const workAction: ActionDefinition = {
         { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -15 },
         { type: "need_change", targetId: ctx.characterId, field: "hunger", delta: -10 },
       ],
-      duration: 8, // 2 小时
+      duration: 8,
+    };
+  },
+};
+
+export const washAction: ActionDefinition = {
+  tool: {
+    name: "wash",
+    description: "洗澡/梳洗，恢复卫生值。必须在家里才能洗。",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+  },
+  handler: (_args, ctx): ActionResult => {
+    if (ctx.locationType !== "residential") {
+      return { description: "这里没法洗澡，得先回家", effects: [], success: false };
+    }
+    return {
+      description: "洗了个澡，焕然一新",
+      effects: [
+        { type: "need_change", targetId: ctx.characterId, field: "hygiene", delta: 100 },
+        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 5 },
+      ],
+      duration: 2,
     };
   },
 };
 
 import { ALL_SOCIAL_ACTIONS } from "./social-actions.js";
 import { ALL_LEISURE_ACTIONS } from "./leisure-actions.js";
+import { ALL_GRAY_ACTIONS } from "./gray-actions.js";
 
 export const ALL_BASIC_ACTIONS: ActionDefinition[] = [
   eatAction,
@@ -156,6 +194,8 @@ export const ALL_BASIC_ACTIONS: ActionDefinition[] = [
   goToAction,
   talkAction,
   workAction,
+  washAction,
   ...ALL_SOCIAL_ACTIONS,
   ...ALL_LEISURE_ACTIONS,
+  ...ALL_GRAY_ACTIONS,
 ];

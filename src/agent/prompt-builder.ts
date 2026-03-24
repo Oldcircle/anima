@@ -1,5 +1,8 @@
 /**
  * Prompt Builder — 为 Agent 构建 LLM 提示词
+ *
+ * System prompt: 完整的角色身份描写（不变）
+ * User prompt: 当前世界状态 + 约束预提醒（每 tick 变化）
  */
 
 import type { CharacterCard } from "../character/types.js";
@@ -10,27 +13,77 @@ import type { WorldEvent } from "../core/event-bus.js";
 import { weatherDescription, weatherHint } from "../world/weather.js";
 
 export function buildSystemPrompt(card: CharacterCard): string {
-  return `你是 ${card.name}，${card.age} 岁，${card.occupation}。
+  const parts: string[] = [];
 
-## 你的性格
-- 性格特点：${card.personality.traits.join("、")}
-- 兴趣爱好：${card.personality.interests.join("、")}
-- 不喜欢的：${card.personality.dislikes.join("、")}
-- 说话风格：${card.personality.speechStyle}
+  parts.push(`你是 ${card.name}，${card.age} 岁，${card.occupation}。`);
 
-## 你的背景
-${card.background.trim()}
+  // 外貌
+  if (card.appearance) {
+    parts.push(`\n## 你的外貌\n${card.appearance.trim()}`);
+  }
 
-## 行为规则
-- 你是一个生活在小镇上的真实人物，有自己的需求和情感
-- 根据当前的时间、位置、需求值和周围的人来决定下一步做什么
+  // 性格 — 优先使用深度描写
+  parts.push("\n## 你的性格");
+  if (card.personality.coreTraits) {
+    parts.push(card.personality.coreTraits.trim());
+  } else {
+    parts.push(`性格特点：${card.personality.traits.join("、")}`);
+  }
+
+  if (card.personality.psychology) {
+    parts.push(`\n## 你的内心\n${card.personality.psychology.trim()}`);
+  }
+
+  if (card.personality.stressResponse) {
+    parts.push(`\n## 你在压力下\n${card.personality.stressResponse.trim()}`);
+  }
+
+  // 说话风格
+  parts.push("\n## 你的说话方式");
+  if (card.personality.speech) {
+    parts.push(card.personality.speech.style);
+    if (card.personality.speech.habits.length > 0) {
+      parts.push(`口癖：${card.personality.speech.habits.join("、")}`);
+    }
+    if (card.personality.speech.examples.length > 0) {
+      parts.push("你说话的例子：");
+      for (const ex of card.personality.speech.examples) {
+        parts.push(`- 「${ex}」`);
+      }
+    }
+  } else {
+    parts.push(card.personality.speechStyle);
+  }
+
+  // 兴趣/厌恶
+  parts.push(`\n兴趣爱好：${card.personality.interests.join("、")}`);
+  parts.push(`不喜欢的：${card.personality.dislikes.join("、")}`);
+
+  // 背景 — 优先使用结构化经历
+  parts.push("\n## 你的过去");
+  if (card.backstory && card.backstory.length > 0) {
+    for (const b of card.backstory) {
+      parts.push(`- ${b.event} → ${b.impact}`);
+    }
+  } else {
+    parts.push(card.background.trim());
+  }
+
+  // 行为规则
+  parts.push(`\n## 行为规则
+- 你是一个生活在海边小镇上的真实人物，有自己的需求、情感和经济状况
+- 根据当前的时间、位置、需求值、金币和周围的人来决定下一步做什么
 - 调用一个工具来执行你的行为
+- 注意工具的前置条件（在家才能睡觉/洗澡，需要金币才能在外面消费）
 - 如果需求值很低（<30），优先满足该需求
-- 如果附近有人且你的社交需求不高，优先考虑和他们说话（talk）或互动
+- 如果附近有人且你的社交需求不高，考虑和他们说话（talk）或互动
 - 如果"有人对你说"里有消息，优先考虑用 talk 回应（也可以选择不回应）
+- 如果你身无分文又饥肠辘辘，你可能需要做一些不太体面的事（乞讨、偷窃）——生存是第一位的
 - talk 发出的消息不会阻塞，对方会在下一轮看到
 - 你的内心想法用普通文本表达，行为用工具调用表达
-- 保持角色一致性，用你的说话风格`;
+- 保持角色一致性，用你的说话风格和性格特点来决定行为`);
+
+  return parts.join("\n");
 }
 
 function formatNeeds(needs: CharacterNeeds): string {
@@ -49,19 +102,47 @@ function formatNeeds(needs: CharacterNeeds): string {
   ].join("\n");
 }
 
-function formatRoutineHint(card: CharacterCard, hour: number): string {
-  const times = Object.keys(card.dailyRoutine)
-    .map((t) => ({ hour: parseInt(t.split(":")[0]!, 10), desc: card.dailyRoutine[t]! }))
-    .sort((a, b) => a.hour - b.hour);
+function formatPreferencesHint(card: CharacterCard): string {
+  if (!card.preferences || Object.keys(card.preferences).length === 0) {
+    return "";
+  }
+  const lines = Object.entries(card.preferences)
+    .map(([key, desc]) => `- ${key}: ${desc}`);
+  return `## 你的生活习惯\n${lines.join("\n")}`;
+}
 
-  // 找到当前时间段的日程
-  let current = times[times.length - 1]!;
-  for (const t of times) {
-    if (t.hour <= hour) current = t;
+function locationTypeLabel(type: string): string {
+  switch (type) {
+    case "residential": return "住宅区";
+    case "commercial": return "商业区";
+    case "public": return "公共区域";
+    case "nature": return "自然区域";
+    default: return type;
+  }
+}
+
+function buildConstraintWarnings(state: CharacterState, locationType: string): string[] {
+  const warnings: string[] = [];
+
+  if (state.gold === 0) {
+    warnings.push("⚠️ 你现在身无分文（0金币），不能在外面吃饭（需15金币）或喝酒（需8-12金币）。你可以回家免费吃饭，或者去工作赚钱。如果走投无路，可以乞讨（beg）或偷窃（steal）。");
+  } else if (state.gold < 15) {
+    warnings.push(`⚠️ 你只剩 ${state.gold} 金币，在外吃饭需要 15 金币，你可能吃不起。回家吃饭是免费的。`);
   }
 
-  const next = times.find((t) => t.hour > hour) ?? times[0]!;
-  return `日程参考：现在通常是「${current.desc}」，接下来是「${next.desc}」`;
+  if (locationType !== "residential") {
+    warnings.push(`⚠️ 你现在在${locationTypeLabel(locationType)}，不能在这里睡觉（sleep）或洗澡（wash），需要先回家（go_to 你的家）。`);
+  }
+
+  if (state.needs.energy < 10) {
+    warnings.push("⚠️ 你精力耗尽了，无法工作（work），需要先回家睡觉。");
+  }
+
+  if (state.gold === 0 && state.needs.hunger < 20) {
+    warnings.push("⚠️ 你又穷又饿，处境非常危险。你必须立刻想办法解决——去工作赚钱、回家吃饭、向人乞讨、或者铤而走险去偷。不能再无所事事了。");
+  }
+
+  return warnings;
 }
 
 export function buildUserPrompt(params: {
@@ -71,6 +152,7 @@ export function buildUserPrompt(params: {
   nearbyCharacters: Array<{ id: string; name: string; relationship?: { level: number; type: string } }>;
   recentEvents: WorldEvent[];
   locationName: string;
+  locationType?: string;
   allLocationNames: Array<{ id: string; name: string }>;
   recentMemories?: string;
   weather?: Weather;
@@ -78,26 +160,38 @@ export function buildUserPrompt(params: {
   inboxMessages?: InboxMessage[];
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
+  const locationType = params.locationType ?? "public";
 
   const parts: string[] = [];
 
   const weatherStr = params.weather ? `  天气: ${weatherDescription(params.weather)}` : "";
-  parts.push(`## 当前状态\n时间: ${formatGameTime(gameTime)}${weatherStr}\n位置: ${locationName}（你已经在这里了）`);
+  parts.push(`## 当前状态\n时间: ${formatGameTime(gameTime)}${weatherStr}\n位置: ${locationName}（${locationTypeLabel(locationType)}）\n💰 金币: ${state.gold}`);
 
   const hint = params.weather ? weatherHint(params.weather) : "";
   if (hint) parts.push(hint);
 
   if (params.festivalHint) parts.push(`\n🎉 **${params.festivalHint}**`);
 
+  // 约束预提醒
+  const warnings = buildConstraintWarnings(state, locationType);
+  if (warnings.length > 0) {
+    parts.push("\n" + warnings.join("\n"));
+  }
+
+  // 附近的人
   if (nearbyCharacters.length > 0) {
     const people = nearbyCharacters.map((c) => {
       const rel = c.relationship;
       const relInfo = rel ? ` [${rel.type}, 亲密度:${rel.level}]` : " [陌生人]";
       return `${c.name}(ID:${c.id})${relInfo}`;
     }).join("\n  ");
-    parts.push(`附近的人:\n  ${people}\n注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。`);
+    parts.push(`\n附近的人:\n  ${people}\n注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。`);
   } else {
-    parts.push("附近没有其他人（无法使用 talk 工具）");
+    if (state.needs.social < 20) {
+      parts.push("\n附近没有其他人。你已经很久没和人说话了，感到非常孤独。也许应该去广场、咖啡馆或酒吧等有人的地方看看。");
+    } else {
+      parts.push("\n附近没有其他人。");
+    }
   }
 
   // 信箱消息
@@ -108,9 +202,15 @@ export function buildUserPrompt(params: {
     parts.push(`\n## 有人对你说\n${msgs}\n（你可以用 talk 工具回应，也可以无视）`);
   }
 
+  // 需求值
   parts.push(`\n## 你的需求\n${formatNeeds(state.needs)}`);
 
-  parts.push(`\n## ${formatRoutineHint(card, gameTime.hour)}`);
+  if (state.needs.social < 15) {
+    parts.push("你已经很久没有和任何人交流了，内心深处渴望有人陪伴。");
+  }
+
+  const prefsHint = formatPreferencesHint(card);
+  if (prefsHint) parts.push(`\n${prefsHint}`);
 
   if (params.recentMemories) {
     parts.push(`\n## 你的记忆（最近经历）\n${params.recentMemories}`);
@@ -123,7 +223,6 @@ export function buildUserPrompt(params: {
     }
   }
 
-  // 可用地点列表
   const otherLocations = allLocationNames
     .filter((l) => l.id !== state.locationId)
     .map((l) => `${l.id}(${l.name})`)

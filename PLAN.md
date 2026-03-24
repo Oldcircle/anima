@@ -33,21 +33,50 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 
 ---
 
-## 当前：反应轮 + 玩家系统
+## 已完成：修复第一性原理违规 ✅
 
-- [ ] **反应轮（Reaction Rounds）**
-  - 正常决策后，检查信箱有新消息的角色
-  - 给他们额外决策机会（独立 LLM 调用）
-  - 如果回复 talk → 对方又有新消息 → 再一轮
-  - 最多 MAX_REACTION_ROUNDS 轮（3-4 轮）
-  - 对话在同一个 tick 内自然展开
-  - 验收：Alice talk Bob → Bob 同 tick 回复 → Alice 再接话
+- [x] 删除夜间强制睡觉
+- [x] 添加 `wash` 工具
+- [x] 修复 sleep hygiene bug
+- [x] 反应轮 Live 验证
 
-- [ ] **玩家成为完整 Agent**
-  - 有 CharacterState（位置、需求、金币、关系）
-  - 前端操作 → WebSocket → 转化为工具调用
-  - 点击地点 = go_to，输入文字 = talk
-  - 和 AI 角色走完全相同的执行管道
+---
+
+## 已完成：工具约束 + 灰色行为 ✅
+
+- [x] ActionContext 扩展（gold/needs/locationType）
+- [x] ActionResult success 字段 + 失败存记忆
+- [x] 6 个约束（eat/drink/give_gift/work/wash/sleep）
+- [x] 3 个灰色行为（argue/steal/beg）
+- [x] 16 个约束单元测试 + 96 个总测试通过
+- [x] Live 7 日模拟（sim-7day-log.txt）
+
+---
+
+## 已完成：Prompt 强化 + 角色卡重写 ✅
+
+- [x] Prompt 注入：金币余额、位置类型、社交饥渴、困境引导、约束预提醒
+- [x] 角色卡扩展：appearance、core_traits、psychology、stress_response、speech examples、backstory
+- [x] 6 个角色 YAML 重写（含新增丰川祥子）
+- [x] Live 1 日验证：约束失败 0 次，对话 28+ 次，祥子人格完整
+
+---
+
+## 已完成：活人感重构 ✅
+
+- [x] `daily_routine` → `preferences`（硬日程 → 软偏好）
+- [x] `relationships` 初始归零（关系从社交中涌现）
+- [x] 删除日程兜底（每 tick 必调 LLM）
+- [x] 96 个测试全部通过
+
+---
+
+## 已完成：玩家系统 ✅
+
+- [x] 玩家 = 完整 CharacterState（位置/需求/金币/关系/信箱）
+- [x] 前端操作 → WebSocket `player_action` → `executePlayerAction()` → 同一管道
+- [x] 和 AI 角色完全相同的执行/约束/效果/关系/记忆管道
+- [x] 113 个测试全部通过
 
 ---
 
@@ -62,7 +91,7 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 - [ ] 前端玩家操作面板（位置/需求/金币）
 - [ ] 角色记忆可视化
 - [ ] 关系网络图
-- [ ] 7 天模拟测试
+- [x] 7 天模拟测试（`stress-sim.test.ts`）
 
 ### 规模扩展
 - [ ] 更多角色（8-10）

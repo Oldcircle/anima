@@ -16,8 +16,7 @@ const aliceCard: CharacterCard = {
   home: "home_alice",
   personality: { traits: ["温柔"], interests: ["园艺"], dislikes: ["噪音"], speechStyle: "轻声细语" },
   background: "花店老板",
-  dailyRoutine: { "08:00": "营业", "12:00": "午餐" },
-  relationships: { bob: { level: 5, type: "friend" } },
+  relationships: {},
 };
 
 const bobCard: CharacterCard = {
@@ -28,8 +27,7 @@ const bobCard: CharacterCard = {
   home: "home_bob",
   personality: { traits: ["豪爽"], interests: ["钓鱼"], dislikes: ["早起"], speechStyle: "大大咧咧" },
   background: "渔夫",
-  dailyRoutine: { "05:00": "钓鱼", "12:00": "午餐" },
-  relationships: { alice: { level: 5, type: "friend" } },
+  relationships: {},
 };
 
 describe("Simulation", () => {

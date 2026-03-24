@@ -31,7 +31,7 @@ export const gossipAction: ActionDefinition = {
 export const giveGiftAction: ActionDefinition = {
   tool: {
     name: "give_gift",
-    description: "送礼物给某人。会大幅提升关系。需要在同一地点。",
+    description: "送礼物给某人（花费 20 金币）。会大幅提升关系。需要在同一地点。",
     parameters: {
       type: "object",
       properties: {
@@ -41,15 +41,20 @@ export const giveGiftAction: ActionDefinition = {
       required: ["target", "item"],
     },
   },
-  handler: (args, ctx): ActionResult => ({
-    description: `送了${args.item}给${args.target}`,
-    effects: [
-      { type: "relationship_change", targetId: ctx.characterId, field: args.target as string, delta: 5 },
-      { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 10 },
-      { type: "need_change", targetId: args.target as string, field: "happiness", delta: 15 },
-    ],
-    duration: 1,
-  }),
+  handler: (args, ctx): ActionResult => {
+    if (ctx.gold < 20) {
+      return { description: `想送${args.item}给${args.target}，但买不起（需要20金币，只有${ctx.gold}）`, effects: [], success: false };
+    }
+    return {
+      description: `送了${args.item}给${args.target}`,
+      effects: [
+        { type: "relationship_change", targetId: ctx.characterId, field: args.target as string, delta: 5 },
+        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 10 },
+        { type: "need_change", targetId: args.target as string, field: "happiness", delta: 15 },
+      ],
+      duration: 1,
+    };
+  },
 };
 
 export const comfortAction: ActionDefinition = {

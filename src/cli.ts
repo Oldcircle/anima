@@ -25,11 +25,13 @@ const AUTO_SAVE_INTERVAL = 96; // 每游戏日自动存档
 
 // --- 地点 ---
 const LOCATIONS = [
+  { id: "home_player", name: "旅人的住处", type: "residential" as const, presentCharacters: [] },
   { id: "home_alice", name: "Alice 的家", type: "residential" as const, presentCharacters: [] },
   { id: "home_bob", name: "Bob 的家", type: "residential" as const, presentCharacters: [] },
   { id: "home_maria", name: "Maria 的家", type: "residential" as const, presentCharacters: [] },
   { id: "home_lao_chen", name: "老陈的家", type: "residential" as const, presentCharacters: [] },
   { id: "home_emily", name: "Emily 的家", type: "residential" as const, presentCharacters: [] },
+  { id: "home_sakiko", name: "祥子的家", type: "residential" as const, presentCharacters: [] },
   { id: "flower_shop", name: "Alice的花店", type: "commercial" as const, openHours: { open: 8, close: 18 }, presentCharacters: [] },
   { id: "bakery", name: "Maria的面包店", type: "commercial" as const, openHours: { open: 7, close: 17 }, presentCharacters: [] },
   { id: "cafe", name: "咖啡馆", type: "commercial" as const, openHours: { open: 7, close: 22 }, presentCharacters: [] },
@@ -64,12 +66,13 @@ for (const card of characters) {
 
 const eventBus = new EventBus();
 
-// --- 创建模拟 ---
+// --- 创建模拟（玩家 = player 角色，不调 LLM） ---
 const simulation = new Simulation(world, eventBus, {
   characters,
   actions: ALL_BASIC_ACTIONS,
   provider,
   modelId: "deepseek-chat",
+  playerId: "player",
 });
 
 // --- 尝试读档 ---

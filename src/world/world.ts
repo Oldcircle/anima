@@ -16,7 +16,7 @@ const DEFAULT_NEEDS: CharacterNeeds = {
 /** 每 tick 的需求衰减 */
 const NEED_DECAY: Partial<CharacterNeeds> = {
   hunger: -2,
-  energy: -1,
+  energy: -0.5,
   social: -1,
   hygiene: -0.5,
 };

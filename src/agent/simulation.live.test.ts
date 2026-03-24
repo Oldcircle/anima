@@ -32,14 +32,7 @@ const aliceCard: CharacterCard = {
     speechStyle: "说话轻声细语，经常用花的比喻",
   },
   background: "从城市搬来三年了，开了镇上唯一的花店。喜欢安静的生活。",
-  dailyRoutine: {
-    "06:00": "起床照料花园",
-    "08:00": "开门营业",
-    "12:00": "午餐，通常在咖啡馆",
-    "18:00": "散步到海边",
-    "23:00": "睡觉",
-  },
-  relationships: { bob: { level: 5, type: "friend" } },
+  relationships: {},
 };
 
 const bobCard: CharacterCard = {
@@ -55,14 +48,7 @@ const bobCard: CharacterCard = {
     speechStyle: "说话大大咧咧，爱用夸张的比喻，经常哈哈大笑",
   },
   background: "土生土长的镇民，家族世代捕鱼。妻子三年前去世后一个人生活。",
-  dailyRoutine: {
-    "05:00": "起床去钓鱼",
-    "11:00": "回来卖鱼",
-    "12:00": "午餐",
-    "17:00": "去酒吧",
-    "22:00": "回家睡觉",
-  },
-  relationships: { alice: { level: 5, type: "friend" } },
+  relationships: {},
 };
 
 describe.skipIf(SKIP)("Simulation — Live (DeepSeek)", () => {
