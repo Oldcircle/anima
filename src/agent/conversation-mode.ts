@@ -114,6 +114,8 @@ export interface ConversationPromptParams {
   weather?: Weather;
   /** 关系信息 */
   relationship?: { level: number; type: string };
+  /** 已有的印象 */
+  impressionText?: string;
   /** 角色最近记忆 */
   recentMemories?: string;
 }
@@ -139,18 +141,22 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
   const weatherStr = params.weather ? weatherDescription(params.weather) : "";
   if (weatherStr) parts.push(`天气：${weatherStr}`);
 
-  // 2. 对话对象描述
-  const relDesc = params.relationship
-    ? `你们的关系：${params.relationship.type}（亲密度 ${params.relationship.level}）`
-    : "你们还不太熟";
-
-  parts.push(`\n## 你的对话对象\n${partnerCard.name}，${partnerCard.age} 岁，${partnerCard.occupation}。`);
-  if (partnerCard.appearance) {
-    // 只取第一句作为简短外貌
-    const shortAppearance = partnerCard.appearance.trim().split("\n")[0];
-    parts.push(shortAppearance!);
+  // 2. 对话对象描述（有印象时用印象，否则用基本信息）
+  parts.push(`\n## 你的对话对象`);
+  if (params.impressionText) {
+    parts.push(`**${partnerCard.name}**(ID:${partnerCard.id})`);
+    parts.push(params.impressionText);
+  } else {
+    parts.push(`${partnerCard.name}，${partnerCard.age} 岁，${partnerCard.occupation}。`);
+    if (partnerCard.appearance) {
+      const shortAppearance = partnerCard.appearance.trim().split("\n")[0];
+      parts.push(shortAppearance!);
+    }
+    const relDesc = params.relationship
+      ? `你们的关系：${params.relationship.type}（亲密度 ${params.relationship.level}）`
+      : "你们还不太熟";
+    parts.push(relDesc);
   }
-  parts.push(relDesc);
 
   // 3. 你当前的状态
   const moodHints: string[] = [];
@@ -215,6 +221,7 @@ export function buildConversationRequest(params: {
   atmosphere?: LocationAtmosphere;
   weather?: Weather;
   relationship?: { level: number; type: string };
+  impressionText?: string;
   recentMemories?: string;
   actions: ActionDefinition[];
 }): LLMRequest {
@@ -230,6 +237,7 @@ export function buildConversationRequest(params: {
     atmosphere: params.atmosphere,
     weather: params.weather,
     relationship: params.relationship,
+    impressionText: params.impressionText,
     recentMemories: params.recentMemories,
   });
 

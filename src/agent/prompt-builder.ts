@@ -12,6 +12,7 @@ import { formatGameTime } from "../core/tick-engine.js";
 import type { WorldEvent } from "../core/event-bus.js";
 import { weatherDescription, weatherHint } from "../world/weather.js";
 import { getAtmosphereText } from "../world/location-loader.js";
+import type { ImpressionStore } from "../memory/impressions.js";
 
 export function buildSystemPrompt(card: CharacterCard): string {
   const parts: string[] = [];
@@ -174,6 +175,8 @@ export function buildUserPrompt(params: {
   inboxMessages?: InboxMessage[];
   /** 地点的感官描述 */
   atmosphere?: LocationAtmosphere;
+  /** 印象系统（如有） */
+  impressions?: ImpressionStore;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
@@ -201,15 +204,37 @@ export function buildUserPrompt(params: {
     parts.push("\n" + warnings.join("\n"));
   }
 
-  // 附近的人 — 用可观察状态描述替代纯标签
+  // 附近的人 — 有印象时用叙事描述，否则用标签 + 可观察状态
   if (nearbyCharacters.length > 0) {
-    const people = nearbyCharacters.map((c) => {
-      const rel = c.relationship;
-      const relInfo = rel ? `[${rel.type}, 亲密度:${rel.level}]` : "[陌生人]";
-      const actionDesc = c.currentAction ? `——${c.currentAction}` : "";
-      return `- ${c.name}(ID:${c.id}) ${relInfo}${actionDesc}`;
-    }).join("\n");
-    parts.push(`\n在场的人:\n${people}\n注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。`);
+    const hasAnyImpression = params.impressions && nearbyCharacters.some((c) =>
+      params.impressions!.get(card.id, c.id),
+    );
+
+    if (hasAnyImpression) {
+      // 印象模式：用叙事描述
+      parts.push(`\n## 你对在场的人的印象`);
+      for (const c of nearbyCharacters) {
+        const impText = params.impressions!.formatForPrompt(card.id, c.id);
+        const actionDesc = c.currentAction ? `（${c.currentAction}）` : "";
+        if (impText) {
+          parts.push(`**${c.name}**(ID:${c.id})${actionDesc}\n${impText}`);
+        } else {
+          const rel = c.relationship;
+          const relInfo = rel ? `[${rel.type}, 亲密度:${rel.level}]` : "[陌生人]";
+          parts.push(`- ${c.name}(ID:${c.id}) ${relInfo}${actionDesc ? `——${c.currentAction}` : ""}（你还不太了解这个人）`);
+        }
+      }
+    } else {
+      // 无印象：原来的标签模式
+      const people = nearbyCharacters.map((c) => {
+        const rel = c.relationship;
+        const relInfo = rel ? `[${rel.type}, 亲密度:${rel.level}]` : "[陌生人]";
+        const actionDesc = c.currentAction ? `——${c.currentAction}` : "";
+        return `- ${c.name}(ID:${c.id}) ${relInfo}${actionDesc}`;
+      }).join("\n");
+      parts.push(`\n在场的人:\n${people}`);
+    }
+    parts.push(`注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。`);
   } else {
     if (state.needs.social < 20) {
       parts.push("\n附近没有其他人。你已经很久没和人说话了，感到非常孤独。也许应该去广场、咖啡馆或酒吧等有人的地方看看。");

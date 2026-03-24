@@ -19,6 +19,8 @@ import { ShortTermMemory } from "../memory/short-term.js";
 import { runAgentTick, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest } from "./conversation-mode.js";
+import { ImpressionStore } from "../memory/impressions.js";
+import { updateImpressionsBidirectional } from "./impression-updater.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -52,6 +54,7 @@ export class Simulation {
   relationships: RelationshipManager;
   memory: ShortTermMemory;
   conversations: ConversationTracker;
+  impressions: ImpressionStore;
 
   get playerId(): string | undefined { return this._playerId; }
 
@@ -65,6 +68,7 @@ export class Simulation {
     this.relationships = new RelationshipManager();
     this.memory = new ShortTermMemory();
     this.conversations = new ConversationTracker();
+    this.impressions = new ImpressionStore();
     this._provider = config.provider;
     this._actions = config.actions;
     this._playerId = config.playerId;
@@ -160,7 +164,7 @@ export class Simulation {
       const state = this.world.getCharacter(id);
       if (!state) continue;
 
-      promises.push(runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory }));
+      promises.push(runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory, impressions: this.impressions }));
     }
 
     const agentResults = await Promise.all(promises);
@@ -215,6 +219,7 @@ export class Simulation {
             const location = this.world.getLocation(state.locationId);
             const rel = this.relationships.get(id, partnerId);
             const recentMemories = this.memory.formatForPrompt(id, 5);
+            const impressionText = this.impressions.formatForPrompt(id, partnerId);
             const conversationRequest = buildConversationRequest({
               card: config.card,
               state,
@@ -226,6 +231,7 @@ export class Simulation {
               atmosphere: location?.atmosphere,
               weather: this.world.weather,
               relationship: rel,
+              impressionText,
               recentMemories,
               actions: this._actions,
             });
@@ -233,13 +239,13 @@ export class Simulation {
             return runAgentTick({
               config, world: this.world, eventBus: this.eventBus, gameTime,
               relationships: this.relationships, memory: this.memory,
-              conversationRequest,
+              impressions: this.impressions, conversationRequest,
             });
           }
         }
 
         // 非对话模式：使用标准 agent tick
-        return runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory });
+        return runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory, impressions: this.impressions });
       });
       const reactionResults = await Promise.all(reactionPromises);
       results.push(...reactionResults);
@@ -263,6 +269,41 @@ export class Simulation {
       // 如果没有人回复 talk，停止反应轮
       const hasNewTalk = reactionResults.some((r) => r.action?.name === "talk");
       if (!hasNewTalk) break;
+    }
+
+    // 3.6 互动后印象更新：对有足够交流的角色对生成/更新叙事印象
+    // 异步执行，不阻塞 tick（fire-and-forget 但 await 在当前 tick 内）
+    const impressionPromises: Promise<void>[] = [];
+    const processedPairs = new Set<string>();
+    for (const r of results) {
+      if (r.action?.name === "talk" && r.action.args.target) {
+        const targetId = this._resolveCharacterId(r.action.args.target as string);
+        const pairKey = [r.characterId, targetId].sort().join(":");
+        if (processedPairs.has(pairKey)) continue;
+
+        const history = this.conversations.getHistory(r.characterId, targetId);
+        // 至少 4 条交换才值得生成印象（有实质性对话，不只是打招呼）
+        if (history.length >= 4) {
+          processedPairs.add(pairKey);
+          const cardA = this._configs.get(r.characterId)?.card;
+          const cardB = this._configs.get(targetId)?.card;
+          if (cardA && cardB) {
+            impressionPromises.push(
+              updateImpressionsBidirectional({
+                cardA, cardB,
+                exchanges: history,
+                impressions: this.impressions,
+                provider: this._provider,
+                modelId: this._configs.get(r.characterId)!.modelId,
+                tick: gameTime.tick,
+              }),
+            );
+          }
+        }
+      }
+    }
+    if (impressionPromises.length > 0) {
+      await Promise.all(impressionPromises);
     }
 
     // 清理过期对话

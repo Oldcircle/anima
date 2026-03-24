@@ -13,6 +13,7 @@ import type { LLMProvider, LLMRequest, ToolCall } from "../providers/types.js";
 import type { ActionDefinition, ActionResult } from "../actions/types.js";
 import type { RelationshipManager } from "../world/relationships.js";
 import type { ShortTermMemory } from "../memory/short-term.js";
+import type { ImpressionStore } from "../memory/impressions.js";
 import { getWorkIncome, getConsumptionCost } from "../world/economy.js";
 import { getTodayFestival } from "../world/festivals.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
@@ -41,6 +42,7 @@ export async function runAgentTick(params: {
   gameTime: GameTime;
   relationships?: RelationshipManager;
   memory?: ShortTermMemory;
+  impressions?: ImpressionStore;
   /** 对话模式覆盖：如果提供，跳过标准 prompt 构建，直接使用这个 LLM request */
   conversationRequest?: LLMRequest;
 }): Promise<AgentTickResult> {
@@ -102,6 +104,7 @@ export async function runAgentTick(params: {
     festivalHint: getTodayFestival(gameTime.season, gameTime.seasonDay)?.promptHint,
     inboxMessages,
     atmosphere: location?.atmosphere,
+    impressions: params.impressions,
   });
 
   // 对话模式：如果提供了 conversationRequest，使用它替代标准 prompt

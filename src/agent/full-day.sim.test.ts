@@ -350,6 +350,20 @@ describe.skipIf(SKIP)("Full Day Simulation — 6 Characters (Post-Refactor)", ()
     }
     md.push("");
 
+    // ── 11. 印象系统 ──
+    const allImpressions = sim.impressions.getAll();
+    if (allImpressions.length > 0) {
+      md.push("## 角色印象（LLM 生成）");
+      md.push("");
+      for (const { observerId, impression: imp } of allImpressions) {
+        md.push(`**${observerId} → ${imp.characterId}**: ${imp.summary}`);
+        if (imp.observations.length > 0) md.push(`  观察: ${imp.observations.join("；")}`);
+        if (imp.mentalLabel) md.push(`  标签: 「${imp.mentalLabel}」`);
+        if (imp.unresolved.length > 0) md.push(`  疑惑: ${imp.unresolved.join("；")}`);
+        md.push("");
+      }
+    }
+
     // ── 写入文件 ──
     writeFileSync(logPath, md.join("\n"), "utf-8");
 
@@ -366,6 +380,13 @@ describe.skipIf(SKIP)("Full Day Simulation — 6 Characters (Post-Refactor)", ()
     for (const rel of rels) {
       console.log(`  ${rel.characterA} ↔ ${rel.characterB}: ${rel.type} (${rel.level})`);
     }
+    // 输出印象
+    if (allImpressions.length > 0) {
+      console.log(`\n🧠 印象 (${allImpressions.length} 条):`);
+      for (const { observerId, impression: imp } of allImpressions) {
+        console.log(`  ${observerId}→${imp.characterId}: ${imp.summary} [${imp.mentalLabel}]`);
+      }
+    }
     console.log(`\n📝 完整日志: ${logPath}`);
 
     // ── 验证 ──
@@ -374,5 +395,5 @@ describe.skipIf(SKIP)("Full Day Simulation — 6 Characters (Post-Refactor)", ()
       expect(c.needs.energy).toBeGreaterThanOrEqual(0);
     }
     expect(eventBus.history.length).toBeGreaterThan(10);
-  }, 600_000); // 10 分钟超时
+  }, 900_000); // 15 分钟超时（印象系统增加 LLM 调用）
 });
