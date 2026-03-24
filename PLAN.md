@@ -137,9 +137,12 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 
 ### P2：观察与社会推理
 
-- [ ] 观察触发逻辑（在场 2+ tick + 有其他角色可观察行为 + 空闲状态）
-- [ ] 轻量级观察 LLM 调用（一句话解读，maxTokens 128）
-- [ ] 观察存入记忆（type: "observation"）
+- [x] 观察触发逻辑：空闲 + 同地点有可观察行为的角色 + 4 tick 冷却
+- [x] 轻量级观察 LLM 调用（一句话推理，maxTokens 128，temperature 0.7）
+- [x] 观察存入记忆（type: "observation"，importance 6）
+- [x] 目标选择策略：优先有已有印象的人（能深化理解）
+- [x] 集成 simulation.ts：fire-and-forget，不阻塞 tick 循环
+- [x] 7 个单元测试（shouldObserve 边界条件）
 - [ ] Live 验证：涌现基于观察的无声关怀行为
 
 ---

@@ -111,7 +111,8 @@ describe.skipIf(SKIP)("Simulation — Live (DeepSeek)", () => {
       console.log(`${s.name}: 📍${s.locationId} 饥饿:${s.needs.hunger.toFixed(0)} 社交:${s.needs.social.toFixed(0)}`);
     }
 
-    expect(summary.results).toHaveLength(2);
+    // 至少 2 个结果（主轮），反应轮可能产生更多
+    expect(summary.results.length).toBeGreaterThanOrEqual(2);
   }, 60_000);
 
   it("2 角色跑半天（24 tick = 6 小时）", async () => {
@@ -169,5 +170,5 @@ describe.skipIf(SKIP)("Simulation — Live (DeepSeek)", () => {
     }
 
     expect(summaries).toHaveLength(24);
-  }, 180_000);
+  }, 300_000); // 5 分钟超时（含反应轮和观察推理）
 });

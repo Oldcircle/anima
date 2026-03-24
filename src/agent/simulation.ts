@@ -17,11 +17,12 @@ import { rollRandomEvents, type RandomEvent } from "../world/events.js";
 import { processGossipSpread, type GossipItem } from "../world/gossip.js";
 import { getTodayFestival, type Festival } from "../world/festivals.js";
 import { ShortTermMemory } from "../memory/short-term.js";
-import { runAgentTick, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
+import { runAgentTick, describeObservableAction, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest } from "./conversation-mode.js";
 import { ImpressionStore } from "../memory/impressions.js";
 import { updateImpressionsBidirectional } from "./impression-updater.js";
+import { shouldObserve, generateObservation, type ObservationResult } from "./observation-reasoning.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -50,6 +51,7 @@ export class Simulation {
   private _listeners: SimulationListener[] = [];
   private _playerId?: string;
   private _backgroundTasks = new Set<Promise<unknown>>();
+  private _lastObservationTick = new Map<string, number>();
 
   world: World;
   eventBus: EventBus;
@@ -353,6 +355,57 @@ export class Simulation {
 
     // 清理过期对话
     this.conversations.cleanup(gameTime.tick);
+
+    // 3.7 社会观察推理：空闲角色解读同地点其他人的行为
+    // Fire-and-forget，不阻塞 tick 循环
+    const observationPromises: Promise<void>[] = [];
+    for (const [id, config] of this._configs) {
+      const state = this.world.getCharacter(id);
+      if (!state) continue;
+      const nearby = this.world.getCharactersAtLocation(state.locationId)
+        .filter((cid) => cid !== id && cid !== this._playerId);
+      if (!shouldObserve(state, this._lastObservationTick.get(id), gameTime.tick, nearby.length)) continue;
+
+      const visibleCharacters = nearby
+        .map((cid) => this.world.getCharacter(cid))
+        .filter((c): c is NonNullable<typeof c> => c !== undefined)
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          action: c.currentAction ? describeObservableAction(c.name, c.currentAction.name) : "",
+          stayDuration: undefined as number | undefined,
+        }))
+        .filter((c) => c.action.length > 0);
+
+      if (visibleCharacters.length === 0) continue;
+
+      const location = this.world.getLocation(state.locationId);
+      this._lastObservationTick.set(id, gameTime.tick);
+
+      observationPromises.push(
+        generateObservation(
+          { observerCard: config.card, observerState: state, visibleCharacters, locationName: location?.name ?? state.locationId, tick: gameTime.tick },
+          this._provider,
+          config.modelId,
+          this.impressions,
+        ).then((result) => {
+          if (result) {
+            this.memory.add(result.observerId, {
+              tick: result.tick,
+              type: "observation",
+              content: `你注意到${this.world.getCharacter(result.targetId)?.name ?? result.targetId}的情况，心想：${result.reasoning}`,
+              importance: 6,
+              relatedCharacterId: result.targetId,
+            });
+          }
+        }),
+      );
+    }
+    if (observationPromises.length > 0) {
+      this._trackBackgroundTask(Promise.all(observationPromises)).catch((err) => {
+        console.warn(`[tick ${gameTime.tick}] 观察推理失败:`, err?.message ?? err);
+      });
+    }
 
     // 4. 八卦传播
     const locationCharMap = new Map<string, string[]>();

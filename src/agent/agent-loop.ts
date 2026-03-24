@@ -319,7 +319,7 @@ async function executeAction(
 }
 
 /** 将 action name 转为第三人称可观察的描述 */
-function describeObservableAction(name: string, action: string): string {
+export function describeObservableAction(name: string, action: string): string {
   const descriptions: Record<string, string> = {
     eat: "正在吃东西",
     sleep: "在睡觉",
