@@ -52,6 +52,8 @@ export class Simulation {
   private _playerId?: string;
   private _backgroundTasks = new Set<Promise<unknown>>();
   private _lastObservationTick = new Map<string, number>();
+  /** 对话冷却：pairKey → 上次深度对话结束的 tick。冷却 2 tick 后才能再次进入反应轮 */
+  private _conversationCooldown = new Map<string, number>();
 
   world: World;
   eventBus: EventBus;
@@ -228,30 +230,29 @@ export class Simulation {
     }
 
     // 3.5 反应轮：信箱有新消息的角色获得额外决策机会
-    // 如果检测到活跃对话，使用对话模式（更丰富的 prompt + 更高 token）
-    // 限制：每 tick 最多 2 轮反应，每对角色每 tick 最多交换 3 次
-    const MAX_REACTION_ROUNDS = 2;
+    // 限制：每 tick 最多 1 轮反应，每对角色每 tick 最多交换 2 次，对话后冷却 2 tick
+    const MAX_REACTION_ROUNDS = 1;
     const pairExchangeCount = new Map<string, number>();
     const pairKey = (a: string, b: string) => [a, b].sort().join(":");
     for (let round = 0; round < MAX_REACTION_ROUNDS; round++) {
-      // 找到信箱有新消息的角色
       const reactors: Array<{ id: string; config: AgentConfig }> = [];
       for (const [id, config] of this._configs) {
         const state = this.world.getCharacter(id);
         if (!state) continue;
         if (state.inbox.length === 0) continue;
-        // 只有长时间行为（工作/睡觉 等 >1h）才阻止反应
         if (state.currentAction && state.currentAction.remainingTicks > 4) continue;
-        // 检查对话对的交换次数限制
+        // 检查对话对的交换次数限制 + 跨 tick 冷却
         const lastMsg = state.inbox[state.inbox.length - 1];
         if (lastMsg) {
           const pk = pairKey(id, this._resolveCharacterId(lastMsg.fromId));
-          if ((pairExchangeCount.get(pk) ?? 0) >= 3) continue;
+          if ((pairExchangeCount.get(pk) ?? 0) >= 2) continue;
+          const cooldownTick = this._conversationCooldown.get(pk);
+          if (cooldownTick !== undefined && (gameTime.tick - cooldownTick) < 2) continue;
         }
         reactors.push({ id, config });
       }
 
-      if (reactors.length === 0) break; // 没有人需要反应
+      if (reactors.length === 0) break;
 
       // 对每个 reactor，判断是否使用对话模式
       const reactionPromises = reactors.map(({ id, config }) => {
@@ -313,9 +314,13 @@ export class Simulation {
             r.action.args.message as string ?? "",
             gameTime.tick,
           );
-          // 更新对话对交换计数
+          // 更新对话对交换计数 + 冷却
           const pk = pairKey(r.characterId, targetId);
-          pairExchangeCount.set(pk, (pairExchangeCount.get(pk) ?? 0) + 1);
+          const newCount = (pairExchangeCount.get(pk) ?? 0) + 1;
+          pairExchangeCount.set(pk, newCount);
+          if (newCount >= 2) {
+            this._conversationCooldown.set(pk, gameTime.tick);
+          }
         }
       }
 
