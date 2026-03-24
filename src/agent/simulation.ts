@@ -211,13 +211,12 @@ export class Simulation {
     const agentResults = await Promise.all(promises);
     results.push(...agentResults);
 
-    // 3. talk 产生的关系变化（双向）+ 记录对话
+    // 3. talk 产生的关系变化（双向）+ 记录对话（含 manner）
     for (const r of results) {
       if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
         const targetId = this._resolveCharacterId(r.action.args.target as string);
         this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, r.result?.description ?? "聊天");
         this.relationships.modify(targetId, r.characterId, 2, gameTime.tick, `${r.characterId} 对你说话`);
-        // 记录到对话追踪器
         const charState = this.world.getCharacter(r.characterId);
         this.conversations.recordTalk(
           r.characterId,
@@ -225,6 +224,7 @@ export class Simulation {
           targetId,
           r.action.args.message as string ?? "",
           gameTime.tick,
+          r.action.args.manner as string | undefined,
         );
       }
     }
@@ -313,6 +313,7 @@ export class Simulation {
             targetId,
             r.action.args.message as string ?? "",
             gameTime.tick,
+            r.action.args.manner as string | undefined,
           );
           // 更新对话对交换计数 + 冷却
           const pk = pairKey(r.characterId, targetId);

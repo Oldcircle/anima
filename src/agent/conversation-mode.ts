@@ -28,6 +28,8 @@ export interface ConversationExchange {
   speakerName: string;
   message: string;
   tick: number;
+  /** 说话时的动作/表情/语气（白描） */
+  manner?: string;
 }
 
 /**
@@ -43,13 +45,13 @@ export class ConversationTracker {
   }
 
   /** 记录一次 talk */
-  recordTalk(speakerId: string, speakerName: string, targetId: string, message: string, tick: number): void {
+  recordTalk(speakerId: string, speakerName: string, targetId: string, message: string, tick: number, manner?: string): void {
     const name = speakerName?.trim() || speakerId; // 防御空名字
     const key = this._pairKey(speakerId, targetId);
     if (!this._exchanges.has(key)) {
       this._exchanges.set(key, []);
     }
-    this._exchanges.get(key)!.push({ speakerId, speakerName: name, message, tick });
+    this._exchanges.get(key)!.push({ speakerId, speakerName: name, message, tick, manner });
     this._lastTick.set(key, tick);
   }
 
@@ -173,31 +175,52 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     if (params.recentMemories) parts.push(`最近的经历：\n${params.recentMemories}`);
   }
 
-  // 4. 完整对话历史
+  // 4. 完整对话历史（含身体语言）
   if (history.length > 0) {
     parts.push(`\n## 对话记录`);
     for (const exchange of history) {
       const isMe = exchange.speakerId === card.id;
       const label = isMe ? "你" : exchange.speakerName;
-      parts.push(`${label}：「${exchange.message}」`);
+      if (exchange.manner) {
+        parts.push(`${label}：（${exchange.manner}）「${exchange.message}」`);
+      } else {
+        parts.push(`${label}：「${exchange.message}」`);
+      }
     }
   }
 
-  // 5. 叙事指引 + 行动指令
+  // 5. 对话轮次提示
+  const exchangeCount = history.length;
+  if (exchangeCount >= 8) {
+    parts.push(`\n⚠️ 你们已经聊了很久了（${exchangeCount} 轮）。现实中人不会一直聊下去。也许该做点别的了——去吃饭、回去工作、或者只是安静地待一会儿。你不一定非要继续说话。`);
+  } else if (exchangeCount >= 4) {
+    parts.push(`\n你们已经聊了 ${exchangeCount} 轮。注意对话的自然节奏——不需要每轮都说很多，有时候一个"嗯"、一个沉默、一个动作就够了。`);
+  }
+
+  // 6. 叙事指引 + 行动指令
   parts.push(`\n## 你要做什么
-继续这段对话。先写出你的内心活动和观察：
-- 你注意到了什么（对方的表情、动作、语气）
-- 你在想什么（真实的想法，可能和你说出口的不一样）
-- 你打算怎么回应，为什么
 
-然后调用 talk 工具说出你的话。你的 message 应该只包含你说出口的话。
+先写出你的内心活动（这部分不会被对方听到）：
+1. 你的身体在做什么——手放在哪里、视线看向哪里、坐着还是站着
+2. 你注意到了什么——对方的某个小动作、周围环境的变化
+3. 你真实的想法——可能和你说出口的完全不同
+4. 你要不要继续这段对话——如果你饿了/累了/觉得聊够了，可以结束
 
-创作风格：
-- 通过动作和语言本身传递情绪，不要解释（"她的手指搓着围裙"而非"她紧张地搓着围裙，显示出内心的不安"）
-- 你可以犹豫、改口、词不达意、欲言又止
-- 如果你不想继续聊了，可以找借口离开（调用 go_to）或做别的事
+然后调用 talk 工具。参数说明：
+- target: "${partnerCard.id}"
+- message: 只写你说出口的台词。可以很短（"嗯。"、"...是吗"）。可以改口、犹豫、词不达意。不要写心理描写。
+- manner: 你说话时的身体语言，用白描写法，一句话。比如"低头搅着杯子里的咖啡"、"视线移向窗外，过了一会儿才回过头"、"嘴角动了动，像是想笑又忍住了"。
 
-注意：target 参数填 "${partnerCard.id}"。`);
+如果你不想说话：
+- 可以调用 go_to 离开（"抱歉我得去..."）
+- 可以调用 eat/drink/work 等做别的事
+- 也可以 talk 一句简短的告别然后下个 tick 离开
+
+重要的创作原则：
+- **白描**：写动作本身，不写"她紧张地"这种解释。"手指搓着围裙"比"紧张地搓着围裙"好。
+- **台词要像说话**：可以有"嗯"、"啊"、说到一半停住、重复自己说过的话、答非所问。不要每句话都是完整的诗意比喻。
+- **节奏感**：真实对话有快有慢。有时候一句话能聊很久，有时候话题会突然断掉。允许尴尬的沉默。
+- **做自己**：不要为了有趣而说话。如果你的角色此刻没什么想说的，那就不说。`);
 
   return parts.join("\n");
 }

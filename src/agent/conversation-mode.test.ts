@@ -180,8 +180,8 @@ describe("buildConversationPrompt", () => {
     });
 
     expect(prompt).toContain("内心活动");
-    expect(prompt).toContain("犹豫、改口");
-    expect(prompt).toContain("动作和语言本身传递情绪");
+    expect(prompt).toContain("犹豫");
+    expect(prompt).toContain("白描");
   });
 
   it("includes mood hints when needs are low", () => {
@@ -203,7 +203,7 @@ describe("buildConversationPrompt", () => {
       history, gameTime, locationName: "咖啡馆",
     });
 
-    expect(prompt).toContain('target 参数填 "maria"');
+    expect(prompt).toContain('"maria"');
   });
 });
 

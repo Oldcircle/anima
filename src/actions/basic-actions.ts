@@ -99,7 +99,7 @@ export const goToAction: ActionDefinition = {
 export const talkAction: ActionDefinition = {
   tool: {
     name: "talk",
-    description: "在当前地点当面对某人说一句话。对方必须在你当前的位置才能交谈。消息会送到对方的信箱，对方在下一个 tick 看到并决定是否回应。不会阻塞，在场的人也可能注意到。",
+    description: "在当前地点当面对某人说话。对方必须在同一位置。消息送到对方信箱，在场的人也可能注意到。",
     parameters: {
       type: "object",
       properties: {
@@ -109,7 +109,11 @@ export const talkAction: ActionDefinition = {
         },
         message: {
           type: "string",
-          description: "你要说的话",
+          description: "你说出口的话（只写台词，不写心理描写）",
+        },
+        manner: {
+          type: "string",
+          description: "你说话时的动作、表情、语气（可选，简短白描，如'低头搓着围裙边角'、'视线移向窗外'）",
         },
       },
       required: ["target", "message"],
@@ -118,6 +122,7 @@ export const talkAction: ActionDefinition = {
   handler: (args, ctx): ActionResult => {
     const target = args.target as string;
     const message = args.message as string;
+    const manner = args.manner as string | undefined;
 
     // 约束：对方必须在同一地点
     if (!ctx.nearbyCharacters.includes(target)) {
@@ -128,11 +133,15 @@ export const talkAction: ActionDefinition = {
       };
     }
 
+    // 构建叙事描述
+    const mannerText = manner ? `${manner}，` : "";
+    const description = `${mannerText}对${target}说：「${message}」`;
+
     return {
-      description: `当面向${target}说：「${message}」`,
+      description,
       effects: [
-        { type: "need_change", targetId: ctx.characterId, field: "social", delta: 12 },
-        { type: "need_change", targetId: target, field: "social", delta: 8 },
+        { type: "need_change", targetId: ctx.characterId, field: "social", delta: 5 },
+        { type: "need_change", targetId: target, field: "social", delta: 3 },
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 1 },
         { type: "inbox_message", targetId: target, fromName: ctx.characterId, message },
       ],
