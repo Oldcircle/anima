@@ -229,7 +229,10 @@ export class Simulation {
 
     // 3.5 反应轮：信箱有新消息的角色获得额外决策机会
     // 如果检测到活跃对话，使用对话模式（更丰富的 prompt + 更高 token）
-    const MAX_REACTION_ROUNDS = 3;
+    // 限制：每 tick 最多 2 轮反应，每对角色每 tick 最多交换 3 次
+    const MAX_REACTION_ROUNDS = 2;
+    const pairExchangeCount = new Map<string, number>();
+    const pairKey = (a: string, b: string) => [a, b].sort().join(":");
     for (let round = 0; round < MAX_REACTION_ROUNDS; round++) {
       // 找到信箱有新消息的角色
       const reactors: Array<{ id: string; config: AgentConfig }> = [];
@@ -239,6 +242,12 @@ export class Simulation {
         if (state.inbox.length === 0) continue;
         // 只有长时间行为（工作/睡觉 等 >1h）才阻止反应
         if (state.currentAction && state.currentAction.remainingTicks > 4) continue;
+        // 检查对话对的交换次数限制
+        const lastMsg = state.inbox[state.inbox.length - 1];
+        if (lastMsg) {
+          const pk = pairKey(id, this._resolveCharacterId(lastMsg.fromId));
+          if ((pairExchangeCount.get(pk) ?? 0) >= 3) continue;
+        }
         reactors.push({ id, config });
       }
 
@@ -290,7 +299,7 @@ export class Simulation {
       const reactionResults = await Promise.all(reactionPromises);
       results.push(...reactionResults);
 
-      // 处理反应中产生的 talk 关系变化（双向）+ 记录对话
+      // 处理反应中产生的 talk 关系变化（双向）+ 记录对话 + 更新对话对计数
       for (const r of reactionResults) {
         if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
           const targetId = this._resolveCharacterId(r.action.args.target as string);
@@ -304,6 +313,9 @@ export class Simulation {
             r.action.args.message as string ?? "",
             gameTime.tick,
           );
+          // 更新对话对交换计数
+          const pk = pairKey(r.characterId, targetId);
+          pairExchangeCount.set(pk, (pairExchangeCount.get(pk) ?? 0) + 1);
         }
       }
 

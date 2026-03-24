@@ -7,5 +7,6 @@ export default defineConfig({
     hookTimeout: 900_000,
     pool: "forks",
     poolOptions: { forks: { maxForks: 2 } },
+    reporters: ["verbose"],
   },
 });
