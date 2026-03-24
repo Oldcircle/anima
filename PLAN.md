@@ -80,19 +80,46 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 
 ---
 
-## 当前：行为自然度提升
+## 当前：活人感深度改造
 
 详见 [DESIGN.md 第七章](./DESIGN.md#七行为自然度下一阶段重点)
 
-核心发现：行为正确但不自然。和 RP 系统（SillyTavern + 深度预设）对比，角色缺少多层动机、措辞策略、心理连贯性。根因不是架构问题，是决策预算和 prompt 设计问题。
+核心洞察：对比 SillyTavern（夏瑾预设），Anima 的问题不是架构而是**给 Agent 的世界太贫瘠**。真实人类决策时有丰富上下文（环境感知、对人的标签、心理猜测），Agent 也需要。五层改进方案：让角色真正"看到"更丰富的世界。分析笔记见 `~/Opensource/notes/Anima活人感分析-酒馆对比与五层改进方案.md`。
 
-### 实施任务
+### P0-a：环境感知 + 内心独白分级
 
-- [ ] **thought 预算扩容**：社交场景 maxTokens 512 → 1024，去掉"1-2 句想法"限制
-- [ ] **互动历史注入**：从记忆中提取与附近角色的交互摘要，注入 user prompt
-- [ ] **社交引导 prompt**：system prompt 加入措辞策略、情绪表达、社交回避引导
-- [ ] **动态 backstory**：根据当前位置/附近角色，选择性注入相关 backstory 条目
+- [ ] 地点 YAML 加 `atmosphere` 字段（morning/afternoon/evening/rainy 四段感官描写）
+- [ ] `prompt-builder.ts`：根据时间/天气注入环境描写，替代干巴巴的地点名
+- [ ] 附近角色从 `[stranger]` 改为可观察状态描述（当前行为 + 朝向）
+- [ ] 社交场景（附近有人/信箱有消息）maxTokens 512 → 1024，思考指令扩展
+- [ ] system prompt 加入社交引导（犹豫/改口/言不由衷/转移话题/沉默）
+- [ ] 动态 backstory 注入（根据当前位置/附近角色选择相关 backstory 条目）
 - [ ] Live 一日验证
+
+### P0-b：对话模式
+
+- [ ] 设计对话触发检测逻辑（同地点 + 2 tick 内互相 talk 2+ 次）
+- [ ] 新建 `conversation-mode.ts`：对话上下文管理 + 叙事 prompt 构建
+- [ ] 对话模式 prompt：完整历史 + 环境 + 印象 + 叙事风格指引
+- [ ] 对话输出格式：innerThought / action / dialogue / observation
+- [ ] `agent-loop.ts` 集成：检测触发 → 进入对话模式 → 结束恢复
+- [ ] 对话模式不阻塞其他角色的 tick 循环
+- [ ] Live 验证：Maria↔Sakiko 对话质量对比
+
+### P1：人物印象系统
+
+- [ ] `CharacterImpression` 数据结构（summary/observations/mentalLabel/unresolved）
+- [ ] `CharacterState` 新增 `impressions: Map<string, CharacterImpression>`
+- [ ] 互动后反思步骤：LLM 生成/更新印象
+- [ ] `prompt-builder.ts` 注入印象替代纯数字关系
+- [ ] Live 验证：角色首次 vs 第五次见面的差异
+
+### P2：观察与社会推理
+
+- [ ] 观察触发逻辑（在场 2+ tick + 有其他角色可观察行为 + 空闲状态）
+- [ ] 轻量级观察 LLM 调用（一句话解读，maxTokens 128）
+- [ ] 观察存入记忆（type: "observation"）
+- [ ] Live 验证：涌现基于观察的无声关怀行为
 
 ---
 

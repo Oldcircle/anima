@@ -18,6 +18,7 @@ import { getTodayFestival, type Festival } from "../world/festivals.js";
 import { ShortTermMemory } from "../memory/short-term.js";
 import { runAgentTick, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
+import { ConversationTracker, buildConversationRequest } from "./conversation-mode.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -50,6 +51,7 @@ export class Simulation {
   eventBus: EventBus;
   relationships: RelationshipManager;
   memory: ShortTermMemory;
+  conversations: ConversationTracker;
 
   get playerId(): string | undefined { return this._playerId; }
 
@@ -62,6 +64,7 @@ export class Simulation {
     this.eventBus = eventBus;
     this.relationships = new RelationshipManager();
     this.memory = new ShortTermMemory();
+    this.conversations = new ConversationTracker();
     this._provider = config.provider;
     this._actions = config.actions;
     this._playerId = config.playerId;
@@ -163,15 +166,25 @@ export class Simulation {
     const agentResults = await Promise.all(promises);
     results.push(...agentResults);
 
-    // 3. talk 产生的关系变化
+    // 3. talk 产生的关系变化 + 记录对话
     for (const r of results) {
       if (r.action?.name === "talk" && r.action.args.target) {
         const targetId = this._resolveCharacterId(r.action.args.target as string);
         this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, r.result?.description ?? "聊天");
+        // 记录到对话追踪器
+        const charState = this.world.getCharacter(r.characterId);
+        this.conversations.recordTalk(
+          r.characterId,
+          charState?.name ?? r.characterId,
+          targetId,
+          r.action.args.message as string ?? "",
+          gameTime.tick,
+        );
       }
     }
 
     // 3.5 反应轮：信箱有新消息的角色获得额外决策机会
+    // 如果检测到活跃对话，使用对话模式（更丰富的 prompt + 更高 token）
     const MAX_REACTION_ROUNDS = 3;
     for (let round = 0; round < MAX_REACTION_ROUNDS; round++) {
       // 找到信箱有新消息的角色
@@ -187,18 +200,63 @@ export class Simulation {
 
       if (reactors.length === 0) break; // 没有人需要反应
 
-      // 并行执行反应
-      const reactionPromises = reactors.map(({ config }) =>
-        runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory }),
-      );
+      // 对每个 reactor，判断是否使用对话模式
+      const reactionPromises = reactors.map(({ id, config }) => {
+        const state = this.world.getCharacter(id)!;
+        // 找出信箱中最近消息的发送者
+        const lastMsg = state.inbox[state.inbox.length - 1];
+        const partnerId = lastMsg ? this._resolveCharacterId(lastMsg.fromId) : undefined;
+
+        // 检测是否有活跃对话
+        if (partnerId && this.conversations.isActiveConversation(id, partnerId, gameTime.tick)) {
+          const partnerConfig = this._configs.get(partnerId);
+          const partnerState = this.world.getCharacter(partnerId);
+          if (partnerConfig && partnerState) {
+            const location = this.world.getLocation(state.locationId);
+            const rel = this.relationships.get(id, partnerId);
+            const recentMemories = this.memory.formatForPrompt(id, 5);
+            const conversationRequest = buildConversationRequest({
+              card: config.card,
+              state,
+              partnerCard: partnerConfig.card,
+              partnerState,
+              history: this.conversations.getHistory(id, partnerId),
+              gameTime,
+              locationName: location?.name ?? state.locationId,
+              atmosphere: location?.atmosphere,
+              weather: this.world.weather,
+              relationship: rel,
+              recentMemories,
+              actions: this._actions,
+            });
+            // 使用对话模式 prompt，但复用标准 agent tick 的执行逻辑
+            return runAgentTick({
+              config, world: this.world, eventBus: this.eventBus, gameTime,
+              relationships: this.relationships, memory: this.memory,
+              conversationRequest,
+            });
+          }
+        }
+
+        // 非对话模式：使用标准 agent tick
+        return runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory });
+      });
       const reactionResults = await Promise.all(reactionPromises);
       results.push(...reactionResults);
 
-      // 处理反应中产生的 talk 关系变化
+      // 处理反应中产生的 talk 关系变化 + 记录对话
       for (const r of reactionResults) {
         if (r.action?.name === "talk" && r.action.args.target) {
           const targetId = this._resolveCharacterId(r.action.args.target as string);
           this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, r.result?.description ?? "回复");
+          const charState = this.world.getCharacter(r.characterId);
+          this.conversations.recordTalk(
+            r.characterId,
+            charState?.name ?? r.characterId,
+            targetId,
+            r.action.args.message as string ?? "",
+            gameTime.tick,
+          );
         }
       }
 
@@ -206,6 +264,9 @@ export class Simulation {
       const hasNewTalk = reactionResults.some((r) => r.action?.name === "talk");
       if (!hasNewTalk) break;
     }
+
+    // 清理过期对话
+    this.conversations.cleanup(gameTime.tick);
 
     // 4. 八卦传播
     const locationCharMap = new Map<string, string[]>();

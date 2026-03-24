@@ -6,11 +6,12 @@
  */
 
 import type { CharacterCard } from "../character/types.js";
-import type { CharacterState, CharacterNeeds, Weather, InboxMessage } from "../world/types.js";
+import type { CharacterState, CharacterNeeds, Weather, InboxMessage, LocationAtmosphere } from "../world/types.js";
 import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime } from "../core/tick-engine.js";
 import type { WorldEvent } from "../core/event-bus.js";
 import { weatherDescription, weatherHint } from "../world/weather.js";
+import { getAtmosphereText } from "../world/location-loader.js";
 
 export function buildSystemPrompt(card: CharacterCard): string {
   const parts: string[] = [];
@@ -76,12 +77,19 @@ export function buildSystemPrompt(card: CharacterCard): string {
 - 调用一个工具来执行你的行为
 - 注意工具的前置条件（在家才能睡觉/洗澡，需要金币才能在外面消费）
 - 如果需求值很低（<30），优先满足该需求
-- 如果附近有人且你的社交需求不高，考虑和他们说话（talk）或互动
 - 如果"有人对你说"里有消息，优先考虑用 talk 回应（也可以选择不回应）
 - 如果你身无分文又饥肠辘辘，你可能需要做一些不太体面的事（乞讨、偷窃）——生存是第一位的
 - talk 发出的消息不会阻塞，对方会在下一轮看到
 - 你的内心想法用普通文本表达，行为用工具调用表达
-- 保持角色一致性，用你的说话风格和性格特点来决定行为`);
+- 保持角色一致性，用你的说话风格和性格特点来决定行为
+
+## 社交行为指引
+- 说话时考虑你和对方的关系、你当前的心情、以及你想达到什么目的
+- 你可以选择说什么、不说什么、怎么说——不是每次都要直来直去
+- 你可以犹豫、改口、词不达意、言不由衷——这些都是真实的表达
+- 如果对方让你不舒服，你可以转移话题、找借口离开、或者沉默不语
+- 注意观察周围的环境和其他人的状态，这些会影响你的感受和决定
+- 想说话时，考虑当前场景和气氛是否适合——有些话不是什么时候都能说的`);
 
   return parts.join("\n");
 }
@@ -149,7 +157,13 @@ export function buildUserPrompt(params: {
   card: CharacterCard;
   state: CharacterState;
   gameTime: GameTime;
-  nearbyCharacters: Array<{ id: string; name: string; relationship?: { level: number; type: string } }>;
+  nearbyCharacters: Array<{
+    id: string;
+    name: string;
+    relationship?: { level: number; type: string };
+    /** 当前正在做什么（可观察状态） */
+    currentAction?: string;
+  }>;
   recentEvents: WorldEvent[];
   locationName: string;
   locationType?: string;
@@ -158,14 +172,23 @@ export function buildUserPrompt(params: {
   weather?: Weather;
   festivalHint?: string;
   inboxMessages?: InboxMessage[];
+  /** 地点的感官描述 */
+  atmosphere?: LocationAtmosphere;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
+  const weatherStr = params.weather ? `  天气: ${weatherDescription(params.weather)}` : "";
 
   const parts: string[] = [];
 
-  const weatherStr = params.weather ? `  天气: ${weatherDescription(params.weather)}` : "";
-  parts.push(`## 当前状态\n时间: ${formatGameTime(gameTime)}${weatherStr}\n位置: ${locationName}（${locationTypeLabel(locationType)}）\n💰 金币: ${state.gold}`);
+  // 环境感知：优先用 atmosphere 描写，否则回退到原来的格式
+  const atmosphereText = getAtmosphereText(params.atmosphere, gameTime.hour, params.weather ?? "sunny");
+  if (atmosphereText) {
+    parts.push(`## 你现在看到的\n${locationName}——${atmosphereText}`);
+    parts.push(`时间: ${formatGameTime(gameTime)}${weatherStr}  💰 金币: ${state.gold}`);
+  } else {
+    parts.push(`## 当前状态\n时间: ${formatGameTime(gameTime)}${weatherStr}\n位置: ${locationName}（${locationTypeLabel(locationType)}）\n💰 金币: ${state.gold}`);
+  }
 
   const hint = params.weather ? weatherHint(params.weather) : "";
   if (hint) parts.push(hint);
@@ -178,14 +201,15 @@ export function buildUserPrompt(params: {
     parts.push("\n" + warnings.join("\n"));
   }
 
-  // 附近的人
+  // 附近的人 — 用可观察状态描述替代纯标签
   if (nearbyCharacters.length > 0) {
     const people = nearbyCharacters.map((c) => {
       const rel = c.relationship;
-      const relInfo = rel ? ` [${rel.type}, 亲密度:${rel.level}]` : " [陌生人]";
-      return `${c.name}(ID:${c.id})${relInfo}`;
-    }).join("\n  ");
-    parts.push(`\n附近的人:\n  ${people}\n注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。`);
+      const relInfo = rel ? `[${rel.type}, 亲密度:${rel.level}]` : "[陌生人]";
+      const actionDesc = c.currentAction ? `——${c.currentAction}` : "";
+      return `- ${c.name}(ID:${c.id}) ${relInfo}${actionDesc}`;
+    }).join("\n");
+    parts.push(`\n在场的人:\n${people}\n注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。`);
   } else {
     if (state.needs.social < 20) {
       parts.push("\n附近没有其他人。你已经很久没和人说话了，感到非常孤独。也许应该去广场、咖啡馆或酒吧等有人的地方看看。");
@@ -229,7 +253,14 @@ export function buildUserPrompt(params: {
     .join("、");
   parts.push(`\n## 可前往的地点\n${otherLocations}`);
 
-  parts.push("\n请根据以上信息，决定你现在要做什么。先简短说说你的想法（1-2句），然后调用一个工具。注意：如果你已经在目标地点了，不需要再 go_to 那里，直接做想做的事。");
+  // 思考指令：社交场景更详细，独处场景简短
+  const isSocialScene = nearbyCharacters.length > 0 || (params.inboxMessages && params.inboxMessages.length > 0);
+  if (isSocialScene) {
+    parts.push("\n请根据以上信息，决定你现在要做什么。先详细说说你的内心活动：你看到了什么、感受到什么、对在场的人有什么想法、你想做什么以及为什么。然后调用一个工具。");
+  } else {
+    parts.push("\n请根据以上信息，决定你现在要做什么。先简短说说你的想法（1-2句），然后调用一个工具。");
+  }
+  parts.push("注意：如果你已经在目标地点了，不需要再 go_to 那里，直接做想做的事。");
 
   return parts.join("\n");
 }

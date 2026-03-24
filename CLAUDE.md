@@ -35,7 +35,7 @@ anima/
 │   ├── core/          # 时间系统、世界状态、事件总线
 │   ├── world/         # 地图、地点、物品、天气
 │   ├── character/     # 角色定义、人格、需求系统
-│   ├── agent/         # LLM agent 循环、工具执行
+│   ├── agent/         # LLM agent 循环、工具执行、对话模式
 │   ├── memory/        # 记忆系统（从 OpenClaw 提取）
 │   ├── actions/       # 行为工具定义（社交、工作、休闲等）
 │   ├── narrative/     # 叙事引擎、事件描述生成
@@ -44,7 +44,7 @@ anima/
 │   ├── components/    # 地图、角色面板、对话框
 │   └── stores/        # 前端状态管理
 └── data/
-    ├── town.yml       # 小镇地图定义
+    ├── locations/     # 地点 YAML（含 atmosphere 感官描写）
     ├── characters/    # 角色卡 YAML
     └── items/         # 物品/作物定义
 ```
@@ -56,6 +56,7 @@ pnpm dev              # 启动模拟 + Web 服务 (http://localhost:3001)
 pnpm test             # 单元 + 集成测试
 pnpm test:watch       # 开发时 watch 模式
 pnpm test:live        # Live 测试（需要 DeepSeek API key）
+pnpm test:sim         # 一日/七日模拟测试（需要 DeepSeek API key）
 pnpm test:coverage    # 覆盖率报告
 ```
 

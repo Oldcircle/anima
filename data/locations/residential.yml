@@ -1,0 +1,50 @@
+# 住宅区通用 atmosphere（各角色的家共享）
+# 如果需要个性化，可以为每个 home 创建独立文件
+
+_residential_atmosphere: &residential
+  morning: |
+    晨光从窗帘缝隙里透进来，房间里安安静静的。
+    厨房那边飘来昨天没洗的碗碟的气味，或者是新泡的茶。
+  afternoon: |
+    午后家里很安静，阳光从窗户照进来，照出空气中的灰尘。
+    能隐约听到外面街上的声音。
+  evening: |
+    傍晚的家里亮起灯，窗外渐渐暗下来。
+    一天的疲惫让沙发看起来特别有吸引力。
+  night: |
+    深夜的家里只有钟表的滴答声。窗外的月光在地板上画出窗框的影子。
+    一切都很安静，很安全。
+  rainy: |
+    雨天待在家里特别有安全感。雨点打在窗户上的声音很催眠。
+    屋里比外面暖和，不太想出门。
+
+# 各角色的家
+homes:
+  - id: home_player
+    name: 旅人的住处
+    type: residential
+    atmosphere: *residential
+  - id: home_alice
+    name: Alice 的家
+    type: residential
+    atmosphere: *residential
+  - id: home_bob
+    name: Bob 的家
+    type: residential
+    atmosphere: *residential
+  - id: home_maria
+    name: Maria 的家
+    type: residential
+    atmosphere: *residential
+  - id: home_lao_chen
+    name: 老陈的家
+    type: residential
+    atmosphere: *residential
+  - id: home_emily
+    name: Emily 的家
+    type: residential
+    atmosphere: *residential
+  - id: home_sakiko
+    name: 祥子的家
+    type: residential
+    atmosphere: *residential

@@ -13,6 +13,7 @@ import { ALL_BASIC_ACTIONS } from "./actions/basic-actions.js";
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { createApiServer } from "./api/server.js";
 import { loadCharactersFromDir } from "./character/loader.js";
+import { loadLocationsFromDir } from "./world/location-loader.js";
 import { saveGame, loadGame } from "./persistence/save-load.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -23,27 +24,10 @@ const DATA_DIR = join(import.meta.dirname, "..", "data");
 const SAVE_FILE = join(DATA_DIR, "save.db");
 const AUTO_SAVE_INTERVAL = 96; // 每游戏日自动存档
 
-// --- 地点 ---
-const LOCATIONS = [
-  { id: "home_player", name: "旅人的住处", type: "residential" as const, presentCharacters: [] },
-  { id: "home_alice", name: "Alice 的家", type: "residential" as const, presentCharacters: [] },
-  { id: "home_bob", name: "Bob 的家", type: "residential" as const, presentCharacters: [] },
-  { id: "home_maria", name: "Maria 的家", type: "residential" as const, presentCharacters: [] },
-  { id: "home_lao_chen", name: "老陈的家", type: "residential" as const, presentCharacters: [] },
-  { id: "home_emily", name: "Emily 的家", type: "residential" as const, presentCharacters: [] },
-  { id: "home_sakiko", name: "祥子的家", type: "residential" as const, presentCharacters: [] },
-  { id: "flower_shop", name: "Alice的花店", type: "commercial" as const, openHours: { open: 8, close: 18 }, presentCharacters: [] },
-  { id: "bakery", name: "Maria的面包店", type: "commercial" as const, openHours: { open: 7, close: 17 }, presentCharacters: [] },
-  { id: "cafe", name: "咖啡馆", type: "commercial" as const, openHours: { open: 7, close: 22 }, presentCharacters: [] },
-  { id: "plaza", name: "广场", type: "public" as const, presentCharacters: [] },
-  { id: "shop", name: "杂货店", type: "commercial" as const, openHours: { open: 8, close: 20 }, presentCharacters: [] },
-  { id: "bar", name: "酒吧", type: "commercial" as const, openHours: { open: 17, close: 2 }, presentCharacters: [] },
-  { id: "beach", name: "海边", type: "nature" as const, presentCharacters: [] },
-  { id: "dock", name: "码头", type: "nature" as const, presentCharacters: [] },
-  { id: "forest", name: "森林", type: "nature" as const, presentCharacters: [] },
-  { id: "farm", name: "农田", type: "nature" as const, presentCharacters: [] },
-  { id: "library", name: "图书馆", type: "public" as const, openHours: { open: 9, close: 18 }, presentCharacters: [] },
-];
+// --- 地点（从 YAML 加载，含 atmosphere 感官描写）---
+const locationDir = join(DATA_DIR, "locations");
+const LOCATIONS = loadLocationsFromDir(locationDir);
+console.log(`📍 加载了 ${LOCATIONS.length} 个地点: ${LOCATIONS.map((l) => l.name).join(", ")}`);
 
 // --- LLM Provider ---
 const provider = new OpenAICompatibleProvider({

@@ -2,6 +2,14 @@
  * World State — 世界状态类型定义
  */
 
+export interface LocationAtmosphere {
+  morning?: string;
+  afternoon?: string;
+  evening?: string;
+  night?: string;
+  rainy?: string;
+}
+
 export interface Location {
   id: string;
   name: string;
@@ -10,6 +18,8 @@ export interface Location {
   openHours?: { open: number; close: number } | null;
   /** 当前在此地点的角色 ID */
   presentCharacters: string[];
+  /** 感官描述（按时段/天气） */
+  atmosphere?: LocationAtmosphere;
 }
 
 export type Weather = "sunny" | "cloudy" | "rainy" | "stormy" | "snowy";

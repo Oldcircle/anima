@@ -13,6 +13,7 @@ import { World } from "../world/world.js";
 import { ALL_BASIC_ACTIONS } from "../actions/basic-actions.js";
 import { OpenAICompatibleProvider } from "../providers/openai-compatible.js";
 import { loadCharactersFromDir } from "../character/loader.js";
+import { loadLocationsFromDir } from "../world/location-loader.js";
 import { config as loadEnv } from "dotenv";
 import { join } from "node:path";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -21,25 +22,9 @@ loadEnv();
 
 const SKIP = !process.env.ANIMA_LIVE_TEST && !process.env.DEEPSEEK_API_KEY;
 
-const LOCATIONS = [
-  { id: "home_alice", name: "Alice 的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "home_bob", name: "Bob 的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "home_maria", name: "Maria 的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "home_lao_chen", name: "老陈的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "home_emily", name: "Emily 的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "home_sakiko", name: "祥子的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "flower_shop", name: "Alice的花店", type: "commercial" as const, openHours: { open: 8, close: 18 }, presentCharacters: [] as string[] },
-  { id: "bakery", name: "Maria的面包店", type: "commercial" as const, openHours: { open: 7, close: 17 }, presentCharacters: [] as string[] },
-  { id: "cafe", name: "咖啡馆", type: "commercial" as const, openHours: { open: 7, close: 22 }, presentCharacters: [] as string[] },
-  { id: "plaza", name: "广场", type: "public" as const, presentCharacters: [] as string[] },
-  { id: "shop", name: "杂货店", type: "commercial" as const, openHours: { open: 8, close: 20 }, presentCharacters: [] as string[] },
-  { id: "bar", name: "酒吧", type: "commercial" as const, openHours: { open: 17, close: 2 }, presentCharacters: [] as string[] },
-  { id: "beach", name: "海边", type: "nature" as const, presentCharacters: [] as string[] },
-  { id: "dock", name: "码头", type: "nature" as const, presentCharacters: [] as string[] },
-  { id: "forest", name: "森林", type: "nature" as const, presentCharacters: [] as string[] },
-  { id: "farm", name: "农田", type: "nature" as const, presentCharacters: [] as string[] },
-  { id: "library", name: "图书馆", type: "public" as const, openHours: { open: 9, close: 18 }, presentCharacters: [] as string[] },
-];
+// 从 YAML 加载地点（含 atmosphere 感官描写）
+const LOCATIONS = loadLocationsFromDir(join(import.meta.dirname, "../../data/locations"))
+  .filter((l) => l.id !== "home_player"); // Live 测试不包含玩家
 
 const GRAY_ACTIONS = new Set(["argue", "steal", "beg"]);
 const SOCIAL_ACTIONS = new Set(["talk", "gossip", "comfort", "give_gift", "argue"]);
@@ -198,7 +183,7 @@ describe.skipIf(SKIP)("Full Day Simulation — 6 Characters (Post-Refactor)", ()
     const md: string[] = [];
 
     md.push(`# 一日模拟日志`);
-    md.push(`> 时间: ${now.toISOString()} | 耗时: ${elapsedSec}s | 版本: 活人感重构后（preferences + 关系归零 + 无日程兜底）`);
+    md.push(`> 时间: ${now.toISOString()} | 耗时: ${elapsedSec}s | 版本: P0 活人感深度改造（环境感知 + 内心独白分级 + 对话模式）`);
     md.push("");
 
     // ── 1. 概要 ──

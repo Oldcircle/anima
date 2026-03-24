@@ -41,6 +41,8 @@ export async function runAgentTick(params: {
   gameTime: GameTime;
   relationships?: RelationshipManager;
   memory?: ShortTermMemory;
+  /** 对话模式覆盖：如果提供，跳过标准 prompt 构建，直接使用这个 LLM request */
+  conversationRequest?: LLMRequest;
 }): Promise<AgentTickResult> {
   const { config, world, eventBus, gameTime } = params;
   const { card, actions, provider, modelId } = config;
@@ -73,7 +75,11 @@ export async function runAgentTick(params: {
     .filter((c): c is CharacterState => c !== undefined)
     .map((c) => {
       const rel = params.relationships?.get(card.id, c.id);
-      return { id: c.id, name: c.name, relationship: rel };
+      // 可观察状态：描述这个角色当前在做什么
+      const currentAction = c.currentAction
+        ? describeObservableAction(c.name, c.currentAction.name)
+        : undefined;
+      return { id: c.id, name: c.name, relationship: rel, currentAction };
     });
 
   const recentEvents = eventBus.query({ actorId: card.id, limit: 5 });
@@ -95,15 +101,20 @@ export async function runAgentTick(params: {
     weather: world.weather,
     festivalHint: getTodayFestival(gameTime.season, gameTime.seasonDay)?.promptHint,
     inboxMessages,
+    atmosphere: location?.atmosphere,
   });
 
-  const request: LLMRequest = {
-    system: systemPrompt,
-    messages: [{ role: "user", content: userPrompt }],
-    tools: actions.map((a) => a.tool),
-    temperature: 0.8,
-    maxTokens: 512,
-  };
+  // 对话模式：如果提供了 conversationRequest，使用它替代标准 prompt
+  const request: LLMRequest = params.conversationRequest ?? (() => {
+    const isSocialScene = nearbyCharacters.length > 0 || inboxMessages.length > 0;
+    return {
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+      tools: actions.map((a) => a.tool),
+      temperature: 0.8,
+      maxTokens: isSocialScene ? 1024 : 512,
+    };
+  })();
 
   // 调用 LLM
   let response;
@@ -287,3 +298,19 @@ async function executeAction(
   };
 }
 
+/** 将 action name 转为第三人称可观察的描述 */
+function describeObservableAction(name: string, action: string): string {
+  const descriptions: Record<string, string> = {
+    eat: "正在吃东西",
+    sleep: "在睡觉",
+    work: "在工作",
+    read: "在看书",
+    hobby: "在做自己的事",
+    drink: "在喝东西",
+    explore: "在四处逛逛",
+    wash: "不在（在洗漱）",
+    gossip: "在跟人聊八卦",
+    talk: "在跟人说话",
+  };
+  return descriptions[action] ?? `在${action}`;
+}
