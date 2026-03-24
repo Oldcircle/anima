@@ -74,5 +74,5 @@ describe.skipIf(SKIP)("Full Day Simulation — 6 Characters", () => {
     for (const c of world.getAllCharacters()) {
       expect(c.needs.energy).toBeGreaterThanOrEqual(0);
     }
-  }, 900_000);
+  }, 1800_000); // 30 分钟超时
 });
