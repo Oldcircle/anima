@@ -50,14 +50,12 @@ describeIf("半天 Live 模拟 (P0+P1)", () => {
       actions: ALL_BASIC_ACTIONS,
       provider,
       modelId: "deepseek-chat",
-      playerId: "player",
     });
 
     // 实时输出
     const reporter = new SimReporter(world, sim, {
       totalTicks: 36,
       label: "半天模拟 (06:00 → 15:00) — P0+P1 验证",
-      playerId: "player",
     });
 
     // 运行 36 tick

@@ -37,11 +37,9 @@ describe.skipIf(SKIP)("7-Day Live Simulation", () => {
 
   it("6 角色跑 7 天", async () => {
     const DATA_DIR = join(import.meta.dirname, "../../data");
-    const locations = loadLocationsFromDir(join(DATA_DIR, "locations"))
-      .filter((l) => l.id !== "home_player");
-    const characters = loadCharactersFromDir(join(DATA_DIR, "characters"))
-      .filter((c) => c.id !== "player");
-    expect(characters.length).toBe(6);
+    const locations = loadLocationsFromDir(join(DATA_DIR, "locations"));
+    const characters = loadCharactersFromDir(join(DATA_DIR, "characters"));
+    expect(characters.length).toBe(5);
 
     const world = new World(locations, 0);
     for (const card of characters) {

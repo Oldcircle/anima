@@ -34,7 +34,6 @@ const sim = new Simulation(world, eventBus, {
   actions: ALL_BASIC_ACTIONS,
   provider,
   modelId: "deepseek-chat",
-  playerId: "player",
 });
 
 const START = 24; // 06:00
@@ -71,7 +70,7 @@ console.log(`总行为: ${actions}, 对话: ${talks}, 耗时: ${elapsed}s`);
 
 // 关系网络（双向）
 console.log("\n--- 关系网络（双向） ---");
-const chars = world.getAllCharacters().filter((c) => c.id !== "player");
+const chars = world.getAllCharacters();
 for (const a of chars) {
   for (const b of chars) {
     if (a.id >= b.id) continue;

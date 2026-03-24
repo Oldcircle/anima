@@ -37,11 +37,9 @@ describe.skipIf(SKIP)("Full Day Simulation — 6 Characters", () => {
 
   it("6 角色从早到晚一整天 (06:00→23:45)", async () => {
     const DATA_DIR = join(import.meta.dirname, "../../data");
-    const locations = loadLocationsFromDir(join(DATA_DIR, "locations"))
-      .filter((l) => l.id !== "home_player");
-    const characters = loadCharactersFromDir(join(DATA_DIR, "characters"))
-      .filter((c) => c.id !== "player");
-    expect(characters.length).toBe(6);
+    const locations = loadLocationsFromDir(join(DATA_DIR, "locations"));
+    const characters = loadCharactersFromDir(join(DATA_DIR, "characters"));
+    expect(characters.length).toBe(5);
 
     const world = new World(locations, 24); // tick 24 = 06:00
     for (const card of characters) {
@@ -60,7 +58,6 @@ describe.skipIf(SKIP)("Full Day Simulation — 6 Characters", () => {
     const reporter = new SimReporter(world, sim, {
       totalTicks: 72,
       label: "一日模拟：6 角色 (06:00 → 23:45)",
-      playerId: "player",
     });
 
     // 运行 72 tick = 06:00 → 23:45

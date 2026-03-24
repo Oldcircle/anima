@@ -20,10 +20,6 @@ _residential_atmosphere: &residential
 
 # 各角色的家
 homes:
-  - id: home_player
-    name: 旅人的住处
-    type: residential
-    atmosphere: *residential
   - id: home_tomori
     name: 灯的家
     type: residential

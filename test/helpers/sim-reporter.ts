@@ -40,8 +40,6 @@ export interface SimReporterOptions {
   label: string;
   /** 是否显示每个 tick 的详细思考（默认 false） */
   showThoughts?: boolean;
-  /** 玩家 ID（排除在统计外） */
-  playerId?: string;
 }
 
 interface TalkRecord {
@@ -153,7 +151,6 @@ export class SimReporter {
     const skipped: AgentTickResult[] = [];
 
     for (const r of summary.results) {
-      if (this.opts.playerId && r.characterId === this.opts.playerId) continue;
       if (r.skipped) {
         skipped.push(r);
         this.totalSkipped++;
@@ -317,7 +314,7 @@ export class SimReporter {
     // 最终角色状态
     console.log("");
     console.log(c.bold("  角色状态"));
-    const chars = this.world.getAllCharacters().filter((ch) => ch.id !== this.opts.playerId);
+    const chars = this.world.getAllCharacters();
     for (const ch of chars) {
       const n = ch.needs;
       const needBar = (val: number, label: string) => {
@@ -363,7 +360,7 @@ export class SimReporter {
     const elapsed = ((Date.now() - this.startWall) / 1000).toFixed(0);
     const allImpressions = this.sim.impressions.getAll();
     const rels = this.sim.relationships.getAll().filter((r) => r.level > 0);
-    const chars = this.world.getAllCharacters().filter((ch) => ch.id !== this.opts.playerId);
+    const chars = this.world.getAllCharacters();
     const sorted = [...this.actionCounts.entries()].sort((a, b) => b[1] - a[1]);
 
     const md: string[] = [];

@@ -55,8 +55,8 @@ describe("loadLocationsFromDir", () => {
     const dir = join(import.meta.dirname, "..", "..", "data", "locations");
     const locations = loadLocationsFromDir(dir);
 
-    // Should have all 17 locations (6 residential + 11 others)
-    expect(locations.length).toBe(17);
+    // Should have all 16 locations (6 residential + 10 public + 1 special)
+    expect(locations.length).toBe(16);
 
     // Check a commercial location has atmosphere
     const cafe = locations.find((l) => l.id === "cafe");

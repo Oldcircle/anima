@@ -50,13 +50,12 @@ for (const card of characters) {
 
 const eventBus = new EventBus();
 
-// --- 创建模拟（玩家 = player 角色，不调 LLM） ---
+// --- 创建模拟 ---
 const simulation = new Simulation(world, eventBus, {
   characters,
   actions: ALL_BASIC_ACTIONS,
   provider,
   modelId: "deepseek-chat",
-  playerId: "player",
 });
 
 // --- 尝试读档 ---
