@@ -5,18 +5,18 @@ import type { CharacterCard } from "../character/types.js";
 import type { ConversationExchange } from "./conversation-mode.js";
 import type { LLMProvider } from "../providers/types.js";
 
-const maria: CharacterCard = {
-  id: "maria",
-  name: "Maria Lopez",
-  age: 31,
-  occupation: "面包店老板",
+const mutsumi: CharacterCard = {
+  id: "mutsumi",
+  name: "要乐奏",
+  age: 19,
+  occupation: "杂货店帮工",
   personality: {
-    traits: ["热情"],
-    interests: ["烘焙"],
-    dislikes: ["冷场"],
-    speechStyle: "热情洋溢",
+    traits: ["温和"],
+    interests: ["吉他"],
+    dislikes: ["争吵"],
+    speechStyle: "温柔平稳",
   },
-  background: "在镇上经营面包店",
+  background: "乐器店老板的女儿",
   relationships: {},
 };
 
@@ -36,9 +36,9 @@ const sakiko: CharacterCard = {
 };
 
 const exchanges: ConversationExchange[] = [
-  { speakerId: "maria", speakerName: "Maria Lopez", message: "你好呀！", tick: 10 },
+  { speakerId: "mutsumi", speakerName: "要乐奏", message: "你好呀！", tick: 10 },
   { speakerId: "sakiko", speakerName: "丰川祥子", message: "请多关照。", tick: 10 },
-  { speakerId: "maria", speakerName: "Maria Lopez", message: "你看起来有点紧张？", tick: 11 },
+  { speakerId: "mutsumi", speakerName: "要乐奏", message: "你看起来有点紧张？", tick: 11 },
   { speakerId: "sakiko", speakerName: "丰川祥子", message: "...只是还不太习惯这里。", tick: 11 },
 ];
 
@@ -48,7 +48,7 @@ describe("impression-updater", () => {
     provider.enqueueResponse("她礼貌而克制，说话一直留着分寸。", []);
 
     const impression = await generateImpression({
-      observerCard: maria,
+      observerCard: mutsumi,
       targetCard: sakiko,
       exchanges,
       provider,
@@ -71,7 +71,7 @@ describe("impression-updater", () => {
 
     const impression = await generateImpression({
       observerCard: sakiko,
-      targetCard: maria,
+      targetCard: mutsumi,
       exchanges,
       provider,
       modelId: "broken",
@@ -79,6 +79,6 @@ describe("impression-updater", () => {
     });
 
     expect(impression).not.toBeNull();
-    expect(impression!.summary).toContain("Maria");
+    expect(impression!.summary).toContain("要乐奏");
   });
 });

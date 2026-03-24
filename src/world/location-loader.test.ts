@@ -55,8 +55,8 @@ describe("loadLocationsFromDir", () => {
     const dir = join(import.meta.dirname, "..", "..", "data", "locations");
     const locations = loadLocationsFromDir(dir);
 
-    // Should have all 18 locations (7 residential + 11 others)
-    expect(locations.length).toBe(18);
+    // Should have all 17 locations (6 residential + 11 others)
+    expect(locations.length).toBe(17);
 
     // Check a commercial location has atmosphere
     const cafe = locations.find((l) => l.id === "cafe");
@@ -66,10 +66,10 @@ describe("loadLocationsFromDir", () => {
     expect(cafe!.atmosphere!.rainy).toBeTruthy();
 
     // Check residential locations loaded from homes array
-    const homeAlice = locations.find((l) => l.id === "home_alice");
-    expect(homeAlice).toBeDefined();
-    expect(homeAlice!.type).toBe("residential");
-    expect(homeAlice!.atmosphere).toBeDefined();
+    const homeTomori = locations.find((l) => l.id === "home_tomori");
+    expect(homeTomori).toBeDefined();
+    expect(homeTomori!.type).toBe("residential");
+    expect(homeTomori!.atmosphere).toBeDefined();
 
     // Check nature location
     const beach = locations.find((l) => l.id === "beach");

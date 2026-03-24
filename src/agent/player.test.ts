@@ -19,14 +19,14 @@ const playerCard: CharacterCard = {
   relationships: {},
 };
 
-const aliceCard: CharacterCard = {
-  id: "alice",
-  name: "Alice Chen",
-  age: 28,
-  occupation: "花店老板",
-  home: "home_alice",
-  personality: { traits: ["温柔"], interests: ["园艺"], dislikes: ["噪音"], speechStyle: "轻声细语" },
-  background: "花店老板",
+const tomoriCard: CharacterCard = {
+  id: "tomori",
+  name: "高松灯",
+  age: 19,
+  occupation: "面包店学徒",
+  home: "home_tomori",
+  personality: { traits: ["内向"], interests: ["写东西"], dislikes: ["人多的场合"], speechStyle: "声音微弱" },
+  background: "面包店学徒",
   relationships: {},
 };
 
@@ -44,12 +44,12 @@ describe("Player System", () => {
   beforeEach(() => {
     world = new World(LOCATIONS_WITH_PLAYER);
     world.addCharacter("player", "旅人", "home_player");
-    world.addCharacter("alice", "Alice Chen", "home_alice");
+    world.addCharacter("tomori", "高松灯", "home_tomori");
     eventBus = new EventBus();
     mockLLM = new MockLLMProvider();
 
     sim = new Simulation(world, eventBus, {
-      characters: [playerCard, aliceCard],
+      characters: [playerCard, tomoriCard],
       actions: ALL_BASIC_ACTIONS,
       provider: mockLLM,
       modelId: "test",
@@ -66,12 +66,12 @@ describe("Player System", () => {
   });
 
   it("玩家不调 LLM：tick 中只有 AI 角色决策", async () => {
-    mockLLM.enqueueResponse("工作", [{ name: "work", arguments: { activity: "整理花束" } }]);
+    mockLLM.enqueueResponse("工作", [{ name: "work", arguments: { activity: "揉面团" } }]);
 
     const summary = await sim.runOneTick(tickToGameTime(32));
-    // 只有 alice 的结果，没有 player
+    // 只有 tomori 的结果，没有 player
     const charIds = summary.results.map((r) => r.characterId);
-    expect(charIds).toContain("alice");
+    expect(charIds).toContain("tomori");
     expect(charIds).not.toContain("player");
   });
 
@@ -98,30 +98,30 @@ describe("Player System", () => {
   });
 
   it("executePlayerAction: talk 写入对方信箱", async () => {
-    // 先把玩家和 alice 移到同一地点
+    // 先把玩家和 tomori 移到同一地点
     world.moveCharacter("player", "cafe");
-    world.moveCharacter("alice", "cafe");
+    world.moveCharacter("tomori", "cafe");
 
-    const result = await sim.executePlayerAction("talk", { target: "alice", message: "你好，Alice！" });
+    const result = await sim.executePlayerAction("talk", { target: "tomori", message: "你好，灯！" });
     expect(result).not.toBeNull();
     expect(result!.action!.name).toBe("talk");
 
-    // alice 的信箱应该有玩家的消息
-    const aliceState = world.getCharacter("alice")!;
-    expect(aliceState.inbox).toHaveLength(1);
-    expect(aliceState.inbox[0]!.content).toBe("你好，Alice！");
-    expect(aliceState.inbox[0]!.fromId).toBe("player");
+    // tomori 的信箱应该有玩家的消息
+    const tomoriState = world.getCharacter("tomori")!;
+    expect(tomoriState.inbox).toHaveLength(1);
+    expect(tomoriState.inbox[0]!.content).toBe("你好，灯！");
+    expect(tomoriState.inbox[0]!.fromId).toBe("player");
   });
 
   it("executePlayerAction: talk 产生关系变化", async () => {
     world.moveCharacter("player", "cafe");
-    world.moveCharacter("alice", "cafe");
+    world.moveCharacter("tomori", "cafe");
 
-    await sim.executePlayerAction("talk", { target: "alice", message: "你好！" });
+    await sim.executePlayerAction("talk", { target: "tomori", message: "你好！" });
 
     const rels = sim.relationships.getRelationshipsOf("player");
     expect(rels.length).toBeGreaterThan(0);
-    expect(rels[0]!.otherId).toBe("alice");
+    expect(rels[0]!.otherId).toBe("tomori");
   });
 
   it("executePlayerAction: sleep 约束（必须在家）", async () => {
@@ -138,23 +138,23 @@ describe("Player System", () => {
   it("AI 角色能看到玩家并反应", async () => {
     // 把两人放在同一地点
     world.moveCharacter("player", "cafe");
-    world.moveCharacter("alice", "cafe");
+    world.moveCharacter("tomori", "cafe");
 
     // 玩家先说话
-    await sim.executePlayerAction("talk", { target: "alice", message: "你好！" });
+    await sim.executePlayerAction("talk", { target: "tomori", message: "你好！" });
 
-    // 运行 tick，alice 应该能看到玩家的信箱消息
-    mockLLM.enqueueResponse("有人跟我打招呼", [{ name: "talk", arguments: { target: "player", message: "你好，旅人！" } }]);
+    // 运行 tick，tomori 应该能看到玩家的信箱消息
+    mockLLM.enqueueResponse("有人跟我打招呼", [{ name: "talk", arguments: { target: "player", message: "你、你好……旅人先生。" } }]);
     const summary = await sim.runOneTick(tickToGameTime(48));
 
-    // alice 应该回复了
-    const aliceResult = summary.results.find((r) => r.characterId === "alice" && r.action?.name === "talk");
-    expect(aliceResult).toBeDefined();
+    // tomori 应该回复了
+    const tomoriResult = summary.results.find((r) => r.characterId === "tomori" && r.action?.name === "talk");
+    expect(tomoriResult).toBeDefined();
 
-    // 玩家信箱应该有 alice 的回复
+    // 玩家信箱应该有 tomori 的回复
     const playerState = world.getCharacter("player")!;
     expect(playerState.inbox).toHaveLength(1);
-    expect(playerState.inbox[0]!.fromId).toBe("alice");
+    expect(playerState.inbox[0]!.fromId).toBe("tomori");
   });
 
   it("getPlayerActions 返回所有可用行为", () => {

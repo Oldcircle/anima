@@ -24,27 +24,23 @@ homes:
     name: 旅人的住处
     type: residential
     atmosphere: *residential
-  - id: home_alice
-    name: Alice 的家
+  - id: home_tomori
+    name: 灯的家
     type: residential
     atmosphere: *residential
-  - id: home_bob
-    name: Bob 的家
-    type: residential
-    atmosphere: *residential
-  - id: home_maria
-    name: Maria 的家
-    type: residential
-    atmosphere: *residential
-  - id: home_lao_chen
-    name: 老陈的家
-    type: residential
-    atmosphere: *residential
-  - id: home_emily
-    name: Emily 的家
+  - id: home_anon
+    name: 爱音的家
     type: residential
     atmosphere: *residential
   - id: home_sakiko
     name: 祥子的家
+    type: residential
+    atmosphere: *residential
+  - id: home_mutsumi
+    name: 睦的家
+    type: residential
+    atmosphere: *residential
+  - id: home_soyo
+    name: 素世的家
     type: residential
     atmosphere: *residential

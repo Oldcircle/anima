@@ -5,24 +5,24 @@ import type { CharacterState } from "../world/types.js";
 import { tickToGameTime } from "../core/tick-engine.js";
 
 const baseCard: CharacterCard = {
-  id: "alice",
-  name: "Alice Chen",
-  age: 28,
-  occupation: "花店老板",
+  id: "tomori",
+  name: "高松灯",
+  age: 19,
+  occupation: "面包店学徒",
   personality: {
-    traits: ["温柔"],
-    interests: ["园艺"],
-    dislikes: ["噪音"],
-    speechStyle: "轻声细语",
+    traits: ["内向"],
+    interests: ["写东西"],
+    dislikes: ["人多的场合"],
+    speechStyle: "声音微弱",
   },
-  background: "开了镇上唯一的花店",
+  background: "从城市来的安静女孩，在面包店当学徒",
   relationships: {},
 };
 
 function createState(): CharacterState {
   return {
-    id: "alice",
-    name: "Alice Chen",
+    id: "tomori",
+    name: "高松灯",
     locationId: "cafe",
     needs: {
       hunger: 80,
@@ -44,8 +44,8 @@ describe("prompt-builder", () => {
       gameTime: tickToGameTime(48),
       nearbyCharacters: [
         {
-          id: "bob",
-          name: "Bob Wang",
+          id: "anon",
+          name: "千早爱音",
           relationship: { level: 42, type: "friend" },
           currentAction: "在看书",
         },
@@ -53,7 +53,7 @@ describe("prompt-builder", () => {
       recentEvents: [],
       locationName: "咖啡馆",
       locationType: "commercial",
-      allLocationNames: [{ id: "home_alice", name: "Alice的家" }],
+      allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
     });
 
     expect(prompt).toContain("你对他们的主观感觉");
@@ -67,10 +67,10 @@ describe("prompt-builder", () => {
     state.currentIntent = {
       kind: "reply",
       source: "message",
-      targetId: "bob",
+      targetId: "anon",
       createdTick: 48,
       expiresAt: 54,
-      summary: "Bob 刚刚跟你搭话，你还在想要不要立刻回他。",
+      summary: "爱音刚刚跟你搭话，你还在想要不要立刻回她。",
     };
 
     const prompt = buildUserPrompt({
@@ -81,10 +81,10 @@ describe("prompt-builder", () => {
       recentEvents: [],
       locationName: "咖啡馆",
       locationType: "commercial",
-      allLocationNames: [{ id: "home_alice", name: "Alice的家" }],
+      allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
     });
 
     expect(prompt).toContain("你心里还挂着的事");
-    expect(prompt).toContain("Bob 刚刚跟你搭话");
+    expect(prompt).toContain("爱音刚刚跟你搭话");
   });
 });

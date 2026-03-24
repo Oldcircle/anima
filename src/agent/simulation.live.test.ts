@@ -19,35 +19,35 @@ loadEnv();
 
 const SKIP = !process.env.ANIMA_LIVE_TEST && !process.env.DEEPSEEK_API_KEY;
 
-const aliceCard: CharacterCard = {
-  id: "alice",
-  name: "Alice Chen",
-  age: 28,
-  occupation: "花店老板",
-  home: "home_alice",
+const tomoriCard: CharacterCard = {
+  id: "tomori",
+  name: "高松灯",
+  age: 19,
+  occupation: "面包店学徒",
+  home: "home_tomori",
   personality: {
-    traits: ["温柔", "内向", "细心"],
-    interests: ["园艺", "阅读", "烘焙"],
-    dislikes: ["噪音", "浪费"],
-    speechStyle: "说话轻声细语，经常用花的比喻",
+    traits: ["内向", "纯真", "固执"],
+    interests: ["写东西", "捡石头", "烘焙"],
+    dislikes: ["人多的场合", "浪费"],
+    speechStyle: "声音微弱，断断续续，经常欲言又止",
   },
-  background: "从城市搬来三年了，开了镇上唯一的花店。喜欢安静的生活。",
+  background: "从城市来的安静女孩，在面包店当学徒。喜欢安静的生活。",
   relationships: {},
 };
 
-const bobCard: CharacterCard = {
-  id: "bob",
-  name: "Bob Wang",
-  age: 35,
-  occupation: "渔夫",
-  home: "home_bob",
+const anonCard: CharacterCard = {
+  id: "anon",
+  name: "千早爱音",
+  age: 19,
+  occupation: "咖啡馆兼职",
+  home: "home_anon",
   personality: {
-    traits: ["豪爽", "外向", "乐观", "粗心"],
-    interests: ["钓鱼", "喝酒", "讲故事"],
-    dislikes: ["早起", "复杂的事情"],
-    speechStyle: "说话大大咧咧，爱用夸张的比喻，经常哈哈大笑",
+    traits: ["开朗", "外向", "察言观色", "有时冒失"],
+    interests: ["社交", "逛街", "聊天"],
+    dislikes: ["被忽视", "复杂的事情"],
+    speechStyle: "活泼外向，语气夸张，经常哈哈大笑",
   },
-  background: "土生土长的镇民，家族世代捕鱼。妻子三年前去世后一个人生活。",
+  background: "从东京转来的社交达人，在咖啡馆兼职。",
   relationships: {},
 };
 
@@ -63,29 +63,29 @@ describe.skipIf(SKIP)("Simulation — Live (DeepSeek)", () => {
     });
   });
 
-  it("Alice 和 Bob 在咖啡馆相遇并对话", async () => {
+  it("灯和爱音在咖啡馆相遇并对话", async () => {
     const world = new World(TEST_LOCATIONS);
     // 中午 12 点，两人都在咖啡馆
-    world.addCharacter("alice", "Alice Chen", "cafe", { hunger: 30, social: 35 });
-    world.addCharacter("bob", "Bob Wang", "cafe", { hunger: 40, social: 25 });
+    world.addCharacter("tomori", "高松灯", "cafe", { hunger: 30, social: 35 });
+    world.addCharacter("anon", "千早爱音", "cafe", { hunger: 40, social: 25 });
     const eventBus = new EventBus();
 
     const sim = new Simulation(world, eventBus, {
-      characters: [aliceCard, bobCard],
+      characters: [tomoriCard, anonCard],
       actions: ALL_BASIC_ACTIONS,
       provider,
       modelId: "deepseek-chat",
     });
 
     console.log("\n=== 咖啡馆相遇 ===");
-    console.log("时间: 中午 12:00，Alice 和 Bob 都在咖啡馆");
-    console.log("Alice: 饥饿 30, 社交 35 | Bob: 饥饿 40, 社交 25\n");
+    console.log("时间: 中午 12:00，灯和爱音都在咖啡馆");
+    console.log("灯: 饥饿 30, 社交 35 | 爱音: 饥饿 40, 社交 25\n");
 
     const summary = await sim.runOneTick(tickToGameTime(48));
 
     // 输出角色决策
     for (const r of summary.results) {
-      const name = r.characterId === "alice" ? "Alice" : "Bob";
+      const name = r.characterId === "tomori" ? "灯" : "爱音";
       if (r.skipped) {
         console.log(`[${name}] ⏭️ ${r.skipReason}`);
       } else {
@@ -97,7 +97,7 @@ describe.skipIf(SKIP)("Simulation — Live (DeepSeek)", () => {
     }
 
     // 输出信箱状态
-    for (const id of ["alice", "bob"]) {
+    for (const id of ["tomori", "anon"]) {
       const s = world.getCharacter(id)!;
       if (s.inbox.length > 0) {
         console.log(`\n📬 ${s.name} 的信箱:`, s.inbox.map(m => `${m.fromName}: ${m.content}`));
@@ -106,7 +106,7 @@ describe.skipIf(SKIP)("Simulation — Live (DeepSeek)", () => {
 
     // 输出最终状态
     console.log("\n=== 最终状态 ===");
-    for (const id of ["alice", "bob"]) {
+    for (const id of ["tomori", "anon"]) {
       const s = world.getCharacter(id)!;
       console.log(`${s.name}: 📍${s.locationId} 饥饿:${s.needs.hunger.toFixed(0)} 社交:${s.needs.social.toFixed(0)}`);
     }
@@ -117,12 +117,12 @@ describe.skipIf(SKIP)("Simulation — Live (DeepSeek)", () => {
 
   it("2 角色跑半天（24 tick = 6 小时）", async () => {
     const world = new World(TEST_LOCATIONS);
-    world.addCharacter("alice", "Alice Chen", "home_alice");
-    world.addCharacter("bob", "Bob Wang", "home_bob");
+    world.addCharacter("tomori", "高松灯", "home_tomori");
+    world.addCharacter("anon", "千早爱音", "home_anon");
     const eventBus = new EventBus();
 
     const sim = new Simulation(world, eventBus, {
-      characters: [aliceCard, bobCard],
+      characters: [tomoriCard, anonCard],
       actions: ALL_BASIC_ACTIONS,
       provider,
       modelId: "deepseek-chat",
@@ -164,7 +164,7 @@ describe.skipIf(SKIP)("Simulation — Live (DeepSeek)", () => {
 
     // 最终状态
     console.log("\n=== 最终状态 ===");
-    for (const id of ["alice", "bob"]) {
+    for (const id of ["tomori", "anon"]) {
       const s = world.getCharacter(id)!;
       console.log(`${s.name}: 📍${s.locationId} 饥饿:${s.needs.hunger.toFixed(0)} 精力:${s.needs.energy.toFixed(0)} 社交:${s.needs.social.toFixed(0)}`);
     }

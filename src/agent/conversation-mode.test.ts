@@ -26,21 +26,21 @@ const sakikoCard: CharacterCard = {
 };
 
 const mariaCard: CharacterCard = {
-  id: "maria",
-  name: "Maria Lopez",
-  age: 30,
-  occupation: "面包店老板",
-  home: "home_maria",
-  appearance: "棕色卷发，热情洋溢的笑容。",
+  id: "mutsumi",
+  name: "要乐奏",
+  age: 19,
+  occupation: "杂货店帮工",
+  home: "home_mutsumi",
+  appearance: "温柔的笑容，总是让人安心。",
   personality: {
-    traits: ["热情", "外向"],
-    interests: ["烘焙"],
-    dislikes: ["冷漠"],
-    speechStyle: "热情奔放",
-    coreTraits: "像一团移动的火焰",
-    speech: { style: "夹杂西班牙语", habits: ["¡Hola!"], examples: ["¡Buenos días!"] },
+    traits: ["温和", "包容"],
+    interests: ["吉他"],
+    dislikes: ["争吵"],
+    speechStyle: "温柔平稳",
+    coreTraits: "天生的调解者",
+    speech: { style: "温柔但坚定", habits: ["没关系的"], examples: ["大家都很努力呢"] },
   },
-  background: "移民到小镇的面包师",
+  background: "乐器店老板的女儿",
   relationships: {},
 };
 
@@ -51,7 +51,7 @@ const sakikoState: CharacterState = {
 };
 
 const mariaState: CharacterState = {
-  id: "maria", name: "Maria Lopez", locationId: "cafe",
+  id: "mutsumi", name: "要乐奏", locationId: "cafe",
   needs: { hunger: 50, energy: 80, social: 60, happiness: 70, hygiene: 90 },
   gold: 62, inbox: [],
 };
@@ -63,10 +63,10 @@ const gameTime = { tick: 52, day: 0, hour: 13, minute: 0, season: "spring" as co
 describe("ConversationTracker", () => {
   it("records talk and retrieves history", () => {
     const tracker = new ConversationTracker();
-    tracker.recordTalk("maria", "Maria", "sakiko", "你好！", 50);
-    tracker.recordTalk("sakiko", "祥子", "maria", "你好。", 50);
+    tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "你好！", 50);
+    tracker.recordTalk("sakiko", "祥子", "mutsumi", "你好。", 50);
 
-    const history = tracker.getHistory("maria", "sakiko");
+    const history = tracker.getHistory("mutsumi", "sakiko");
     expect(history).toHaveLength(2);
     expect(history[0]!.message).toBe("你好！");
     expect(history[1]!.message).toBe("你好。");
@@ -74,53 +74,53 @@ describe("ConversationTracker", () => {
 
   it("pair key is order-independent", () => {
     const tracker = new ConversationTracker();
-    tracker.recordTalk("maria", "Maria", "sakiko", "Hi", 50);
+    tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "Hi", 50);
 
-    expect(tracker.getHistory("maria", "sakiko")).toHaveLength(1);
-    expect(tracker.getHistory("sakiko", "maria")).toHaveLength(1);
+    expect(tracker.getHistory("mutsumi", "sakiko")).toHaveLength(1);
+    expect(tracker.getHistory("sakiko", "mutsumi")).toHaveLength(1);
   });
 
   it("detects active conversation when both sides talked recently", () => {
     const tracker = new ConversationTracker();
-    tracker.recordTalk("maria", "Maria", "sakiko", "你好！", 50);
-    tracker.recordTalk("sakiko", "祥子", "maria", "你好。", 51);
+    tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "你好！", 50);
+    tracker.recordTalk("sakiko", "祥子", "mutsumi", "你好。", 51);
 
-    expect(tracker.isActiveConversation("maria", "sakiko", 52)).toBe(true);
+    expect(tracker.isActiveConversation("mutsumi", "sakiko", 52)).toBe(true);
   });
 
   it("not active if only one side talked", () => {
     const tracker = new ConversationTracker();
-    tracker.recordTalk("maria", "Maria", "sakiko", "你好！", 50);
-    tracker.recordTalk("maria", "Maria", "sakiko", "在吗？", 51);
+    tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "你好！", 50);
+    tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "在吗？", 51);
 
-    expect(tracker.isActiveConversation("maria", "sakiko", 52)).toBe(false);
+    expect(tracker.isActiveConversation("mutsumi", "sakiko", 52)).toBe(false);
   });
 
   it("not active if exchanges are too old", () => {
     const tracker = new ConversationTracker();
-    tracker.recordTalk("maria", "Maria", "sakiko", "你好！", 40);
-    tracker.recordTalk("sakiko", "祥子", "maria", "你好。", 41);
+    tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "你好！", 40);
+    tracker.recordTalk("sakiko", "祥子", "mutsumi", "你好。", 41);
 
-    expect(tracker.isActiveConversation("maria", "sakiko", 52)).toBe(false);
+    expect(tracker.isActiveConversation("mutsumi", "sakiko", 52)).toBe(false);
   });
 
   it("cleanup removes expired conversations", () => {
     const tracker = new ConversationTracker();
-    tracker.recordTalk("maria", "Maria", "sakiko", "旧消息", 10);
-    tracker.recordTalk("alice", "Alice", "bob", "新消息", 50);
+    tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "旧消息", 10);
+    tracker.recordTalk("tomori", "高松灯", "anon", "新消息", 50);
 
     tracker.cleanup(52);
 
-    expect(tracker.getHistory("maria", "sakiko")).toHaveLength(0);
-    expect(tracker.getHistory("alice", "bob")).toHaveLength(1);
+    expect(tracker.getHistory("mutsumi", "sakiko")).toHaveLength(0);
+    expect(tracker.getHistory("tomori", "anon")).toHaveLength(1);
   });
 
   it("clear removes specific conversation", () => {
     const tracker = new ConversationTracker();
-    tracker.recordTalk("maria", "Maria", "sakiko", "消息", 50);
-    tracker.clear("maria", "sakiko");
+    tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "消息", 50);
+    tracker.clear("mutsumi", "sakiko");
 
-    expect(tracker.getHistory("maria", "sakiko")).toHaveLength(0);
+    expect(tracker.getHistory("mutsumi", "sakiko")).toHaveLength(0);
   });
 });
 
@@ -128,7 +128,7 @@ describe("ConversationTracker", () => {
 
 describe("buildConversationPrompt", () => {
   const history = [
-    { speakerId: "maria", speakerName: "Maria Lopez", message: "¡Hola! 你今天看起来好像有心事？", tick: 50 },
+    { speakerId: "mutsumi", speakerName: "要乐奏", message: "祥子，你今天看起来好像有心事？", tick: 50 },
     { speakerId: "sakiko", speakerName: "丰川祥子", message: "...没有什么特别的。只是昨晚没睡好。", tick: 51 },
   ];
 
@@ -155,7 +155,7 @@ describe("buildConversationPrompt", () => {
     });
 
     expect(prompt).toContain("## 你的对话对象");
-    expect(prompt).toContain("Maria Lopez");
+    expect(prompt).toContain("要乐奏");
     expect(prompt).toContain("acquaintance");
     expect(prompt).toContain("亲密度 24");
   });
@@ -168,7 +168,7 @@ describe("buildConversationPrompt", () => {
     });
 
     expect(prompt).toContain("## 对话记录");
-    expect(prompt).toContain("Maria Lopez：「¡Hola!");
+    expect(prompt).toContain("要乐奏：「祥子，你今天");
     expect(prompt).toContain("你：「...没有什么特别的");
   });
 
@@ -203,7 +203,7 @@ describe("buildConversationPrompt", () => {
       history, gameTime, locationName: "咖啡馆",
     });
 
-    expect(prompt).toContain('"maria"');
+    expect(prompt).toContain('"mutsumi"');
   });
 });
 

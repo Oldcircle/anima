@@ -4,8 +4,8 @@ import type { CharacterState } from "../world/types.js";
 
 function makeState(overrides?: Partial<CharacterState>): CharacterState {
   return {
-    id: "alice",
-    name: "Alice Chen",
+    id: "tomori",
+    name: "高松灯",
     locationId: "cafe",
     needs: { hunger: 60, energy: 60, social: 40, happiness: 60, hygiene: 60 },
     gold: 100,

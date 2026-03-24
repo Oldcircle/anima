@@ -21,20 +21,20 @@ loadEnv();
 
 const SKIP = !process.env.ANIMA_LIVE_TEST && !process.env.DEEPSEEK_API_KEY;
 
-const aliceCard: CharacterCard = {
-  id: "alice",
-  name: "Alice Chen",
-  age: 28,
-  occupation: "花店老板",
-  home: "home_alice",
+const tomoriCard: CharacterCard = {
+  id: "tomori",
+  name: "高松灯",
+  age: 19,
+  occupation: "面包店学徒",
+  home: "home_tomori",
   personality: {
-    traits: ["温柔", "内向", "细心", "固执"],
-    interests: ["园艺", "阅读", "烘焙"],
-    dislikes: ["噪音", "浪费"],
-    speechStyle: "说话轻声细语，经常用花的比喻",
+    traits: ["内向", "纯真", "固执"],
+    interests: ["写东西", "捡石头", "烘焙"],
+    dislikes: ["人多的场合", "浪费"],
+    speechStyle: "声音微弱，断断续续，经常欲言又止",
   },
   background:
-    "从城市搬来三年了，开了镇上唯一的花店。最好的朋友是面包店的 Maria。喜欢安静的生活。",
+    "从城市来的安静女孩，在面包店当学徒。最好的朋友是咖啡馆的爱音。喜欢安静的生活。",
   relationships: {},
 };
 
@@ -52,12 +52,12 @@ describe.skipIf(SKIP)("Agent Loop — Live (DeepSeek)", () => {
 
   it("单角色 - 中午决策：应该去吃饭或社交", async () => {
     const world = new World(TEST_LOCATIONS);
-    world.addCharacter("alice", "Alice Chen", "home_alice", { hunger: 35 }); // 饿了
-    world.addCharacter("bob", "Bob Wang", "cafe");
+    world.addCharacter("tomori", "高松灯", "home_tomori", { hunger: 35 }); // 饿了
+    world.addCharacter("anon", "千早爱音", "cafe");
     const eventBus = new EventBus();
 
     const config: AgentConfig = {
-      card: aliceCard,
+      card: tomoriCard,
       actions: ALL_BASIC_ACTIONS,
       provider,
       modelId: "deepseek-chat",
@@ -65,7 +65,7 @@ describe.skipIf(SKIP)("Agent Loop — Live (DeepSeek)", () => {
 
     const gameTime = tickToGameTime(48); // 中午 12:00
     console.log(`\n🕐 游戏时间: ${formatGameTime(gameTime)}`);
-    console.log(`📍 Alice 在: home_alice, 饥饿值: 35`);
+    console.log(`📍 灯 在: home_tomori, 饥饿值: 35`);
 
     const result = await runAgentTick({ config, world, eventBus, gameTime });
 
@@ -85,18 +85,18 @@ describe.skipIf(SKIP)("Agent Loop — Live (DeepSeek)", () => {
 
   it("单角色跑 8 个 tick（2 小时）", async () => {
     const world = new World(TEST_LOCATIONS);
-    world.addCharacter("alice", "Alice Chen", "home_alice");
-    world.addCharacter("bob", "Bob Wang", "cafe");
+    world.addCharacter("tomori", "高松灯", "home_tomori");
+    world.addCharacter("anon", "千早爱音", "cafe");
     const eventBus = new EventBus();
 
     const config: AgentConfig = {
-      card: aliceCard,
+      card: tomoriCard,
       actions: ALL_BASIC_ACTIONS,
       provider,
       modelId: "deepseek-chat",
     };
 
-    console.log("\n=== Alice 的 2 小时生活 ===\n");
+    console.log("\n=== 灯的 2 小时生活 ===\n");
 
     for (let tick = 32; tick < 40; tick++) {
       // 08:00 - 10:00
@@ -107,7 +107,7 @@ describe.skipIf(SKIP)("Agent Loop — Live (DeepSeek)", () => {
 
       const result = await runAgentTick({ config, world, eventBus, gameTime });
 
-      const state = world.getCharacter("alice")!;
+      const state = world.getCharacter("tomori")!;
       const time = formatGameTime(gameTime);
 
       if (result.skipped) {
@@ -124,7 +124,7 @@ describe.skipIf(SKIP)("Agent Loop — Live (DeepSeek)", () => {
     }
 
     // 验证世界状态被正确更新
-    const finalState = world.getCharacter("alice")!;
+    const finalState = world.getCharacter("tomori")!;
     expect(finalState).toBeDefined();
 
     // 输出事件日志

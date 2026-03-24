@@ -8,19 +8,19 @@ import { MockLLMProvider } from "../../test/helpers/mock-llm.js";
 import { TEST_LOCATIONS } from "../../test/helpers/test-world.js";
 import type { CharacterCard } from "../character/types.js";
 
-const aliceCard: CharacterCard = {
-  id: "alice",
-  name: "Alice Chen",
-  age: 28,
-  occupation: "花店老板",
-  home: "home_alice",
+const tomoriCard: CharacterCard = {
+  id: "tomori",
+  name: "高松灯",
+  age: 19,
+  occupation: "面包店学徒",
+  home: "home_tomori",
   personality: {
-    traits: ["温柔", "内向"],
-    interests: ["园艺", "阅读"],
-    dislikes: ["噪音"],
-    speechStyle: "轻声细语",
+    traits: ["内向", "纯真"],
+    interests: ["写东西", "捡石头"],
+    dislikes: ["人多的场合"],
+    speechStyle: "声音微弱，断断续续",
   },
-  background: "开了镇上唯一的花店",
+  background: "从城市来的安静女孩，在面包店当学徒。",
   relationships: {},
 };
 
@@ -32,12 +32,12 @@ describe("Agent Loop", () => {
 
   beforeEach(() => {
     world = new World(TEST_LOCATIONS);
-    world.addCharacter("alice", "Alice Chen", "home_alice");
-    world.addCharacter("bob", "Bob Wang", "cafe");
+    world.addCharacter("tomori", "高松灯", "home_tomori");
+    world.addCharacter("anon", "千早爱音", "cafe");
     eventBus = new EventBus();
     mockLLM = new MockLLMProvider();
     config = {
-      card: aliceCard,
+      card: tomoriCard,
       actions: ALL_BASIC_ACTIONS,
       provider: mockLLM,
       modelId: "test-model",
@@ -57,8 +57,8 @@ describe("Agent Loop", () => {
     expect(result.thought).toContain("肚子饿了");
 
     // 饥饿值应该增加了
-    const alice = world.getCharacter("alice")!;
-    expect(alice.needs.hunger).toBeGreaterThan(80); // 初始 80 + 50
+    const tomori = world.getCharacter("tomori")!;
+    expect(tomori.needs.hunger).toBeGreaterThan(80); // 初始 80 + 50
   });
 
   it("LLM 调用 go_to → 移动角色", async () => {
@@ -69,7 +69,7 @@ describe("Agent Loop", () => {
     const result = await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
 
     expect(result.action?.name).toBe("go_to");
-    expect(world.getCharacter("alice")!.locationId).toBe("cafe");
+    expect(world.getCharacter("tomori")!.locationId).toBe("cafe");
   });
 
   it("多 tick 行为：sleep 持续多个 tick", async () => {
@@ -108,27 +108,27 @@ describe("Agent Loop", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe("action.work");
-    expect(events[0].description).toContain("Alice Chen");
+    expect(events[0].description).toContain("高松灯");
   });
 
   it("talk 工具写入对方信箱并更新社交值", async () => {
-    // 先把 alice 移到 cafe（bob 在那里）
-    world.moveCharacter("alice", "cafe");
+    // 先把 tomori 移到 cafe（anon 在那里）
+    world.moveCharacter("tomori", "cafe");
 
-    mockLLM.enqueueResponse("看到 Bob 了，打个招呼", [
-      { name: "talk", arguments: { target: "bob", message: "嘿 Bob！" } },
+    mockLLM.enqueueResponse("看到爱音了，打个招呼", [
+      { name: "talk", arguments: { target: "anon", message: "你、你好……" } },
     ]);
 
     await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
 
-    // Alice 社交值增加
-    expect(world.getCharacter("alice")!.needs.social).toBeGreaterThan(60); // 初始 60 + 5
-    // Bob 信箱应有消息
-    const bob = world.getCharacter("bob")!;
-    expect(bob.inbox).toHaveLength(1);
-    expect(bob.inbox[0]!.fromId).toBe("alice");
-    expect(bob.inbox[0]!.fromName).toBe("Alice Chen");
-    expect(bob.inbox[0]!.content).toBe("嘿 Bob！");
+    // Tomori 社交值增加
+    expect(world.getCharacter("tomori")!.needs.social).toBeGreaterThan(60); // 初始 60 + 5
+    // Anon 信箱应有消息
+    const anon = world.getCharacter("anon")!;
+    expect(anon.inbox).toHaveLength(1);
+    expect(anon.inbox[0]!.fromId).toBe("tomori");
+    expect(anon.inbox[0]!.fromName).toBe("高松灯");
+    expect(anon.inbox[0]!.content).toBe("你、你好……");
   });
 
   it("LLM 收到正确的 prompt 结构", async () => {
@@ -141,8 +141,8 @@ describe("Agent Loop", () => {
     // 检查 LLM 收到的请求
     expect(mockLLM.calls).toHaveLength(1);
     const req = mockLLM.calls[0]!.request;
-    expect(req.system).toContain("Alice Chen");
-    expect(req.system).toContain("花店老板");
+    expect(req.system).toContain("高松灯");
+    expect(req.system).toContain("面包店学徒");
     expect(req.messages[0]!.content).toContain("饥饿");
     expect(req.tools!.length).toBeGreaterThanOrEqual(5);
   });

@@ -6,11 +6,11 @@ function makeEvent(overrides: Partial<WorldEvent> = {}): WorldEvent {
     id: "evt-1",
     tick: 1,
     type: "social.chat",
-    actorId: "alice",
+    actorId: "tomori",
     locationId: "cafe",
-    description: "Alice 和 Bob 聊天",
+    description: "灯和爱音聊天",
     effects: [],
-    witnesses: ["bob"],
+    witnesses: ["anon"],
     ...overrides,
   };
 }
@@ -42,10 +42,10 @@ describe("EventBus", () => {
   it("按 actorId 过滤", async () => {
     const bus = new EventBus();
     const listener = vi.fn();
-    bus.on(listener, { actorId: "bob" });
+    bus.on(listener, { actorId: "anon" });
 
-    await bus.emit(makeEvent({ actorId: "alice" }));
-    await bus.emit(makeEvent({ actorId: "bob", id: "evt-2" }));
+    await bus.emit(makeEvent({ actorId: "tomori" }));
+    await bus.emit(makeEvent({ actorId: "anon", id: "evt-2" }));
 
     expect(listener).toHaveBeenCalledTimes(1);
   });

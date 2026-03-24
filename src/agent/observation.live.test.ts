@@ -26,7 +26,7 @@ const provider = new OpenAICompatibleProvider({
 });
 
 describeIf("观察推理 Live 测试", () => {
-  it("Sakiko 观察 Emily 在咖啡馆看书", async () => {
+  it("Sakiko 观察 Soyo 在咖啡馆看书", async () => {
     const sakiko = loadCharacterFromYAML(join(DATA_DIR, "sakiko.yml"));
 
     const result = await generateObservation(
@@ -38,7 +38,7 @@ describeIf("观察推理 Live 测试", () => {
           gold: 80, inbox: [],
         },
         visibleCharacters: [
-          { id: "emily", name: "Emily Liu", action: "在角落安静地看书，咖啡已经凉了", stayDuration: 8 },
+          { id: "soyo", name: "长崎素世", action: "在角落安静地看书，咖啡已经凉了", stayDuration: 8 },
         ],
         locationName: "咖啡馆",
         tick: 48,
@@ -51,20 +51,20 @@ describeIf("观察推理 Live 测试", () => {
 
     expect(result).not.toBeNull();
     expect(result!.observerId).toBe("sakiko");
-    expect(result!.targetId).toBe("emily");
+    expect(result!.targetId).toBe("soyo");
     expect(result!.reasoning.length).toBeGreaterThan(4);
     console.log(`  推理: "${result!.reasoning}"`);
   }, 30_000);
 
-  it("Maria 观察 Alice（有已有印象时推理更深入）", async () => {
-    const maria = loadCharacterFromYAML(join(DATA_DIR, "maria.yml"));
+  it("Mutsumi 观察 Tomori（有已有印象时推理更深入）", async () => {
+    const mutsumi = loadCharacterFromYAML(join(DATA_DIR, "mutsumi.yml"));
     const impressions = new ImpressionStore();
 
-    // 预设 Maria 对 Alice 的印象
-    impressions.set("maria", {
-      characterId: "alice",
-      summary: "花店的温柔女孩，总是笑着但好像有点心事",
-      observations: ["她有时候会发呆", "手指上经常有泥土"],
+    // 预设 Mutsumi 对 Tomori 的印象
+    impressions.set("mutsumi", {
+      characterId: "tomori",
+      summary: "面包店的安静女孩，总是低着头但好像有点心事",
+      observations: ["她有时候会发呆", "手指上经常有面粉"],
       mentalLabel: "让人心疼的邻居",
       unresolved: ["她为什么从城市搬来？"],
       lastUpdated: 30,
@@ -72,14 +72,14 @@ describeIf("观察推理 Live 测试", () => {
 
     const result = await generateObservation(
       {
-        observerCard: maria,
+        observerCard: mutsumi,
         observerState: {
-          id: "maria", name: "Maria Lopez", locationId: "plaza",
+          id: "mutsumi", name: "要乐奏", locationId: "plaza",
           needs: { hunger: 70, energy: 60, social: 30, happiness: 55, hygiene: 65 },
           gold: 120, inbox: [],
         },
         visibleCharacters: [
-          { id: "alice", name: "Alice Chen", action: "一个人坐在长椅上，手里攥着一封信发呆", stayDuration: 6 },
+          { id: "tomori", name: "高松灯", action: "一个人坐在长椅上，手里攥着一封信发呆", stayDuration: 6 },
         ],
         locationName: "广场",
         tick: 52,
@@ -89,7 +89,7 @@ describeIf("观察推理 Live 测试", () => {
       impressions,
     );
 
-    console.log("Maria 的观察推理（有印象时）:", result);
+    console.log("Mutsumi 的观察推理（有印象时）:", result);
 
     expect(result).not.toBeNull();
     expect(result!.reasoning.length).toBeGreaterThan(4);
