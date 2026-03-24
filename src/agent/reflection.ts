@@ -88,7 +88,8 @@ export async function runReflection(params: {
     }
 
     return { characterId: card.id, insights, mood };
-  } catch {
+  } catch (err) {
+    console.warn(`[反思] ${card.id} 反思失败:`, (err as Error)?.message ?? err);
     return { characterId: card.id, insights: [], mood: "平静" };
   }
 }

@@ -17,15 +17,21 @@ export const gossipAction: ActionDefinition = {
       required: ["target", "about"],
     },
   },
-  handler: (args, ctx): ActionResult => ({
-    description: `和${args.target}聊八卦：${args.about}`,
-    effects: [
-      { type: "need_change", targetId: ctx.characterId, field: "social", delta: 20 },
-      { type: "need_change", targetId: args.target as string, field: "social", delta: 15 },
-      { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 5 },
-    ],
-    duration: 2,
-  }),
+  handler: (args, ctx): ActionResult => {
+    const target = args.target as string;
+    if (!ctx.nearbyCharacters.includes(target)) {
+      return { description: `想和${target}聊八卦，但对方不在这里`, effects: [], success: false };
+    }
+    return {
+      description: `和${target}聊八卦：${args.about}`,
+      effects: [
+        { type: "need_change", targetId: ctx.characterId, field: "social", delta: 20 },
+        { type: "need_change", targetId: target, field: "social", delta: 15 },
+        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 5 },
+      ],
+      duration: 2,
+    };
+  },
 };
 
 export const giveGiftAction: ActionDefinition = {
@@ -42,15 +48,19 @@ export const giveGiftAction: ActionDefinition = {
     },
   },
   handler: (args, ctx): ActionResult => {
+    const target = args.target as string;
+    if (!ctx.nearbyCharacters.includes(target)) {
+      return { description: `想送礼物给${target}，但对方不在这里`, effects: [], success: false };
+    }
     if (ctx.gold < 20) {
-      return { description: `想送${args.item}给${args.target}，但买不起（需要20金币，只有${ctx.gold}）`, effects: [], success: false };
+      return { description: `想送${args.item}给${target}，但买不起（需要20金币，只有${ctx.gold}）`, effects: [], success: false };
     }
     return {
-      description: `送了${args.item}给${args.target}`,
+      description: `送了${args.item}给${target}`,
       effects: [
-        { type: "relationship_change", targetId: ctx.characterId, field: args.target as string, delta: 5 },
+        { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 5 },
         { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 10 },
-        { type: "need_change", targetId: args.target as string, field: "happiness", delta: 15 },
+        { type: "need_change", targetId: target, field: "happiness", delta: 15 },
       ],
       duration: 1,
     };
@@ -70,16 +80,22 @@ export const comfortAction: ActionDefinition = {
       required: ["target"],
     },
   },
-  handler: (args, ctx): ActionResult => ({
-    description: `安慰${args.target}：${args.words ?? "一切都会好起来的"}`,
-    effects: [
-      { type: "need_change", targetId: args.target as string, field: "happiness", delta: 15 },
-      { type: "need_change", targetId: args.target as string, field: "social", delta: 10 },
-      { type: "need_change", targetId: ctx.characterId, field: "social", delta: 8 },
-      { type: "relationship_change", targetId: ctx.characterId, field: args.target as string, delta: 3 },
-    ],
-    duration: 2,
-  }),
+  handler: (args, ctx): ActionResult => {
+    const target = args.target as string;
+    if (!ctx.nearbyCharacters.includes(target)) {
+      return { description: `想安慰${target}，但对方不在这里`, effects: [], success: false };
+    }
+    return {
+      description: `安慰${target}：${args.words ?? "一切都会好起来的"}`,
+      effects: [
+        { type: "need_change", targetId: target, field: "happiness", delta: 15 },
+        { type: "need_change", targetId: target, field: "social", delta: 10 },
+        { type: "need_change", targetId: ctx.characterId, field: "social", delta: 8 },
+        { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 3 },
+      ],
+      duration: 2,
+    };
+  },
 };
 
 export const ALL_SOCIAL_ACTIONS: ActionDefinition[] = [gossipAction, giveGiftAction, comfortAction];

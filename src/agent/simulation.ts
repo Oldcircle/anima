@@ -170,11 +170,12 @@ export class Simulation {
     const agentResults = await Promise.all(promises);
     results.push(...agentResults);
 
-    // 3. talk 产生的关系变化 + 记录对话
+    // 3. talk 产生的关系变化（双向）+ 记录对话
     for (const r of results) {
-      if (r.action?.name === "talk" && r.action.args.target) {
+      if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
         const targetId = this._resolveCharacterId(r.action.args.target as string);
         this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, r.result?.description ?? "聊天");
+        this.relationships.modify(targetId, r.characterId, 2, gameTime.tick, `${r.characterId} 对你说话`);
         // 记录到对话追踪器
         const charState = this.world.getCharacter(r.characterId);
         this.conversations.recordTalk(
@@ -250,11 +251,12 @@ export class Simulation {
       const reactionResults = await Promise.all(reactionPromises);
       results.push(...reactionResults);
 
-      // 处理反应中产生的 talk 关系变化 + 记录对话
+      // 处理反应中产生的 talk 关系变化（双向）+ 记录对话
       for (const r of reactionResults) {
-        if (r.action?.name === "talk" && r.action.args.target) {
+        if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
           const targetId = this._resolveCharacterId(r.action.args.target as string);
           this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, r.result?.description ?? "回复");
+          this.relationships.modify(targetId, r.characterId, 2, gameTime.tick, `${r.characterId} 回复了你`);
           const charState = this.world.getCharacter(r.characterId);
           this.conversations.recordTalk(
             r.characterId,
@@ -272,7 +274,7 @@ export class Simulation {
     }
 
     // 3.6 互动后印象更新：对有足够交流的角色对生成/更新叙事印象
-    // 异步执行，不阻塞 tick（fire-and-forget 但 await 在当前 tick 内）
+    // Fire-and-forget：不阻塞 tick 循环
     const impressionPromises: Promise<void>[] = [];
     const processedPairs = new Set<string>();
     for (const r of results) {
@@ -282,8 +284,10 @@ export class Simulation {
         if (processedPairs.has(pairKey)) continue;
 
         const history = this.conversations.getHistory(r.characterId, targetId);
-        // 至少 4 条交换才值得生成印象（有实质性对话，不只是打招呼）
-        if (history.length >= 4) {
+        // 至少 4 条交换 + 冷却期（同一对每 4 tick / 游戏 1 小时最多更新一次）
+        const existingImp = this.impressions.get(r.characterId, targetId);
+        const cooldownOk = !existingImp || (gameTime.tick - existingImp.lastUpdated) >= 4;
+        if (history.length >= 4 && cooldownOk) {
           processedPairs.add(pairKey);
           const cardA = this._configs.get(r.characterId)?.card;
           const cardB = this._configs.get(targetId)?.card;
@@ -302,8 +306,11 @@ export class Simulation {
         }
       }
     }
+    // Fire-and-forget: 印象生成不阻塞 tick 循环
     if (impressionPromises.length > 0) {
-      await Promise.all(impressionPromises);
+      Promise.all(impressionPromises).catch((err) => {
+        console.warn(`[tick ${gameTime.tick}] 印象生成失败:`, err?.message ?? err);
+      });
     }
 
     // 清理过期对话
@@ -515,20 +522,26 @@ export class Simulation {
     const charByRaw = this.world.getCharacter(raw);
     if (charByRaw) return raw;
 
-    // 2. 按名字匹配（忽略大小写）
+    // 2. 按名字精确匹配（忽略大小写）
     const lower = raw.toLowerCase();
     for (const c of this.world.getAllCharacters()) {
       if (c.name.toLowerCase() === lower) return c.id;
     }
 
-    // 3. 部分匹配（名字包含）
-    for (const c of this.world.getAllCharacters()) {
-      if (c.name.toLowerCase().includes(lower) || lower.includes(c.name.toLowerCase())) {
-        return c.id;
-      }
+    // 3. 部分匹配（名字包含）— 要求唯一匹配
+    const partialMatches = this.world.getAllCharacters().filter(
+      (c) => c.name.toLowerCase().includes(lower) || lower.includes(c.name.toLowerCase()),
+    );
+    if (partialMatches.length === 1) {
+      return partialMatches[0]!.id;
+    }
+    if (partialMatches.length > 1) {
+      console.warn(`[resolveCharacterId] "${raw}" 匹配到多个角色: ${partialMatches.map((c) => c.name).join(", ")}，使用第一个`);
+      return partialMatches[0]!.id;
     }
 
-    // 4. 匹配不上，原样返回
+    // 4. 匹配不上，记录警告并原样返回（后续 talk handler 会拦截）
+    console.warn(`[resolveCharacterId] "${raw}" 无法匹配任何角色`);
     return raw;
   }
 }

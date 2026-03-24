@@ -126,7 +126,7 @@ export class AnimaDB {
     ).run(characterId, tick, type, content, importance);
   }
 
-  loadMemories(characterId: string, limit = 30): Array<{ tick: number; type: string; content: string; importance: number }> {
+  loadMemories(characterId: string, limit = 30): Array<{ tick: number; type: "event" | "conversation" | "thought" | "observation"; content: string; importance: number }> {
     return this.db.prepare(
       "SELECT tick, type, content, importance FROM memories WHERE character_id = ? ORDER BY tick DESC LIMIT ?",
     ).all(characterId, limit) as any[];

@@ -41,7 +41,8 @@
 - [x] `simulation.ts` 反应轮集成：检测活跃对话 → 使用对话模式 prompt
 - [x] 对话记录 + 自动清理过期对话
 
-**测试：136 个全部通过**（原 113 + P0-a 8 + P0-b 15）
+**测试：146 个全部通过**（`pnpm test` + `pnpm build` 全绿）
+Live/模拟测试已改名为 `*.live.test.ts`，不被默认 `pnpm test` 包含，通过 `pnpm test:live` 单独跑。
 
 ### Live 验证结果（2026-03-24）
 

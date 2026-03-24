@@ -22,6 +22,9 @@ export const argueAction: ActionDefinition = {
   },
   handler: (args, ctx): ActionResult => {
     const target = args.target as string;
+    if (!ctx.nearbyCharacters.includes(target)) {
+      return { description: `想和${target}吵架，但对方不在这里`, effects: [], success: false };
+    }
     const reason = (args.reason as string) ?? "一些分歧";
     return {
       description: `和${target}吵了一架：${reason}`,

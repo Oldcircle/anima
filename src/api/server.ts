@@ -21,7 +21,7 @@ export interface ServerConfig {
   staticDir?: string;
 }
 
-export function createApiServer(config: ServerConfig) {
+export function createApiServer(config: ServerConfig): { app: ReturnType<typeof express>; server: ReturnType<typeof createServer>; start: () => void; broadcast: (data: object) => void } {
   const { simulation } = config;
   const app = express();
   const server = createServer(app);

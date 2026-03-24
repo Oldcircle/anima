@@ -44,11 +44,12 @@ export class ConversationTracker {
 
   /** 记录一次 talk */
   recordTalk(speakerId: string, speakerName: string, targetId: string, message: string, tick: number): void {
+    const name = speakerName?.trim() || speakerId; // 防御空名字
     const key = this._pairKey(speakerId, targetId);
     if (!this._exchanges.has(key)) {
       this._exchanges.set(key, []);
     }
-    this._exchanges.get(key)!.push({ speakerId, speakerName, message, tick });
+    this._exchanges.get(key)!.push({ speakerId, speakerName: name, message, tick });
     this._lastTick.set(key, tick);
   }
 

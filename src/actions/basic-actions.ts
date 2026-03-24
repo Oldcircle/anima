@@ -99,13 +99,13 @@ export const goToAction: ActionDefinition = {
 export const talkAction: ActionDefinition = {
   tool: {
     name: "talk",
-    description: "对某人说一句话。消息会送到对方的信箱，对方在下一个 tick 看到并决定是否回应。不会阻塞。",
+    description: "对同一地点的某人说一句话。对方必须在你当前的位置才能交谈。消息会送到对方的信箱，对方在下一个 tick 看到并决定是否回应。不会阻塞。",
     parameters: {
       type: "object",
       properties: {
         target: {
           type: "string",
-          description: "对话对象的角色 ID",
+          description: "对话对象的角色 ID（必须在同一地点）",
         },
         message: {
           type: "string",
@@ -118,6 +118,16 @@ export const talkAction: ActionDefinition = {
   handler: (args, ctx): ActionResult => {
     const target = args.target as string;
     const message = args.message as string;
+
+    // 约束：对方必须在同一地点
+    if (!ctx.nearbyCharacters.includes(target)) {
+      return {
+        description: `想和${target}说话，但对方不在这里`,
+        effects: [],
+        success: false,
+      };
+    }
+
     return {
       description: `对${target}说：「${message}」`,
       effects: [
