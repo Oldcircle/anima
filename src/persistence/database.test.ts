@@ -65,6 +65,49 @@ describe("AnimaDB", () => {
     expect(rels[0]!.history).toEqual(["一起喝咖啡"]);
   });
 
+  it("保存和读取印象", () => {
+    db = new AnimaDB(TEST_DB);
+    db.saveImpression("maria", {
+      characterId: "sakiko",
+      summary: "咖啡馆工作的女孩，礼貌但有距离感",
+      observations: ["说话先说请容我", "手指很修长"],
+      mentalLabel: "有秘密的人",
+      unresolved: ["她为什么来这个小镇"],
+      lastUpdated: 48,
+    });
+
+    const imps = db.loadImpressions();
+    expect(imps).toHaveLength(1);
+    expect(imps[0]!.observerId).toBe("maria");
+    expect(imps[0]!.impression.characterId).toBe("sakiko");
+    expect(imps[0]!.impression.summary).toContain("咖啡馆");
+    expect(imps[0]!.impression.observations).toHaveLength(2);
+    expect(imps[0]!.impression.mentalLabel).toBe("有秘密的人");
+    expect(imps[0]!.impression.unresolved).toEqual(["她为什么来这个小镇"]);
+  });
+
+  it("保存和检索长期记忆", () => {
+    db = new AnimaDB(TEST_DB);
+    db.saveLongTermMemory("alice", 92, "thought", "[反思] 今天和Maria聊了很多，她很热情", 9, "maria");
+    db.saveLongTermMemory("alice", 92, "thought", "[反思] Bob的鲈鱼比喻很有趣", 8, "bob");
+    db.saveLongTermMemory("alice", 50, "event", "和Maria一起看日落", 7, "maria");
+
+    // 按角色检索（按重要性排序）
+    const all = db.loadLongTermMemories("alice", 10);
+    expect(all).toHaveLength(3);
+    expect(all[0]!.importance).toBe(9);
+
+    // 按相关角色检索
+    const aboutMaria = db.loadMemoriesAbout("alice", "maria", 5);
+    expect(aboutMaria).toHaveLength(2);
+    expect(aboutMaria[0]!.content).toContain("反思");
+
+    // 关键词搜索
+    const results = db.searchLongTermMemories("alice", "鲈鱼", 5);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.content).toContain("鲈鱼");
+  });
+
   it("saveAll 事务性保存", () => {
     db = new AnimaDB(TEST_DB);
     db.saveAll({

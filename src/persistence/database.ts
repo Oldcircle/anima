@@ -69,6 +69,30 @@ export class AnimaDB {
         witnesses TEXT DEFAULT '[]'
       );
       CREATE INDEX IF NOT EXISTS idx_events_tick ON events(tick);
+
+      CREATE TABLE IF NOT EXISTS impressions (
+        observer_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        observations TEXT DEFAULT '[]',
+        mental_label TEXT DEFAULT '',
+        unresolved TEXT DEFAULT '[]',
+        last_updated INTEGER DEFAULT 0,
+        PRIMARY KEY (observer_id, target_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS long_term_memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        character_id TEXT NOT NULL,
+        tick INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        importance INTEGER DEFAULT 7,
+        related_character_id TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_ltm_char ON long_term_memories(character_id);
+      CREATE INDEX IF NOT EXISTS idx_ltm_related ON long_term_memories(related_character_id);
     `);
   }
 
@@ -162,6 +186,62 @@ export class AnimaDB {
     return this.db.prepare("SELECT * FROM events ORDER BY tick DESC LIMIT ?").all(limit) as any[];
   }
 
+  // --- 印象 ---
+
+  saveImpression(observerId: string, imp: {
+    characterId: string; summary: string; observations: string[];
+    mentalLabel: string; unresolved: string[]; lastUpdated: number;
+  }) {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO impressions (observer_id, target_id, summary, observations, mental_label, unresolved, last_updated)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(observerId, imp.characterId, imp.summary, JSON.stringify(imp.observations), imp.mentalLabel, JSON.stringify(imp.unresolved), imp.lastUpdated);
+  }
+
+  loadImpressions(): Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; lastUpdated: number } }> {
+    const rows = this.db.prepare("SELECT * FROM impressions").all() as any[];
+    return rows.map((r) => ({
+      observerId: r.observer_id,
+      impression: {
+        characterId: r.target_id,
+        summary: r.summary,
+        observations: JSON.parse(r.observations),
+        mentalLabel: r.mental_label,
+        unresolved: JSON.parse(r.unresolved),
+        lastUpdated: r.last_updated,
+      },
+    }));
+  }
+
+  // --- 长期记忆 ---
+
+  saveLongTermMemory(characterId: string, tick: number, type: string, content: string, importance: number, relatedCharacterId?: string) {
+    this.db.prepare(
+      "INSERT INTO long_term_memories (character_id, tick, type, content, importance, related_character_id) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(characterId, tick, type, content, importance, relatedCharacterId ?? null);
+  }
+
+  /** 按角色 ID 检索长期记忆（最近的在前） */
+  loadLongTermMemories(characterId: string, limit = 20): Array<{ tick: number; type: string; content: string; importance: number; relatedCharacterId?: string }> {
+    return this.db.prepare(
+      "SELECT tick, type, content, importance, related_character_id as relatedCharacterId FROM long_term_memories WHERE character_id = ? ORDER BY importance DESC, tick DESC LIMIT ?",
+    ).all(characterId, limit) as any[];
+  }
+
+  /** 按相关角色检索长期记忆（用于见面时回忆） */
+  loadMemoriesAbout(characterId: string, aboutCharacterId: string, limit = 5): Array<{ tick: number; type: string; content: string; importance: number }> {
+    return this.db.prepare(
+      "SELECT tick, type, content, importance FROM long_term_memories WHERE character_id = ? AND related_character_id = ? ORDER BY tick DESC LIMIT ?",
+    ).all(characterId, aboutCharacterId, limit) as any[];
+  }
+
+  /** 关键词搜索长期记忆 */
+  searchLongTermMemories(characterId: string, keyword: string, limit = 5): Array<{ tick: number; type: string; content: string; importance: number }> {
+    return this.db.prepare(
+      "SELECT tick, type, content, importance FROM long_term_memories WHERE character_id = ? AND content LIKE ? ORDER BY importance DESC, tick DESC LIMIT ?",
+    ).all(characterId, `%${keyword}%`, limit) as any[];
+  }
+
   // --- 批量操作 ---
 
   saveAll(params: {
@@ -171,6 +251,8 @@ export class AnimaDB {
     relationships: any[];
     memories: Array<{ characterId: string; tick: number; type: string; content: string; importance: number }>;
     events: any[];
+    impressions?: Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; lastUpdated: number } }>;
+    longTermMemories?: Array<{ characterId: string; tick: number; type: string; content: string; importance: number; relatedCharacterId?: string }>;
   }) {
     const tx = this.db.transaction(() => {
       this.saveWorldState(params.tick, params.weather);
@@ -182,6 +264,12 @@ export class AnimaDB {
         this.saveMemory(m.characterId, m.tick, m.type, m.content, m.importance);
       }
       for (const e of params.events) this.saveEvent(e);
+      for (const imp of params.impressions ?? []) {
+        this.saveImpression(imp.observerId, imp.impression);
+      }
+      for (const ltm of params.longTermMemories ?? []) {
+        this.saveLongTermMemory(ltm.characterId, ltm.tick, ltm.type, ltm.content, ltm.importance, ltm.relatedCharacterId);
+      }
     });
     tx();
   }

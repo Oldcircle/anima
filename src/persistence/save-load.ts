@@ -44,6 +44,20 @@ export function saveGame(sim: Simulation, dbPath: string): void {
       witnesses: e.witnesses,
     }));
 
+    // 印象数据
+    const impressions = sim.impressions.getAll();
+
+    // 高重要性记忆转为长期记忆
+    const longTermMemories: Array<{ characterId: string; tick: number; type: string; content: string; importance: number; relatedCharacterId?: string }> = [];
+    for (const c of characters) {
+      const charMemories = sim.memory.getRecent(c.id, 30);
+      for (const m of charMemories) {
+        if (m.importance >= 7) {
+          longTermMemories.push({ characterId: c.id, tick: m.tick, type: m.type, content: m.content, importance: m.importance, relatedCharacterId: m.relatedCharacterId });
+        }
+      }
+    }
+
     db.saveAll({
       tick: sim.world.tick,
       weather: sim.world.weather,
@@ -51,6 +65,8 @@ export function saveGame(sim: Simulation, dbPath: string): void {
       relationships,
       memories,
       events,
+      impressions,
+      longTermMemories,
     });
 
     console.log(`💾 已保存到 ${dbPath} (tick=${sim.world.tick}, ${characters.length} 角色, ${memories.length} 记忆, ${relationships.length} 关系)`);
@@ -102,7 +118,29 @@ export function loadGame(sim: Simulation, dbPath: string): boolean {
       }
     }
 
-    console.log(`📂 已读取存档 (tick=${worldState.tick}, ${savedChars.length} 角色, ${savedRels.length} 关系)`);
+    // 恢复印象
+    const savedImpressions = db.loadImpressions();
+    for (const { observerId, impression } of savedImpressions) {
+      sim.impressions.set(observerId, impression);
+    }
+
+    // 恢复长期记忆中最重要的条目（反思洞察等）到短期记忆
+    let ltmCount = 0;
+    for (const sc of savedChars) {
+      const ltmEntries = db.loadLongTermMemories(sc.id, 10);
+      for (const m of ltmEntries.reverse()) {
+        sim.memory.add(sc.id, {
+          tick: m.tick,
+          type: m.type as any,
+          content: m.content,
+          importance: m.importance,
+          relatedCharacterId: m.relatedCharacterId,
+        });
+        ltmCount++;
+      }
+    }
+
+    console.log(`📂 已读取存档 (tick=${worldState.tick}, ${savedChars.length} 角色, ${savedRels.length} 关系, ${savedImpressions.length} 印象, ${ltmCount} 长期记忆)`);
     return true;
   } finally {
     db.close();
