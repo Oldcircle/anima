@@ -72,6 +72,21 @@
 - 灯最终来到 cafe（社交引导起效）
 - 对话量比 0 对话大幅恢复，但比基准（44 次）少——因为角色分散到各自工作地点，相遇机会减少。这是正确行为（真实感更强），后续可通过更多地点互动和下班后聚集来改善
 
+### 本轮已完成：对话跳跃修复 + Phase 7B 关系类型化
+
+**对话跳跃**：对话模式 prompt 新增"对方刚刚说的是"提示，引导 LLM 回应最后一句话。
+
+**需求感受化收尾**：清理了 conversation-mode 和 reflection 中残留的亲密度数值暴露。
+
+**Phase 7B 关系类型化**：
+- [x] Relationship 新增 `bond` 字段（colleague/roommate/partner/ex/mentor/rival）
+- [x] `setBond()` 方法 + 自动检测同事关系（共享 workplace）
+- [x] 新增 `invite_out`（friend+）和 `share_secret`（close_friend+）工具
+- [x] tool-builder 根据关系深度条件浮现
+- [x] prompt 注入 bond 描述
+- [x] DB 持久化 bond 列
+- [x] 测试 9 个新增，185 tests 全部通过
+
 ### 一日模拟结果（2026-03-24）
 
 538 秒完成 72 tick 完整一天，6 条印象。日志：`logs/sim-1day-20260324-221817.md`
