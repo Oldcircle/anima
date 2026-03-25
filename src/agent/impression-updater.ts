@@ -46,7 +46,9 @@ export async function generateImpression(params: ImpressionUpdateParams): Promis
     ? `你之前对${targetCard.name}的印象：${existingImpression.summary}（标签：${existingImpression.mentalLabel}）`
     : `这是你第一次和${targetCard.name}深入交流。`;
 
-  const system = `你是${observerCard.name}，${observerCard.age}岁，${observerCard.occupation}。
+  const age = observerCard.life?.age ?? observerCard.age;
+  const occupation = observerCard.life?.occupation ?? observerCard.occupation;
+  const system = `你是${observerCard.name}，${age}岁，${occupation}。
 ${observerCard.personality.coreTraits ?? observerCard.personality.traits.join("、")}
 
 你刚才和${targetCard.name}进行了一段对话。请用你自己的视角回顾这次互动，更新你对对方的印象。

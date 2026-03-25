@@ -90,7 +90,8 @@ export async function generateObservation(
     ? `已经在这里待了${target.stayDuration * 15}分钟了。`
     : "";
 
-  const system = `你是${ctx.observerCard.name}，${ctx.observerCard.occupation}。你正在${ctx.locationName}。
+  const occupation = ctx.observerCard.life?.occupation ?? ctx.observerCard.occupation;
+  const system = `你是${ctx.observerCard.name}，${occupation}。你正在${ctx.locationName}。
 请用一句话描述你对${target.name}此刻状态的观察和推测。
 不要展开，不要对话，只用一句自然的内心想法。`;
 

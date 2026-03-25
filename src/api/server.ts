@@ -175,8 +175,11 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
     const cards: Record<string, any> = {};
     for (const [id, card] of config.characterCards) {
       cards[id] = {
-        id: card.id, name: card.name, age: card.age,
-        occupation: card.occupation, appearance: card.appearance,
+        id: card.id, name: card.name,
+        age: card.life?.age ?? card.age,
+        occupation: card.life?.occupation ?? card.occupation,
+        appearance: card.appearance,
+        life: card.life,
         personality: {
           traits: card.personality.traits,
           coreTraits: card.personality.coreTraits,

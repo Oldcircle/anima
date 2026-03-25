@@ -45,6 +45,43 @@ describe("AnimaDB", () => {
     expect(chars[0]!.currentAction?.name).toBe("work");
   });
 
+  it("保存和读取 life state", () => {
+    db = new AnimaDB(TEST_DB);
+    db.saveCharacter({
+      id: "tomori", name: "高松灯", locationId: "bakery", gold: 50,
+      needs: { hunger: 70, energy: 60, social: 50, happiness: 65, hygiene: 80 },
+      life: {
+        occupation: "面包师",
+        workplace: "bakery",
+        age: 20,
+        income: 15,
+        skills: { baking: 5.2, observation: 3 },
+        aspiration: "找到能理解我的人",
+        currentGoal: "学会做法棍",
+        currentConcern: "这个月钱不够",
+      },
+    });
+
+    const chars = db.loadCharacters();
+    expect(chars).toHaveLength(1);
+    expect(chars[0]!.life).toBeDefined();
+    expect(chars[0]!.life!.occupation).toBe("面包师");
+    expect(chars[0]!.life!.skills.baking).toBe(5.2);
+    expect(chars[0]!.life!.currentGoal).toBe("学会做法棍");
+    expect(chars[0]!.life!.aspiration).toBe("找到能理解我的人");
+  });
+
+  it("没有 life 的角色读取为 undefined", () => {
+    db = new AnimaDB(TEST_DB);
+    db.saveCharacter({
+      id: "test", name: "测试", locationId: "plaza", gold: 100,
+      needs: { hunger: 80, energy: 100, social: 60, happiness: 70, hygiene: 90 },
+    });
+
+    const chars = db.loadCharacters();
+    expect(chars[0]!.life).toBeUndefined();
+  });
+
   it("保存和读取记忆", () => {
     db = new AnimaDB(TEST_DB);
     db.saveMemory("tomori", 10, "event", "去了咖啡馆", 5);

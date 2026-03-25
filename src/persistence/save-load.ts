@@ -20,6 +20,7 @@ export function saveGame(sim: Simulation, dbPath: string): void {
       gold: c.gold,
       needs: c.needs,
       currentAction: c.currentAction,
+      life: c.life,
     }));
 
     const relationships = sim.relationships.getAll();
@@ -101,6 +102,14 @@ export function loadGame(sim: Simulation, dbPath: string): boolean {
         char.gold = sc.gold;
         char.needs = { ...sc.needs };
         char.currentAction = sc.currentAction;
+        // 恢复 life state（技能、目标等运行时可变数据）
+        if (sc.life && char.life) {
+          char.life.skills = { ...sc.life.skills };
+          char.life.occupation = sc.life.occupation;
+          char.life.income = sc.life.income;
+          char.life.currentGoal = sc.life.currentGoal;
+          char.life.currentConcern = sc.life.currentConcern;
+        }
       }
     }
 

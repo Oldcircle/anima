@@ -34,7 +34,8 @@ export class AnimaDB {
         happiness REAL DEFAULT 70,
         hygiene REAL DEFAULT 90,
         current_action TEXT,
-        current_action_remaining INTEGER DEFAULT 0
+        current_action_remaining INTEGER DEFAULT 0,
+        life_json TEXT
       );
 
       CREATE TABLE IF NOT EXISTS memories (
@@ -118,14 +119,16 @@ export class AnimaDB {
     id: string; name: string; locationId: string; gold: number;
     needs: { hunger: number; energy: number; social: number; happiness: number; hygiene: number };
     currentAction?: { name: string; remainingTicks: number };
+    life?: import("../character/types.js").LifeState;
   }) {
     this.db.prepare(`
-      INSERT OR REPLACE INTO characters (id, name, location_id, gold, hunger, energy, social, happiness, hygiene, current_action, current_action_remaining)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO characters (id, name, location_id, gold, hunger, energy, social, happiness, hygiene, current_action, current_action_remaining, life_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       c.id, c.name, c.locationId, c.gold,
       c.needs.hunger, c.needs.energy, c.needs.social, c.needs.happiness, c.needs.hygiene,
       c.currentAction?.name ?? null, c.currentAction?.remainingTicks ?? 0,
+      c.life ? JSON.stringify(c.life) : null,
     );
   }
 
@@ -133,12 +136,14 @@ export class AnimaDB {
     id: string; name: string; locationId: string; gold: number;
     needs: { hunger: number; energy: number; social: number; happiness: number; hygiene: number };
     currentAction?: { name: string; remainingTicks: number };
+    life?: import("../character/types.js").LifeState;
   }> {
     const rows = this.db.prepare("SELECT * FROM characters").all() as any[];
     return rows.map((r) => ({
       id: r.id, name: r.name, locationId: r.location_id, gold: r.gold,
       needs: { hunger: r.hunger, energy: r.energy, social: r.social, happiness: r.happiness, hygiene: r.hygiene },
       currentAction: r.current_action ? { name: r.current_action, remainingTicks: r.current_action_remaining } : undefined,
+      life: r.life_json ? JSON.parse(r.life_json) : undefined,
     }));
   }
 

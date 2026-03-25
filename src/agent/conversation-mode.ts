@@ -150,7 +150,9 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     parts.push(`**${partnerCard.name}**(ID:${partnerCard.id})`);
     parts.push(params.impressionText);
   } else {
-    parts.push(`${partnerCard.name}，${partnerCard.age} 岁，${partnerCard.occupation}。`);
+    const partnerAge = partnerCard.life?.age ?? partnerCard.age;
+    const partnerOccupation = partnerCard.life?.occupation ?? partnerCard.occupation;
+    parts.push(`${partnerCard.name}，${partnerAge} 岁，${partnerOccupation}。`);
     if (partnerCard.appearance) {
       const shortAppearance = partnerCard.appearance.trim().split("\n")[0];
       parts.push(shortAppearance!);
