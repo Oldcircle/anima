@@ -281,9 +281,10 @@ function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefin
   if (lt.condition) {
     if (lt.condition === "isWorkplace") {
       // 只有在自己工作的地点才能 work
-      // 通过角色的 occupation 和地点匹配（简化：检查角色卡的 home 不等于当前地点即可工作）
-      // 更准确的方式：后续可加 workLocationId 到角色卡
-      // 暂时：所有人都可以在有 work 工具的地点工作
+      const workplace = ctx.state.life?.workplace ?? ctx.card.life?.workplace;
+      if (workplace && ctx.location.id !== workplace) {
+        return null; // 不是自己的工作地点，不显示 work
+      }
     } else if (lt.condition.includes("<")) {
       const match = lt.condition.match(/(\w+)\s*<\s*(\d+)/);
       if (match) {

@@ -31,9 +31,28 @@
 - [x] `World.addCharacter` 支持传入 `life`
 - [x] cli.ts + 4 个 sim 测试文件适配
 - [x] `pnpm build` 通过
-- [x] `pnpm test` 通过（154 tests）
-- [ ] 新增 life-state 专项单元测试
-- [ ] Live 半天验证
+- [x] `pnpm test` 通过（176 tests）
+
+**同步修复（全模块适配）**：
+- [x] observation-reasoning.ts: occupation 从 life 读取
+- [x] impression-updater.ts: age/occupation 从 life 读取
+- [x] conversation-mode.ts: 对话对象信息从 life 读取 + workplaceName 传递
+- [x] simulation.ts: 对话模式传 workplaceName
+- [x] server.ts: API 暴露 life 数据
+- [x] database.ts: life_json 列持久化
+- [x] save-load.ts: 存档/读档包含 life state
+- [x] stress-sim.test.ts: 5 个内联角色添加 life 段
+
+**Phase 7C 部分：愿望系统**：
+- [x] reflection.ts: 反思提取愿望/担忧 + 抱负注入
+- [x] simulation.ts: 反思结果回写 life.currentGoal/currentConcern
+- [x] prompt-builder.ts: user prompt 注入"你心里挂着的事"
+
+**测试**：
+- [x] life-state.test.ts（14 tests）
+- [x] reflection.test.ts（6 tests）
+- [x] database.test.ts 新增 2 个 life 持久化测试
+- [ ] Live 半天验证（运行中）
 
 ### 一日模拟结果（2026-03-24）
 
