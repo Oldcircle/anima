@@ -26,11 +26,16 @@ export const SHOP_ITEMS: ShopItem[] = [
 
 /** 工作收入（每次 work 行为） */
 export const WORK_INCOME: Record<string, number> = {
+  "面包店学徒": 20,
+  "咖啡馆店员": 22,
+  "咖啡馆兼职": 15,
+  "花店店主": 30,
+  "图书馆管理员": 22,
+  // 旧名兼容
   "花店老板": 30,
   "渔夫": 25,
   "面包店老板": 28,
   "杂货店老板": 20,
-  "图书馆管理员": 22,
 };
 
 export function getWorkIncome(occupation: string): number {

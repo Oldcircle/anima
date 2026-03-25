@@ -272,13 +272,13 @@ async function executeAction(
   }
 
   // 经济效果
+  // 地点工具的消费（eat/drink/buy 等）
+  const toolCost = (result as any)?._cost;
+  if (typeof toolCost === "number") {
+    state.gold = Math.max(0, state.gold - toolCost);
+  }
   if (toolCall.name === "work") {
     state.gold += getWorkIncome(card.occupation);
-  } else if (toolCall.name === "eat" || toolCall.name === "drink") {
-    const cost = getConsumptionCost(toolCall.name, state.locationId);
-    state.gold = Math.max(0, state.gold - cost);
-  } else if (toolCall.name === "give_gift") {
-    state.gold = Math.max(0, state.gold - 20);
   } else if (toolCall.name === "steal") {
     const stolenAmount = (result as any)._stolenAmount;
     if (typeof stolenAmount === "number") {

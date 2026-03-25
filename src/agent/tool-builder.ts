@@ -302,11 +302,13 @@ function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefin
         field,
         delta,
       }));
-      return {
+      const result: ActionResult & { _cost?: number } = {
         description: lt.description.replace(/（.*?）/, ""),
         effects,
         duration: lt.duration ?? 1,
       };
+      if (lt.cost) result._cost = lt.cost;
+      return result;
     },
   };
 }

@@ -3,6 +3,16 @@ name: 广场
 type: public
 summary: 散步、晒太阳、看热闹
 
+tools:
+  - name: walk
+    description: "在广场散步，看看周围的人和风景"
+    effects: { happiness: 5, energy: -2 }
+    duration: 2
+  - name: sit
+    description: "在长椅上坐一会儿，晒晒太阳"
+    effects: { energy: 3, happiness: 5 }
+    duration: 2
+
 atmosphere:
   morning: |
     清晨的广场空旷安静，石板上还带着夜里的凉意。几只海鸥停在喷泉边上梳理羽毛。

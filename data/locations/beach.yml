@@ -20,6 +20,10 @@ tools:
     description: "沿着海边散步，吹吹海风"
     effects: { happiness: 8, energy: -3 }
     duration: 2
+  - name: stargaze
+    description: "躺在沙滩上看星星"
+    effects: { happiness: 15, energy: -2 }
+    duration: 4
 
 atmosphere:
   morning: |
