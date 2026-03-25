@@ -157,9 +157,15 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
       const shortAppearance = partnerCard.appearance.trim().split("\n")[0];
       parts.push(shortAppearance!);
     }
-    const relDesc = params.relationship
-      ? `你们的关系：${params.relationship.type}（亲密度 ${params.relationship.level}）`
-      : "你们还不太熟";
+    // 用主观感觉描述关系，不暴露数值
+    const relType = params.relationship?.type;
+    let relDesc: string;
+    if (relType === "best_friend") relDesc = "你和这个人已经非常亲近了";
+    else if (relType === "close_friend") relDesc = "你对这个人有明显的亲近感";
+    else if (relType === "friend") relDesc = "你和这个人已经算熟悉了";
+    else if (relType === "acquaintance") relDesc = "你对这个人有些印象";
+    else if (relType === "rival") relDesc = "你和这个人之间有些紧绷";
+    else relDesc = "你们还不太熟";
     parts.push(relDesc);
   }
 
@@ -200,13 +206,19 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
   }
 
   // 6. 叙事指引 + 行动指令
-  parts.push(`\n## 你要做什么
+  const lastExchange = history.length > 0 ? history[history.length - 1] : undefined;
+  const lastSpeakerIsMe = lastExchange?.speakerId === card.id;
+  const continuityHint = lastExchange && !lastSpeakerIsMe
+    ? `\n对方刚刚说的是：「${lastExchange.message}」\n请回应这句话，不要跳回之前的话题。`
+    : "";
 
+  parts.push(`\n## 你要做什么
+${continuityHint}
 先用2-3句话写出你的内心活动（简短即可，不会被对方听到）：你注意到了什么、你真实的想法、你要不要继续聊。
 
 然后调用 talk 工具。参数说明：
 - target: "${partnerCard.id}"
-- message: 只写你说出口的台词。像正常人说话一样，一两句到三四句就够了。可以很短（"嗯。"、"...是吗"），可以改口、犹豫、词不达意。不要写心理描写，不要长篇大论。
+- message: 只写你说出口的台词。像正常人说话一样，一两句到三四句就够了。可以很短（"嗯。"、"...是吗"），可以改口、犹豫、词不达意。不要写心理描写，不要长篇大论。回应对方最后说的话，不要跳回之前的话题。
 - manner: 你说话时的身体语言，用白描写法，一句话。比如"低头搅着杯子里的咖啡"、"视线移向窗外，过了一会儿才回过头"、"嘴角动了动，像是想笑又忍住了"。
 
 如果你不想说话：

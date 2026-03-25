@@ -42,8 +42,17 @@ export async function runReflection(params: {
     .join("\n");
 
   const rels = relationships.getRelationshipsOf(card.id);
+  const relTypeLabels: Record<string, string> = {
+    best_friend: "最好的朋友",
+    close_friend: "亲密的朋友",
+    friend: "朋友",
+    acquaintance: "认识的人",
+    rival: "关系紧张",
+    stranger: "不太熟",
+  };
   const relSummary = rels
-    .map((r) => `${r.otherId}: ${r.relationship.type} (亲密度:${r.relationship.level})`)
+    .filter((r) => r.relationship.type !== "stranger")
+    .map((r) => `${r.otherId}: ${relTypeLabels[r.relationship.type] ?? r.relationship.type}`)
     .join(", ");
 
   const life = card.life;

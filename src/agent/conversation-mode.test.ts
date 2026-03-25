@@ -156,8 +156,8 @@ describe("buildConversationPrompt", () => {
 
     expect(prompt).toContain("## 你的对话对象");
     expect(prompt).toContain("要乐奏");
-    expect(prompt).toContain("acquaintance");
-    expect(prompt).toContain("亲密度 24");
+    expect(prompt).toContain("有些印象");
+    expect(prompt).not.toContain("亲密度");
   });
 
   it("includes full dialogue history with correct labels", () => {
