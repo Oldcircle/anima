@@ -322,16 +322,18 @@ export function buildUserPrompt(params: {
     }
     parts.push(`注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。talk 是在当前地点当面开口说话，在场的人也可能注意到。`);
   } else {
-    // 独处时，如果有记忆中的人，提供回忆线索帮助决策
+    // 独处时，根据社交需求提供不同程度的引导
     const remembered = params.impressions?.getAllFor(card.id) ?? [];
-    if (remembered.length > 0 && state.needs.social < 35) {
+    if (remembered.length > 0 && state.needs.social < 40) {
       const resolveName = (id: string) => params.characterNames?.get(id) ?? id;
       const hints = remembered.slice(0, 3).map((imp) =>
         `${resolveName(imp.characterId)}: ${imp.summary.slice(0, 40)}`
       ).join("；");
       parts.push(`\n附近没有其他人。你想起一些人：${hints}。也许可以去找他们聊聊。`);
-    } else if (state.needs.social < 20) {
-      parts.push("\n附近没有其他人。你已经很久没和人说话了，感到非常孤独。也许应该去广场、咖啡馆或酒吧等有人的地方看看。");
+    } else if (state.needs.social < 30) {
+      parts.push("\n附近没有其他人。你有一阵子没和人说话了。也许可以去咖啡馆、广场或其他地方走走，看看能不能遇到认识的人。");
+    } else if (state.needs.social < 50) {
+      parts.push("\n附近没有其他人。");
     } else {
       parts.push("\n附近没有其他人。");
     }
