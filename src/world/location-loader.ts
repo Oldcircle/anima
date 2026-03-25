@@ -5,14 +5,16 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYAML } from "yaml";
-import type { Location, LocationAtmosphere } from "./types.js";
+import type { Location, LocationAtmosphere, LocationTool } from "./types.js";
 
 interface RawLocation {
   id: string;
   name: string;
   type: string;
+  summary?: string;
   openHours?: { open: number; close: number };
   atmosphere?: LocationAtmosphere;
+  tools?: LocationTool[];
 }
 
 function toLocation(raw: RawLocation): Location {
@@ -20,9 +22,11 @@ function toLocation(raw: RawLocation): Location {
     id: raw.id,
     name: raw.name,
     type: raw.type as Location["type"],
+    summary: raw.summary,
     openHours: raw.openHours ?? null,
     presentCharacters: [],
     atmosphere: raw.atmosphere,
+    tools: raw.tools,
   };
 }
 

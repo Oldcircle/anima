@@ -10,16 +10,31 @@ export interface LocationAtmosphere {
   rainy?: string;
 }
 
+/** 地点提供的工具（从 YAML 加载） */
+export interface LocationTool {
+  name: string;
+  description: string;
+  effects: Record<string, number>;
+  cost?: number;
+  duration?: number;
+  /** 条件：如 "energy < 80", "hygiene < 80", "isWorkplace" */
+  condition?: string;
+}
+
 export interface Location {
   id: string;
   name: string;
   type: "residential" | "commercial" | "public" | "nature" | "special";
+  /** 一句话摘要（用于 go_to 描述） */
+  summary?: string;
   /** 开放时间（小时），null = 24 小时开放 */
   openHours?: { open: number; close: number } | null;
   /** 当前在此地点的角色 ID */
   presentCharacters: string[];
   /** 感官描述（按时段/天气） */
   atmosphere?: LocationAtmosphere;
+  /** 地点提供的工具 */
+  tools?: LocationTool[];
 }
 
 export type Weather = "sunny" | "cloudy" | "rainy" | "stormy" | "snowy";

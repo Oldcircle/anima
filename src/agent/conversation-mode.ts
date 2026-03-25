@@ -161,17 +161,17 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     parts.push(relDesc);
   }
 
-  // 3. 你当前的状态
-  const moodHints: string[] = [];
-  if (state.needs.social < 30) moodHints.push("有点渴望交流");
-  if (state.needs.happiness < 30) moodHints.push("心情不太好");
-  if (state.needs.hunger < 30) moodHints.push("肚子有点饿");
-  if (state.needs.energy < 30) moodHints.push("有些疲惫");
-  const moodStr = moodHints.length > 0 ? `你现在${moodHints.join("，")}。` : "";
+  // 3. 你当前的身体感受
+  const feelings: string[] = [];
+  if (state.needs.hunger < 30) feelings.push("肚子有点饿");
+  if (state.needs.energy < 30) feelings.push("有些疲惫");
+  if (state.needs.happiness < 30) feelings.push("心情不太好");
+  if (state.needs.social > 85) feelings.push("今天聊了不少，有点想安静");
+  const feelStr = feelings.length > 0 ? feelings.join("，") + "。" : "";
 
-  if (moodStr || params.recentMemories) {
+  if (feelStr || params.recentMemories) {
     parts.push(`\n## 你现在的状态`);
-    if (moodStr) parts.push(moodStr);
+    if (feelStr) parts.push(feelStr);
     if (params.recentMemories) parts.push(`最近的经历：\n${params.recentMemories}`);
   }
 

@@ -1,9 +1,27 @@
 id: cafe
 name: 咖啡馆
 type: commercial
+summary: 喝咖啡、吃东西、放松
 openHours:
   open: 7
   close: 22
+
+tools:
+  - name: eat
+    description: "在咖啡馆吃点东西（15金币）"
+    effects: { hunger: 50, energy: 10, happiness: 5 }
+    cost: 15
+    duration: 2
+  - name: drink
+    description: "点一杯咖啡或饮料（8金币）"
+    effects: { energy: 5, happiness: 8, social: 3 }
+    cost: 8
+    duration: 2
+  - name: work
+    description: "在咖啡馆工作：冲咖啡、招呼客人、清理桌子"
+    effects: { energy: -15, hunger: -10 }
+    duration: 8
+    condition: "isWorkplace"
 
 atmosphere:
   morning: |

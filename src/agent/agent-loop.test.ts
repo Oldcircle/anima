@@ -44,21 +44,21 @@ describe("Agent Loop", () => {
     };
   });
 
-  it("LLM 调用 eat 工具 → 更新饥饿值", async () => {
-    mockLLM.enqueueResponse("肚子饿了，去咖啡馆吃午饭吧", [
-      { name: "eat", arguments: { location: "cafe", food: "三明治" } },
+  it("LLM 调用 cook 工具 → 更新饥饿值（在家做饭）", async () => {
+    mockLLM.enqueueResponse("肚子饿了，在家做饭吧", [
+      { name: "cook", arguments: {} },
     ]);
 
     const gameTime = tickToGameTime(48); // 中午 12:00
     const result = await runAgentTick({ config, world, eventBus, gameTime });
 
     expect(result.skipped).toBeFalsy();
-    expect(result.action?.name).toBe("eat");
+    expect(result.action?.name).toBe("cook");
     expect(result.thought).toContain("肚子饿了");
 
     // 饥饿值应该增加了
     const tomori = world.getCharacter("tomori")!;
-    expect(tomori.needs.hunger).toBeGreaterThan(80); // 初始 80 + 50
+    expect(tomori.needs.hunger).toBeGreaterThan(80); // 初始 80 + cook效果
   });
 
   it("LLM 调用 go_to → 移动角色", async () => {
@@ -100,8 +100,8 @@ describe("Agent Loop", () => {
   });
 
   it("事件被广播到 EventBus", async () => {
-    mockLLM.enqueueResponse("工作时间到了", [
-      { name: "work", arguments: { activity: "整理花束" } },
+    mockLLM.enqueueResponse("去散个步", [
+      { name: "go_to", arguments: { location: "cafe" } },
     ]);
 
     const events: any[] = [];
@@ -110,13 +110,14 @@ describe("Agent Loop", () => {
     await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(32) });
 
     expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("action.work");
+    expect(events[0].type).toBe("action.go_to");
     expect(events[0].description).toContain("高松灯");
   });
 
   it("talk 工具写入对方信箱并更新社交值", async () => {
-    // 先把 tomori 移到 cafe（anon 在那里）
+    // 把两人都移到 cafe
     world.moveCharacter("tomori", "cafe");
+    world.moveCharacter("anon", "cafe");
 
     mockLLM.enqueueResponse("看到爱音了，打个招呼", [
       { name: "talk", arguments: { target: "anon", message: "你、你好……" } },
@@ -136,7 +137,7 @@ describe("Agent Loop", () => {
 
   it("LLM 收到正确的 prompt 结构", async () => {
     mockLLM.enqueueResponse("想想...", [
-      { name: "work", arguments: {} },
+      { name: "hobby", arguments: {} },
     ]);
 
     await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(32) });
@@ -146,7 +147,7 @@ describe("Agent Loop", () => {
     const req = mockLLM.calls[0]!.request;
     expect(req.system).toContain("高松灯");
     expect(req.system).toContain("面包店学徒");
-    expect(req.messages[0]!.content).toContain("饥饿");
-    expect(req.tools!.length).toBeGreaterThanOrEqual(5);
+    expect(req.messages[0]!.content).toContain("你现在看到的");
+    expect(req.tools!.length).toBeGreaterThanOrEqual(2); // 至少 go_to + hobby
   });
 });

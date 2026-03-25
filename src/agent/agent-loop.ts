@@ -17,6 +17,7 @@ import type { ImpressionStore } from "../memory/impressions.js";
 import { getWorkIncome, getConsumptionCost } from "../world/economy.js";
 import { getTodayFestival } from "../world/festivals.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
+import { buildToolList, type ToolBuildContext } from "./tool-builder.js";
 import { v4 as uuid } from "uuid";
 
 export interface AgentConfig {
@@ -86,9 +87,18 @@ export async function runAgentTick(params: {
   const recentEvents = eventBus.query({ actorId: card.id, limit: 5 });
   const recentMemories = params.memory?.formatForPrompt(card.id, 8) ?? "";
 
+  // 动态组装工具列表（情境工具系统）
+  const dynamicActions = buildToolList({
+    state,
+    card,
+    location: location ?? { id: state.locationId, name: state.locationId, type: "public", presentCharacters: [] },
+    nearbyCharacters: nearbyCharacters.map((c) => ({ id: c.id, name: c.name })),
+    allLocations: world.getAllLocations(),
+    gold: state.gold,
+  });
+
   // 构建 prompt
   const systemPrompt = buildSystemPrompt(card);
-  const allLocationNames = world.getAllLocations().map((l) => ({ id: l.id, name: l.name }));
   const userPrompt = buildUserPrompt({
     card,
     state,
@@ -97,7 +107,7 @@ export async function runAgentTick(params: {
     recentEvents,
     locationName: location?.name ?? state.locationId,
     locationType: location?.type ?? "public",
-    allLocationNames,
+    allLocationNames: [], // 不再需要，地点信息在 go_to 工具参数里
     recentMemories,
     weather: world.weather,
     festivalHint: getTodayFestival(gameTime.season, gameTime.seasonDay)?.promptHint,
@@ -113,7 +123,7 @@ export async function runAgentTick(params: {
     return {
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
-      tools: actions.map((a) => a.tool),
+      tools: dynamicActions.map((a) => a.tool),
       temperature: 0.8,
       maxTokens: isSocialScene ? 1024 : 512,
     };
@@ -141,7 +151,7 @@ export async function runAgentTick(params: {
 
   // 执行第一个工具调用
   const toolCall = response.toolCalls[0]!;
-  const result = await executeAction(toolCall, actions, card, state, world, eventBus, gameTime, thought);
+  const result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought);
 
   // 收到的信箱消息存入记忆，并给读信者加社交
   if (inboxMessages.length > 0) {

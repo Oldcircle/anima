@@ -1,6 +1,7 @@
 id: plaza
 name: 广场
 type: public
+summary: 散步、晒太阳、看热闹
 
 atmosphere:
   morning: |

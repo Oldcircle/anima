@@ -1,9 +1,22 @@
 id: bar
 name: 酒吧
 type: commercial
+summary: 喝酒、放松、听音乐
 openHours:
   open: 17
   close: 2
+
+tools:
+  - name: drink
+    description: "喝一杯酒（12金币）"
+    effects: { happiness: 15, social: 5, energy: -3 }
+    cost: 12
+    duration: 2
+  - name: eat
+    description: "吃点下酒菜（10金币）"
+    effects: { hunger: 30, happiness: 5 }
+    cost: 10
+    duration: 2
 
 atmosphere:
   morning: |

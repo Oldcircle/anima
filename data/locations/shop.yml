@@ -1,9 +1,17 @@
 id: shop
 name: 杂货店
 type: commercial
+summary: 买日用品、逛逛
 openHours:
   open: 8
   close: 20
+
+tools:
+  - name: buy_supplies
+    description: "买些日用品（5金币）"
+    effects: { hygiene: 10, happiness: 3 }
+    cost: 5
+    duration: 1
 
 atmosphere:
   morning: |

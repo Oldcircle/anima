@@ -1,9 +1,22 @@
 id: flower_shop
 name: 潮声花店
 type: commercial
+summary: 买花、赏花、工作
 openHours:
   open: 8
   close: 18
+
+tools:
+  - name: buy_flowers
+    description: "买一束花（10金币）"
+    effects: { happiness: 10 }
+    cost: 10
+    duration: 1
+  - name: work
+    description: "在花店工作：整理花束、浇水、招呼客人"
+    effects: { energy: -15, hunger: -10 }
+    duration: 8
+    condition: "isWorkplace"
 
 atmosphere:
   morning: |

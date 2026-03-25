@@ -1,6 +1,25 @@
 id: beach
 name: 海边
 type: nature
+summary: 游泳、散步、捡贝壳、钓鱼
+
+tools:
+  - name: swim
+    description: "下海游泳，消暑放松"
+    effects: { energy: -10, happiness: 15, hygiene: -10 }
+    duration: 4
+  - name: collect_shells
+    description: "在沙滩上捡贝壳或小石头"
+    effects: { happiness: 5 }
+    duration: 2
+  - name: fish
+    description: "在岸边钓鱼，需要耐心"
+    effects: { energy: -5, happiness: 10, hunger: -5 }
+    duration: 8
+  - name: walk
+    description: "沿着海边散步，吹吹海风"
+    effects: { happiness: 8, energy: -3 }
+    duration: 2
 
 atmosphere:
   morning: |

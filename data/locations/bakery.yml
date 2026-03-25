@@ -1,9 +1,22 @@
 id: bakery
 name: 海风面包坊
 type: commercial
+summary: 买面包、吃东西
 openHours:
   open: 7
   close: 17
+
+tools:
+  - name: eat
+    description: "在面包店吃东西（8金币）"
+    effects: { hunger: 50, energy: 10, happiness: 5 }
+    cost: 8
+    duration: 2
+  - name: work
+    description: "在面包店工作：揉面、烤面包、招呼客人"
+    effects: { energy: -15, hunger: -10 }
+    duration: 8
+    condition: "isWorkplace"
 
 atmosphere:
   morning: |

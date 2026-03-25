@@ -184,15 +184,14 @@ describe("buildConversationPrompt", () => {
     expect(prompt).toContain("白描");
   });
 
-  it("includes mood hints when needs are low", () => {
-    const lowSocialState = { ...sakikoState, needs: { ...sakikoState.needs, social: 15, happiness: 20 } };
+  it("includes body feeling hints when needs are low", () => {
+    const lowState = { ...sakikoState, needs: { ...sakikoState.needs, social: 15, happiness: 20 } };
     const prompt = buildConversationPrompt({
-      card: sakikoCard, state: lowSocialState,
+      card: sakikoCard, state: lowState,
       partnerCard: mariaCard, partnerState: mariaState,
       history, gameTime, locationName: "咖啡馆",
     });
 
-    expect(prompt).toContain("渴望交流");
     expect(prompt).toContain("心情不太好");
   });
 

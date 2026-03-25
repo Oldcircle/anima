@@ -62,7 +62,45 @@ describe("prompt-builder", () => {
     expect(prompt).not.toContain("42");
   });
 
-  it("社交值过高时会提示不必继续硬社交", () => {
+  it("需求值正常时不显示身体感受章节", () => {
+    const state = createState(); // all needs are high
+    const prompt = buildUserPrompt({
+      card: baseCard,
+      state,
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [],
+      recentEvents: [],
+      locationName: "咖啡馆",
+      locationType: "commercial",
+      allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
+    });
+
+    expect(prompt).not.toContain("你的身体感受");
+    expect(prompt).not.toContain("/100");
+    expect(prompt).not.toContain("饥饿:");
+  });
+
+  it("饥饿偏低时显示身体感受", () => {
+    const state = createState();
+    state.needs.hunger = 25;
+
+    const prompt = buildUserPrompt({
+      card: baseCard,
+      state,
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [],
+      recentEvents: [],
+      locationName: "咖啡馆",
+      locationType: "commercial",
+      allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
+    });
+
+    expect(prompt).toContain("你的身体感受");
+    expect(prompt).toContain("饿");
+    expect(prompt).not.toContain("/100");
+  });
+
+  it("社交饱和时感受中提示想安静", () => {
     const state = createState();
     state.needs.social = 92;
 
@@ -77,8 +115,44 @@ describe("prompt-builder", () => {
       allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
     });
 
-    expect(prompt).toContain("社交上基本是饱的");
-    expect(prompt).toContain("不必硬找话题");
+    expect(prompt).toContain("安静");
   });
 
+  it("没钱时感受中提及口袋空", () => {
+    const state = createState();
+    state.gold = 0;
+
+    const prompt = buildUserPrompt({
+      card: baseCard,
+      state,
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [],
+      recentEvents: [],
+      locationName: "咖啡馆",
+      locationType: "commercial",
+      allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
+    });
+
+    expect(prompt).toContain("口袋空空");
+  });
+
+  it("极端饥饿+没钱时显示紧急感受", () => {
+    const state = createState();
+    state.gold = 0;
+    state.needs.hunger = 10;
+
+    const prompt = buildUserPrompt({
+      card: baseCard,
+      state,
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [],
+      recentEvents: [],
+      locationName: "咖啡馆",
+      locationType: "commercial",
+      allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
+    });
+
+    expect(prompt).toContain("又穷又饿");
+    expect(prompt).toContain("胃在抽痛");
+  });
 });

@@ -103,20 +103,48 @@ export function buildSystemPrompt(card: CharacterCard): string {
   return parts.join("\n");
 }
 
-function formatNeeds(needs: CharacterNeeds): string {
-  const bar = (v: number) => {
-    if (v >= 70) return "充足";
-    if (v >= 40) return "一般";
-    if (v >= 20) return "偏低";
-    return "⚠️ 很低";
-  };
-  return [
-    `饥饿: ${needs.hunger}/100 (${bar(needs.hunger)})`,
-    `精力: ${needs.energy}/100 (${bar(needs.energy)})`,
-    `社交: ${needs.social}/100 (${bar(needs.social)})`,
-    `快乐: ${needs.happiness}/100 (${bar(needs.happiness)})`,
-    `卫生: ${needs.hygiene}/100 (${bar(needs.hygiene)})`,
-  ].join("\n");
+/**
+ * 将需求数值转化为自然语言身体感受。
+ * 满的不提，偏低用身体感受，极低用紧急措辞。
+ */
+function formatBodyFeelings(needs: CharacterNeeds, gold: number): string {
+  const feelings: string[] = [];
+
+  // 饥饿
+  if (needs.hunger < 15) feelings.push("饿到胃在抽痛，必须马上吃点东西。");
+  else if (needs.hunger < 30) feelings.push("饿得有点发晕，得找地方吃饭了。");
+  else if (needs.hunger < 60) feelings.push("肚子有点饿了。");
+
+  // 精力
+  if (needs.energy < 15) feelings.push("累到站不稳，眼睛都快睁不开了。");
+  else if (needs.energy < 30) feelings.push("眼皮很重，脑子转得慢，很想躺下来。");
+  else if (needs.energy < 60) feelings.push("有点累了，打了个哈欠。");
+
+  // 社交
+  if (needs.social > 85) feelings.push("今天和人聊了不少，想安静待一会儿。");
+  else if (needs.social < 15) feelings.push("一个人待太久了，心里空荡荡的，很想找人说说话。");
+  else if (needs.social < 30) feelings.push("有点寂寞，想找人聊聊。");
+
+  // 快乐
+  if (needs.happiness < 20) feelings.push("什么都提不起劲，心里闷闷的。");
+  else if (needs.happiness < 40) feelings.push("心情有点低落。");
+  else if (needs.happiness > 80) feelings.push("心情挺好的。");
+
+  // 卫生
+  if (needs.hygiene < 30) feelings.push("身上黏糊糊的，该洗个澡了。");
+  else if (needs.hygiene < 50) feelings.push("身上不太清爽。");
+
+  // 金币
+  if (gold === 0) feelings.push("口袋空空的，一个硬币都没有。");
+  else if (gold < 10) feelings.push(`口袋里只剩 ${gold} 金币，得省着花。`);
+
+  // 极端组合
+  if (gold === 0 && needs.hunger < 20) {
+    feelings.push("又穷又饿，处境很危险。");
+  }
+
+  if (feelings.length === 0) return "";
+  return feelings.join("");
 }
 
 function formatPreferencesHint(card: CharacterCard): string {
@@ -126,44 +154,6 @@ function formatPreferencesHint(card: CharacterCard): string {
   const lines = Object.entries(card.preferences)
     .map(([key, desc]) => `- ${key}: ${desc}`);
   return `## 你的生活习惯\n${lines.join("\n")}`;
-}
-
-function locationTypeLabel(type: string): string {
-  switch (type) {
-    case "residential": return "住宅区";
-    case "commercial": return "商业区";
-    case "public": return "公共区域";
-    case "nature": return "自然区域";
-    default: return type;
-  }
-}
-
-function buildConstraintWarnings(state: CharacterState, locationType: string): string[] {
-  const warnings: string[] = [];
-
-  if (state.gold === 0) {
-    warnings.push("⚠️ 你现在身无分文（0金币），不能在外面吃饭（需15金币）或喝酒（需8-12金币）。你可以回家免费吃饭，或者去工作赚钱。如果走投无路，可以乞讨（beg）或偷窃（steal）。");
-  } else if (state.gold < 15) {
-    warnings.push(`⚠️ 你只剩 ${state.gold} 金币，在外吃饭需要 15 金币，你可能吃不起。回家吃饭是免费的。`);
-  }
-
-  if (locationType !== "residential") {
-    warnings.push(`⚠️ 你现在在${locationTypeLabel(locationType)}，不能在这里睡觉（sleep）或洗澡（wash），需要先回家（go_to 你的家）。`);
-  }
-
-  if (state.needs.energy < 10) {
-    warnings.push("⚠️ 你精力耗尽了，无法工作（work），需要先回家睡觉。");
-  }
-
-  if (state.gold === 0 && state.needs.hunger < 20) {
-    warnings.push("⚠️ 你又穷又饿，处境非常危险。你必须立刻想办法解决——去工作赚钱、回家吃饭、向人乞讨、或者铤而走险去偷。不能再无所事事了。");
-  }
-
-  if (state.needs.social > 85) {
-    warnings.push("⚠️ 你今天已经和不少人说过话了，社交上基本是饱的。除非眼下真的有话想说，否则不必硬找话题；去工作、独处、散步、做自己的事也很自然。");
-  }
-
-  return warnings;
 }
 
 function describeRelationshipFeel(type?: string): string {
@@ -221,9 +211,9 @@ export function buildUserPrompt(params: {
   const atmosphereText = getAtmosphereText(params.atmosphere, gameTime.hour, params.weather ?? "sunny");
   if (atmosphereText) {
     parts.push(`## 你现在看到的\n${locationName}——${atmosphereText}`);
-    parts.push(`时间: ${formatGameTime(gameTime)}${weatherStr}  💰 金币: ${state.gold}`);
+    parts.push(`时间: ${formatGameTime(gameTime)}${weatherStr}`);
   } else {
-    parts.push(`## 当前状态\n时间: ${formatGameTime(gameTime)}${weatherStr}\n位置: ${locationName}（${locationTypeLabel(locationType)}）\n💰 金币: ${state.gold}`);
+    parts.push(`## 你现在看到的\n${locationName}，${formatGameTime(gameTime)}。${weatherStr}`);
   }
 
   const hint = params.weather ? weatherHint(params.weather) : "";
@@ -231,10 +221,10 @@ export function buildUserPrompt(params: {
 
   if (params.festivalHint) parts.push(`\n🎉 **${params.festivalHint}**`);
 
-  // 约束预提醒
-  const warnings = buildConstraintWarnings(state, locationType);
-  if (warnings.length > 0) {
-    parts.push("\n" + warnings.join("\n"));
+  // 身体感受（替代数值面板和约束警告）
+  const bodyFeelings = formatBodyFeelings(state.needs, state.gold);
+  if (bodyFeelings) {
+    parts.push(`\n## 你的身体感受\n${bodyFeelings}`);
   }
 
   // 附近的人：先写可见事实，再写主观感觉/印象
@@ -301,13 +291,6 @@ export function buildUserPrompt(params: {
     parts.push(`\n## 有人对你说\n${msgs}\n（这些话刚刚在你耳边发生。你可以用 talk 回应，也可以无视或转身离开。）`);
   }
 
-  // 需求值
-  parts.push(`\n## 你的需求\n${formatNeeds(state.needs)}`);
-
-  if (state.needs.social < 15) {
-    parts.push("你已经很久没有和任何人交流了，内心深处渴望有人陪伴。");
-  }
-
   const prefsHint = formatPreferencesHint(card);
   if (prefsHint) parts.push(`\n${prefsHint}`);
 
@@ -321,12 +304,6 @@ export function buildUserPrompt(params: {
       parts.push(`- ${e.description}`);
     }
   }
-
-  const otherLocations = allLocationNames
-    .filter((l) => l.id !== state.locationId)
-    .map((l) => `${l.id}(${l.name})`)
-    .join("、");
-  parts.push(`\n## 可前往的地点\n${otherLocations}`);
 
   // 思考指令：社交场景更详细，独处场景简短
   const isSocialScene = nearbyCharacters.length > 0 || (params.inboxMessages && params.inboxMessages.length > 0);

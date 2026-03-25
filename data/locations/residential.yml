@@ -1,6 +1,26 @@
 # 住宅区通用 atmosphere（各角色的家共享）
 # 如果需要个性化，可以为每个 home 创建独立文件
 
+_residential_tools: &home_tools
+  - name: sleep
+    description: "睡觉休息"
+    effects: { energy: 100 }
+    duration: 32
+    condition: "energy < 80"
+  - name: wash
+    description: "洗澡梳洗"
+    effects: { hygiene: 100, happiness: 5 }
+    duration: 2
+    condition: "hygiene < 80"
+  - name: cook
+    description: "自己做饭吃（免费）"
+    effects: { hunger: 50, energy: 10, happiness: 3 }
+    duration: 3
+  - name: hobby
+    description: "在家做自己喜欢的事"
+    effects: { happiness: 10 }
+    duration: 2
+
 _residential_atmosphere: &residential
   morning: |
     晨光从窗帘缝隙里透进来，房间里安安静静的。
@@ -23,20 +43,30 @@ homes:
   - id: home_tomori
     name: 灯的家
     type: residential
+    summary: 睡觉、洗澡、做饭
     atmosphere: *residential
+    tools: *home_tools
   - id: home_anon
     name: 爱音的家
     type: residential
+    summary: 睡觉、洗澡、做饭
     atmosphere: *residential
+    tools: *home_tools
   - id: home_sakiko
     name: 祥子的家
     type: residential
+    summary: 睡觉、洗澡、做饭
     atmosphere: *residential
+    tools: *home_tools
   - id: home_mutsumi
     name: 睦的家
     type: residential
+    summary: 睡觉、洗澡、做饭
     atmosphere: *residential
+    tools: *home_tools
   - id: home_soyo
     name: 素世的家
     type: residential
+    summary: 睡觉、洗澡、做饭
     atmosphere: *residential
+    tools: *home_tools

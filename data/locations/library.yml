@@ -1,9 +1,21 @@
 id: library
 name: 图书馆
 type: public
+summary: 看书、学习、安静休息
 openHours:
   open: 9
   close: 18
+
+tools:
+  - name: read
+    description: "找一本书安静地看"
+    effects: { happiness: 10, energy: -3 }
+    duration: 4
+  - name: work
+    description: "在图书馆工作：整理书架、办理借阅"
+    effects: { energy: -15, hunger: -10 }
+    duration: 8
+    condition: "isWorkplace"
 
 atmosphere:
   morning: |
