@@ -201,11 +201,13 @@ Live/模拟测试已改名为 `*.live.test.ts`，不被默认 `pnpm test` 包含
 
 ### 下次继续入口
 
-1. **半天 Live 验证**：跑 `pnpm test:live`，验证对话串行 + 多句话的实际效果
-2. **一日模拟验证**：跑 `pnpm test:sim`，验证完整一天的效果
-3. **体验打磨**：前端玩家操作面板（位置/需求/金币/对话输入）
-4. 可选：角色记忆可视化、关系网络图
-5. 可选：embedding 向量搜索（需接入 embedding API）
+1. **需求感受化**：将 `formatNeeds()` 数值面板改为 `formatBodyFeelings()` 自然语言感受
+   - 详见 DESIGN.md §2.2 和 PLAN.md
+   - 核心改动在 `prompt-builder.ts`
+   - 满的需求不提，偏低的用身体感受描述，极低的用紧急措辞
+2. **截断问题**：已确认不是 token 限制（finish_reason=tool_calls, 使用率<10%），是 DeepSeek 工具参数生成的模型行为，需引导更短消息
+3. 可选：关系网络图可视化
+4. 可选：embedding 向量搜索（需接入 embedding API）
 
 ## 第一性原理
 
