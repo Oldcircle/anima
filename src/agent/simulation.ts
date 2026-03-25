@@ -451,6 +451,15 @@ export class Simulation {
         }),
       );
       reflections = await Promise.all(reflectionPromises);
+
+      // 反思结果回写 life state（愿望/担忧）
+      for (const r of reflections) {
+        const charState = this.world.getCharacter(r.characterId);
+        if (charState?.life) {
+          if (r.wish) charState.life.currentGoal = r.wish;
+          if (r.concern) charState.life.currentConcern = r.concern;
+        }
+      }
     }
 
     const summary: TickSummary = {
