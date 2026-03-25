@@ -189,11 +189,16 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
 
 function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
   const myHome = ctx.card.home;
+  const workplace = ctx.state.life?.workplace ?? ctx.card.life?.workplace;
   const otherLocations = ctx.allLocations
     .filter((l) => l.id !== ctx.state.locationId)
     // 只显示公共地点 + 自己的家（不能随便去别人家）
     .filter((l) => l.type !== "residential" || l.id === myHome)
-    .map((l) => `${l.id}(${l.name}${l.summary ? ' — ' + l.summary : ''})`)
+    .map((l) => {
+      const suffix = l.summary ? ` — ${l.summary}` : "";
+      const workTag = l.id === workplace ? " ★你的工作地点" : "";
+      return `${l.id}(${l.name}${suffix}${workTag})`;
+    })
     .join("\n  ");
 
   return {
