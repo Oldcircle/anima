@@ -85,7 +85,19 @@
 - [x] tool-builder 根据关系深度条件浮现
 - [x] prompt 注入 bond 描述
 - [x] DB 持久化 bond 列
-- [x] 测试 9 个新增，185 tests 全部通过
+
+**Phase 7C 职业晋升**：
+- [x] 地点 YAML 新增 career_track（bakery/cafe/flower_shop/library 各 2-3 级）
+- [x] `career.ts`: checkPromotion + applyPromotion
+- [x] simulation 每天反思时自动检查晋升
+- [x] 晋升 → 更新 occupation/income + 记忆 + confident moodlet
+
+**Phase 7D Moodlet 情绪系统**：
+- [x] `moodlets.ts`: add/tick/getDominant/format/generateNeedMoodlets
+- [x] CharacterState 新增 `moodlets` 字段
+- [x] 社交产生 happy moodlet，需求极低产生负面 moodlet
+- [x] prompt 注入"你现在的心情"段 + 主导情绪
+- [x] 207 tests 全部通过
 
 ### 一日模拟结果（2026-03-24）
 
