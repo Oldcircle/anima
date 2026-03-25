@@ -11,6 +11,7 @@ import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime } from "../core/tick-engine.js";
 import type { WorldEvent } from "../core/event-bus.js";
 import { weatherDescription, weatherHint } from "../world/weather.js";
+import { formatMoodlets } from "../world/moodlets.js";
 import { getAtmosphereText } from "../world/location-loader.js";
 import type { ImpressionStore } from "../memory/impressions.js";
 
@@ -301,6 +302,9 @@ export function buildUserPrompt(params: {
   const bodyFeelings = formatBodyFeelings(state.needs, state.gold);
   parts.push(`\n## 你的身体感受\n${bodyFeelings}`);
 
+  // 情绪状态（Moodlet 系统）
+  const moodletText = formatMoodlets(state);
+  if (moodletText) parts.push(`\n${moodletText}`);
 
   // 附近的人：先写可见事实，再写主观感觉/印象
   if (nearbyCharacters.length > 0) {

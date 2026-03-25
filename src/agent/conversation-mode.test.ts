@@ -47,13 +47,13 @@ const mariaCard: CharacterCard = {
 const sakikoState: CharacterState = {
   id: "sakiko", name: "丰川祥子", locationId: "cafe",
   needs: { hunger: 60, energy: 70, social: 35, happiness: 50, hygiene: 80 },
-  gold: 45, inbox: [],
+  gold: 45, moodlets: [], inbox: [],
 };
 
 const mariaState: CharacterState = {
   id: "mutsumi", name: "要乐奏", locationId: "cafe",
   needs: { hunger: 50, energy: 80, social: 60, happiness: 70, hygiene: 90 },
-  gold: 62, inbox: [],
+  gold: 62, moodlets: [], inbox: [],
 };
 
 const gameTime = { tick: 52, day: 0, hour: 13, minute: 0, season: "spring" as const, seasonDay: 1, year: 1 };

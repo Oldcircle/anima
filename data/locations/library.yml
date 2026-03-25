@@ -17,6 +17,16 @@ tools:
     duration: 8
     condition: "isWorkplace"
 
+career_track:
+  - level: 1
+    title: "图书馆管理员"
+    income: 14
+    required_skill: { organizing: 0 }
+  - level: 2
+    title: "图书馆主管"
+    income: 22
+    required_skill: { organizing: 5 }
+
 atmosphere:
   morning: |
     图书馆刚开门，空气里有书页和木家具的味道。阳光透过高窗照进来，

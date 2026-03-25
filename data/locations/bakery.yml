@@ -18,6 +18,20 @@ tools:
     duration: 8
     condition: "isWorkplace"
 
+career_track:
+  - level: 1
+    title: "面包店学徒"
+    income: 8
+    required_skill: { baking: 0 }
+  - level: 2
+    title: "面包师"
+    income: 15
+    required_skill: { baking: 5 }
+  - level: 3
+    title: "主厨"
+    income: 25
+    required_skill: { baking: 8 }
+
 atmosphere:
   morning: |
     烤箱里传来阵阵面包香，金黄色的可颂整齐地排在展示柜里。

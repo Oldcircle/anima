@@ -21,6 +21,14 @@ export interface LocationTool {
   condition?: string;
 }
 
+/** 职业阶梯等级 */
+export interface CareerLevel {
+  level: number;
+  title: string;
+  income: number;
+  required_skill: Record<string, number>;
+}
+
 export interface Location {
   id: string;
   name: string;
@@ -35,6 +43,18 @@ export interface Location {
   atmosphere?: LocationAtmosphere;
   /** 地点提供的工具 */
   tools?: LocationTool[];
+  /** 职业阶梯（从 YAML 加载） */
+  careerTrack?: CareerLevel[];
+}
+
+/** 临时情绪效果（Moodlet） */
+export interface Moodlet {
+  id: string;
+  emotion: "happy" | "sad" | "angry" | "embarrassed" | "anxious" | "confident" | "lonely" | "grateful";
+  intensity: number;        // 1-5
+  reason: string;           // "和爱音聊得很开心"
+  expiresAtTick: number;
+  source: "social" | "work" | "need" | "event" | "memory";
 }
 
 export type Weather = "sunny" | "cloudy" | "rainy" | "stormy" | "snowy";
@@ -78,6 +98,8 @@ export interface CharacterState {
   gold: number;
   /** 可变的生活状态（职业、技能、目标等） */
   life?: import("../character/types.js").LifeState;
+  /** 临时情绪效果列表 */
+  moodlets: Moodlet[];
   /** 当前正在执行的行为（多 tick 行为） */
   currentAction?: { name: string; remainingTicks: number };
   /** 当前还挂在心上的短期意图/未完事务，会自然过期 */

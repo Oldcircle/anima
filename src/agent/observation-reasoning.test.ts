@@ -9,7 +9,7 @@ function makeState(overrides?: Partial<CharacterState>): CharacterState {
     locationId: "cafe",
     needs: { hunger: 60, energy: 60, social: 40, happiness: 60, hygiene: 60 },
     gold: 100,
-    inbox: [],
+    moodlets: [], inbox: [],
     ...overrides,
   };
 }

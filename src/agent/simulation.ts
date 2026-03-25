@@ -23,6 +23,8 @@ import { ConversationTracker, buildConversationRequest } from "./conversation-mo
 import { ImpressionStore } from "../memory/impressions.js";
 import { updateImpressionsBidirectional } from "./impression-updater.js";
 import { shouldObserve, generateObservation, type ObservationResult } from "./observation-reasoning.js";
+import { tickMoodlets, generateNeedMoodlets, addMoodlet } from "../world/moodlets.js";
+import { checkPromotion, applyPromotion, type PromotionResult } from "../world/career.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -174,9 +176,13 @@ export class Simulation {
       }
     }
 
-    // 1. 衰减需求
+    // 1. 衰减需求 + Moodlet 管理
     this.world.decayNeeds();
     this.world.setTick(gameTime.tick);
+    for (const c of this.world.getAllCharacters()) {
+      tickMoodlets(c, gameTime.tick);
+      generateNeedMoodlets(c, gameTime.tick);
+    }
 
     // 1.5 随机事件
     const triggeredEvents: Array<{ event: RandomEvent; affectedCharacters: string[] }> = [];
@@ -243,6 +249,14 @@ export class Simulation {
           gameTime.tick,
           r.action.args.manner as string | undefined,
         );
+        // 对话产生 happy moodlet
+        if (charState) {
+          addMoodlet(charState, "happy", 2, "和人聊了天", 8, "social", gameTime.tick);
+        }
+        const targetState = this.world.getCharacter(targetId);
+        if (targetState) {
+          addMoodlet(targetState, "happy", 1, "有人找我说话", 8, "social", gameTime.tick);
+        }
       }
     }
 
@@ -486,6 +500,16 @@ export class Simulation {
         if (charState?.life) {
           if (r.wish) charState.life.currentGoal = r.wish;
           if (r.concern) charState.life.currentConcern = r.concern;
+        }
+      }
+
+      // 职业晋升检查（每天反思时）
+      const allLocations = this.world.getAllLocations();
+      for (const charState of this.world.getAllCharacters()) {
+        const promotion = checkPromotion(charState, allLocations);
+        if (promotion) {
+          applyPromotion(charState, promotion, this.memory, gameTime.tick);
+          console.log(`🎉 [晋升] ${charState.name}: ${promotion.oldTitle} → ${promotion.newTitle}`);
         }
       }
     }

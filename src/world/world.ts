@@ -78,6 +78,7 @@ export class World {
       needs: { ...DEFAULT_NEEDS, ...needs },
       gold: 100,
       life,
+      moodlets: [],
       inbox: [],
     };
     this._characters.set(id, state);

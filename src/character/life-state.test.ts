@@ -122,7 +122,7 @@ describe("Prompt 注入 life 信息", () => {
       locationId: "bakery",
       needs: { hunger: 80, energy: 70, social: 60, happiness: 70, hygiene: 80 },
       gold: 30,
-      inbox: [],
+      moodlets: [], inbox: [],
       life: {
         ...cardWithLife.life!,
         currentGoal: "想学会做法棍",
@@ -153,7 +153,7 @@ describe("Prompt 注入 life 信息", () => {
       locationId: "bakery",
       needs: { hunger: 80, energy: 70, social: 60, happiness: 70, hygiene: 80 },
       gold: 30,
-      inbox: [],
+      moodlets: [], inbox: [],
       life: { ...cardWithLife.life! },
     };
 

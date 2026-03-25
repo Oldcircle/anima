@@ -35,7 +35,7 @@ describeIf("观察推理 Live 测试", () => {
         observerState: {
           id: "sakiko", name: "丰川祥子", locationId: "cafe",
           needs: { hunger: 60, energy: 50, social: 40, happiness: 55, hygiene: 70 },
-          gold: 80, inbox: [],
+          gold: 80, moodlets: [], inbox: [],
         },
         visibleCharacters: [
           { id: "soyo", name: "长崎素世", action: "在角落安静地看书，咖啡已经凉了", stayDuration: 8 },
@@ -76,7 +76,7 @@ describeIf("观察推理 Live 测试", () => {
         observerState: {
           id: "mutsumi", name: "要乐奏", locationId: "plaza",
           needs: { hunger: 70, energy: 60, social: 30, happiness: 55, hygiene: 65 },
-          gold: 120, inbox: [],
+          gold: 120, moodlets: [], inbox: [],
         },
         visibleCharacters: [
           { id: "tomori", name: "高松灯", action: "一个人坐在长椅上，手里攥着一封信发呆", stayDuration: 6 },

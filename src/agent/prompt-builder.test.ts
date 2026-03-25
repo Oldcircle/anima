@@ -32,7 +32,7 @@ function createState(): CharacterState {
       hygiene: 80,
     },
     gold: 30,
-    inbox: [],
+    moodlets: [], inbox: [],
   };
 }
 

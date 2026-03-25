@@ -18,6 +18,20 @@ tools:
     duration: 8
     condition: "isWorkplace"
 
+career_track:
+  - level: 1
+    title: "花店店员"
+    income: 12
+    required_skill: { botany: 0 }
+  - level: 2
+    title: "花店店主"
+    income: 18
+    required_skill: { botany: 4 }
+  - level: 3
+    title: "花艺师"
+    income: 30
+    required_skill: { botany: 7 }
+
 atmosphere:
   morning: |
     花店刚开门，门口的盆栽已经浇好了水。空气里混着泥土和花瓣的清香。

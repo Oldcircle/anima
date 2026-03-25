@@ -23,6 +23,20 @@ tools:
     duration: 8
     condition: "isWorkplace"
 
+career_track:
+  - level: 1
+    title: "咖啡馆店员"
+    income: 10
+    required_skill: { barista: 0 }
+  - level: 2
+    title: "咖啡师"
+    income: 18
+    required_skill: { barista: 4 }
+  - level: 3
+    title: "店长"
+    income: 28
+    required_skill: { barista: 7, social: 5 }
+
 atmosphere:
   morning: |
     晨光从落地窗斜照进来，吧台后面的咖啡机发出低沉的嗡嗡声。
