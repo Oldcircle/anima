@@ -50,6 +50,8 @@ export interface LLMResponse {
   content: string;
   toolCalls: ToolCall[];
   usage?: { inputTokens: number; outputTokens: number };
+  /** "stop" = 正常结束，"length" = token 用尽被截断 */
+  finishReason?: "stop" | "length" | string;
 }
 
 /** 模型提供商接口 */

@@ -81,6 +81,7 @@ export function buildSystemPrompt(card: CharacterCard): string {
 - 如果"有人对你说"里有消息，优先考虑用 talk 回应（也可以选择不回应）
 - 如果你身无分文又饥肠辘辘，你可能需要做一些不太体面的事（乞讨、偷窃）——生存是第一位的
 - talk 发出的消息不会阻塞，对方会在下一轮看到
+- 你可以一口气说完想说的，不用一句一句地说——真人面对面说话经常一口气说好几句
 - 你的内心想法用普通文本表达，行为用工具调用表达
 - 保持角色一致性，用你的说话风格和性格特点来决定行为
 
@@ -179,11 +180,6 @@ function describeRelationshipFeel(type?: string): string {
   }
 }
 
-function formatCurrentIntent(state: CharacterState): string {
-  if (!state.currentIntent) return "";
-  return `## 你心里还挂着的事\n${state.currentIntent.summary}`;
-}
-
 export function buildUserPrompt(params: {
   card: CharacterCard;
   state: CharacterState;
@@ -234,11 +230,6 @@ export function buildUserPrompt(params: {
   const warnings = buildConstraintWarnings(state, locationType);
   if (warnings.length > 0) {
     parts.push("\n" + warnings.join("\n"));
-  }
-
-  const intentText = formatCurrentIntent(state);
-  if (intentText) {
-    parts.push(`\n${intentText}`);
   }
 
   // 附近的人：先写可见事实，再写主观感觉/印象
@@ -335,7 +326,7 @@ export function buildUserPrompt(params: {
   // 思考指令：社交场景更详细，独处场景简短
   const isSocialScene = nearbyCharacters.length > 0 || (params.inboxMessages && params.inboxMessages.length > 0);
   if (isSocialScene) {
-    parts.push("\n请根据以上信息，决定你现在要做什么。先详细说说你的内心活动：你看到了什么、感受到什么、对在场的人有什么想法、你想做什么以及为什么。然后调用一个工具。");
+    parts.push("\n请根据以上信息，决定你现在要做什么。先用2-3句话说说你的想法，然后调用一个工具。");
   } else {
     parts.push("\n请根据以上信息，决定你现在要做什么。先简短说说你的想法（1-2句），然后调用一个工具。");
   }

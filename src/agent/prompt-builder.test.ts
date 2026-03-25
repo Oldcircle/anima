@@ -62,29 +62,4 @@ describe("prompt-builder", () => {
     expect(prompt).not.toContain("42");
   });
 
-  it("会把短期意图注入 prompt，保留跨 tick 连续性", () => {
-    const state = createState();
-    state.currentIntent = {
-      kind: "reply",
-      source: "message",
-      targetId: "anon",
-      createdTick: 48,
-      expiresAt: 54,
-      summary: "爱音刚刚跟你搭话，你还在想要不要立刻回她。",
-    };
-
-    const prompt = buildUserPrompt({
-      card: baseCard,
-      state,
-      gameTime: tickToGameTime(48),
-      nearbyCharacters: [],
-      recentEvents: [],
-      locationName: "咖啡馆",
-      locationType: "commercial",
-      allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
-    });
-
-    expect(prompt).toContain("你心里还挂着的事");
-    expect(prompt).toContain("爱音刚刚跟你搭话");
-  });
 });

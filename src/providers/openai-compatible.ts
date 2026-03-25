@@ -72,6 +72,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
             function: { name: string; arguments: string };
           }>;
         };
+        finish_reason?: string;
       }>;
       usage?: { prompt_tokens: number; completion_tokens: number };
     };
@@ -91,6 +92,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
       usage: data.usage
         ? { inputTokens: data.usage.prompt_tokens, outputTokens: data.usage.completion_tokens }
         : undefined,
+      finishReason: choice.finish_reason ?? undefined,
     };
   }
 }

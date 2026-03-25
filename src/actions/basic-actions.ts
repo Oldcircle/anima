@@ -99,7 +99,7 @@ export const goToAction: ActionDefinition = {
 export const talkAction: ActionDefinition = {
   tool: {
     name: "talk",
-    description: "在当前地点当面对某人说话。对方必须在同一位置。消息送到对方信箱，在场的人也可能注意到。",
+    description: "在当前地点当面对某人说话。对方必须在同一位置。消息送到对方信箱，在场的人也可能注意到。你可以一口气说好几句话，不用每次只说一句。",
     parameters: {
       type: "object",
       properties: {
@@ -109,7 +109,7 @@ export const talkAction: ActionDefinition = {
         },
         message: {
           type: "string",
-          description: "你说出口的话（只写台词，不写心理描写）",
+          description: "你说出口的话（只写台词，不写心理描写）。你可以一口气说完想说的，不用一句一句地说。比如先打招呼再聊正事，或者一口气问好几个问题。",
         },
         manner: {
           type: "string",

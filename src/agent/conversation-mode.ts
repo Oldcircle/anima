@@ -200,15 +200,11 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
   // 6. 叙事指引 + 行动指令
   parts.push(`\n## 你要做什么
 
-先写出你的内心活动（这部分不会被对方听到）：
-1. 你的身体在做什么——手放在哪里、视线看向哪里、坐着还是站着
-2. 你注意到了什么——对方的某个小动作、周围环境的变化
-3. 你真实的想法——可能和你说出口的完全不同
-4. 你要不要继续这段对话——如果你饿了/累了/觉得聊够了，可以结束
+先用2-3句话写出你的内心活动（简短即可，不会被对方听到）：你注意到了什么、你真实的想法、你要不要继续聊。
 
 然后调用 talk 工具。参数说明：
 - target: "${partnerCard.id}"
-- message: 只写你说出口的台词。可以很短（"嗯。"、"...是吗"）。可以改口、犹豫、词不达意。不要写心理描写。
+- message: 只写你说出口的台词。可以很短（"嗯。"、"...是吗"），也可以一口气说好几句话——真人面对面说话经常一口气说完想说的，不用一句一句地蹦。可以改口、犹豫、词不达意。不要写心理描写。
 - manner: 你说话时的身体语言，用白描写法，一句话。比如"低头搅着杯子里的咖啡"、"视线移向窗外，过了一会儿才回过头"、"嘴角动了动，像是想笑又忍住了"。
 
 如果你不想说话：
@@ -270,6 +266,6 @@ export function buildConversationRequest(params: {
     messages: [{ role: "user", content: userPrompt }],
     tools: params.actions.map((a) => a.tool),
     temperature: 1.0, // 对话模式温度更高，增加自然感
-    maxTokens: 1536,  // 更大的思考和表达空间
+    maxTokens: 3072,  // 中文 token 效率低，需要足够空间避免截断
   };
 }

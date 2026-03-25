@@ -245,13 +245,17 @@ export class Simulation {
 
       if (reactors.length === 0) break;
 
-      // 对每个 reactor，判断是否使用对话模式
-      const reactionPromises = reactors.map(({ id, config }) => {
+      // 串行执行反应轮：每个 reactor 执行后立即处理 talk 效果，
+      // 这样下一个 reactor 能看到前面角色刚说的话（信箱已更新）
+      const reactionResults: AgentTickResult[] = [];
+      let hasNewTalk = false;
+      for (const { id, config } of reactors) {
         const state = this.world.getCharacter(id)!;
         // 找出信箱中最近消息的发送者
         const lastMsg = state.inbox[state.inbox.length - 1];
         const partnerId = lastMsg ? this._resolveCharacterId(lastMsg.fromId) : undefined;
 
+        let r: AgentTickResult;
         // 检测是否有活跃对话
         if (partnerId && this.conversations.isActiveConversation(id, partnerId, gameTime.tick)) {
           const partnerConfig = this._configs.get(partnerId);
@@ -276,24 +280,24 @@ export class Simulation {
               recentMemories,
               actions: this._actions,
             });
-            // 使用对话模式 prompt，但复用标准 agent tick 的执行逻辑
-            return runAgentTick({
+            r = await runAgentTick({
               config, world: this.world, eventBus: this.eventBus, gameTime,
               relationships: this.relationships, memory: this.memory,
               impressions: this.impressions, conversationRequest,
             });
+          } else {
+            r = await runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory, impressions: this.impressions });
           }
+        } else {
+          r = await runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory, impressions: this.impressions });
         }
 
-        // 非对话模式：使用标准 agent tick
-        return runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory, impressions: this.impressions });
-      });
-      const reactionResults = await Promise.all(reactionPromises);
-      results.push(...reactionResults);
+        reactionResults.push(r);
 
-      // 处理反应中产生的 talk 关系变化（双向）+ 记录对话 + 更新对话对计数
-      for (const r of reactionResults) {
+        // 立即处理 talk 效果：关系变化 + 对话记录 + 信箱投递（已在 executeAction 中完成）
+        // 这样下一个 reactor 能看到这条消息
         if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
+          hasNewTalk = true;
           const targetId = this._resolveCharacterId(r.action.args.target as string);
           this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, r.result?.description ?? "回复");
           this.relationships.modify(targetId, r.characterId, 2, gameTime.tick, `${r.characterId} 回复了你`);
@@ -315,9 +319,9 @@ export class Simulation {
           }
         }
       }
+      results.push(...reactionResults);
 
       // 如果没有人回复 talk，停止反应轮
-      const hasNewTalk = reactionResults.some((r) => r.action?.name === "talk");
       if (!hasNewTalk) break;
     }
 
