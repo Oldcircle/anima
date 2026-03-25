@@ -21,6 +21,7 @@ export function saveGame(sim: Simulation, dbPath: string): void {
       needs: c.needs,
       currentAction: c.currentAction,
       life: c.life,
+      moodlets: c.moodlets,
     }));
 
     const relationships = sim.relationships.getAll();
@@ -109,6 +110,10 @@ export function loadGame(sim: Simulation, dbPath: string): boolean {
           char.life.income = sc.life.income;
           char.life.currentGoal = sc.life.currentGoal;
           char.life.currentConcern = sc.life.currentConcern;
+        }
+        // 恢复 moodlets
+        if (sc.moodlets) {
+          char.moodlets = sc.moodlets;
         }
       }
     }
