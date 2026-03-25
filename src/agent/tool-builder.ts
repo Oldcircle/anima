@@ -176,8 +176,11 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
 // ── go_to 工具（动态参数） ──
 
 function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
+  const myHome = ctx.card.home;
   const otherLocations = ctx.allLocations
     .filter((l) => l.id !== ctx.state.locationId)
+    // 只显示公共地点 + 自己的家（不能随便去别人家）
+    .filter((l) => l.type !== "residential" || l.id === myHome)
     .map((l) => `${l.id}(${l.name}${l.summary ? ' — ' + l.summary : ''})`)
     .join("\n  ");
 
