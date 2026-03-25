@@ -48,7 +48,7 @@ export const eatAction: ActionDefinition = {
 export const sleepAction: ActionDefinition = {
   tool: {
     name: "sleep",
-    description: "回家睡觉，恢复精力。必须在自己家里才能睡。",
+    description: "回家睡觉，恢复精力。必须在自己家里才能睡。精力充足时不需要睡觉。",
     parameters: {
       type: "object",
       properties: {},
@@ -57,6 +57,9 @@ export const sleepAction: ActionDefinition = {
   handler: (_args, ctx): ActionResult => {
     if (ctx.locationType !== "residential") {
       return { description: "这里不是家，睡不了，得先回家", effects: [], success: false };
+    }
+    if (ctx.needs.energy >= 80) {
+      return { description: "你精力充沛，现在不需要睡觉", effects: [], success: false };
     }
     return {
       description: "回家睡觉了",
@@ -182,7 +185,7 @@ export const workAction: ActionDefinition = {
 export const washAction: ActionDefinition = {
   tool: {
     name: "wash",
-    description: "洗澡/梳洗，恢复卫生值。必须在家里才能洗。",
+    description: "洗澡/梳洗，恢复卫生值。必须在家里才能洗。卫生值高于 80 时不需要洗。",
     parameters: {
       type: "object",
       properties: {},
@@ -191,6 +194,9 @@ export const washAction: ActionDefinition = {
   handler: (_args, ctx): ActionResult => {
     if (ctx.locationType !== "residential") {
       return { description: "这里没法洗澡，得先回家", effects: [], success: false };
+    }
+    if (ctx.needs.hygiene >= 80) {
+      return { description: "你已经很干净了，不需要再洗", effects: [], success: false };
     }
     return {
       description: "洗了个澡，焕然一新",

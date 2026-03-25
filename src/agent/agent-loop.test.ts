@@ -73,6 +73,9 @@ describe("Agent Loop", () => {
   });
 
   it("多 tick 行为：sleep 持续多个 tick", async () => {
+    // 先把精力降到 80 以下，否则 sleep 会被拒绝
+    world.modifyNeed("tomori", "energy", -50);
+
     mockLLM.enqueueResponse("太累了，该睡觉了", [
       { name: "sleep", arguments: {} },
     ]);
