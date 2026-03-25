@@ -165,20 +165,47 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 - [x] **单句蹦词**：talk 工具描述 + prompt 引导"你可以一口气说完想说的"
 - 约束：不引入对话管理器，不违反第一性原理
 
-### 需求感受化（高优先级）
+### 感知重构（高优先级）
 
-将需求数值面板替换为自然语言身体感受，让 Agent 从"看数据"变成"感受自己"。
-详见 DESIGN.md §2.2。
+两项核心改造，让 Agent 从"看数据选菜单"变成"感受身体+感知环境→自然行动"。
+详见 DESIGN.md §2.2 和 §3.1。
+
+#### A. 需求感受化
 
 - [ ] `prompt-builder.ts`：`formatNeeds()` → `formatBodyFeelings()`
   - 需求值转为分级感受描述（>60 不提，30-60 轻度，15-30 中度，<15 紧急）
   - 组合成自然段落，不再是列表
   - 满的需求不出现在 prompt 中
-- [ ] 约束警告自然化：金币/位置约束改为口语化措辞
-- [ ] 删除 `formatNeeds()` 数值面板
-- [ ] 对话模式 `buildConversationPrompt` 同步更新（状态描述也用感受）
+- [ ] 约束警告自然化：金币不足时在感受中自然提及
+- [ ] 删除 `formatNeeds()` 数值面板和 `buildConstraintWarnings()`
+- [ ] 对话模式 `buildConversationPrompt` 同步更新
 - [ ] 测试更新：prompt-builder.test.ts 适配新格式
-- [ ] Live 半天验证：确认行为决策质量不退化
+
+#### B. 情境工具系统（Affordance-based Tools）
+
+- [ ] 地点 YAML 新增 `tools` 字段：每个地点定义可用工具
+  - beach: swim, collect_shells, fish
+  - bakery: eat(buy bread), buy_bread
+  - cafe: drink_coffee, eat
+  - library: read, study
+  - home_*: sleep, wash, cook
+  - bar: drink
+  - 等等
+- [ ] `LocationToolDefinition` 类型 + 地点工具加载器
+- [ ] `buildToolList(state, location, nearbyChars)` 动态组装工具列表
+  - 通用工具（go_to 动态描述, hobby）
+  - 地点工具（从当前地点 YAML 读取，检查 condition/cost）
+  - 社交工具（附近有人时：talk 动态列出对象, gossip, comfort, give_gift）
+  - 极端工具（gold=0 时 beg，gold=0+hunger<20 时 steal）
+  - 工作工具（当前地点是角色工作地点时 work）
+- [ ] `go_to` 参数动态化：列出所有地点 + 每个地点能做什么（摘要）
+- [ ] `talk` 参数动态化：只列出当前在场的角色
+- [ ] 删除 prompt 中的 `## 可前往的地点` 章节（信息移入 go_to 工具描述）
+- [ ] 删除 `buildConstraintWarnings()`（约束通过工具是否出现来体现）
+- [ ] 重构 `agent-loop.ts`：调用 buildToolList 而非传全局 actions
+- [ ] 重构 `basic-actions.ts`：拆分为通用工具 + 迁移地点工具到 YAML
+- [ ] 测试更新
+- [ ] Live 半天验证：确认行为多样性和决策质量
 
 ### 心智系统
 

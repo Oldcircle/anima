@@ -201,13 +201,23 @@ Live/模拟测试已改名为 `*.live.test.ts`，不被默认 `pnpm test` 包含
 
 ### 下次继续入口
 
-1. **需求感受化**：将 `formatNeeds()` 数值面板改为 `formatBodyFeelings()` 自然语言感受
-   - 详见 DESIGN.md §2.2 和 PLAN.md
+**感知重构**（两项并行，详见 DESIGN.md §2.2 和 §3.1，PLAN.md 实施清单）：
+
+1. **需求感受化**：`formatNeeds()` 数值面板 → `formatBodyFeelings()` 自然语言
    - 核心改动在 `prompt-builder.ts`
    - 满的需求不提，偏低的用身体感受描述，极低的用紧急措辞
-2. **截断问题**：已确认不是 token 限制（finish_reason=tool_calls, 使用率<10%），是 DeepSeek 工具参数生成的模型行为，需引导更短消息
-3. 可选：关系网络图可视化
-4. 可选：embedding 向量搜索（需接入 embedding API）
+2. **情境工具系统**：全局 16 工具 → 地点定义工具 + 动态组装
+   - 地点 YAML 新增 `tools` 字段
+   - `go_to` 参数动态列出地点+能力摘要
+   - `talk` 参数动态列出在场角色
+   - 社交/极端工具按条件浮现
+   - 预期效果：行为从"选菜单"变为"感受+环境→自然涌现"
+
+**已知问题**：
+- 截断：已确认不是 token 限制（finish_reason=tool_calls, 使用率<10%），是 DeepSeek 工具参数生成的模型行为
+- 对话重复：已加 prompt 去重指令，待观察效果
+
+可选：关系网络图、embedding 向量搜索
 
 ## 第一性原理
 
