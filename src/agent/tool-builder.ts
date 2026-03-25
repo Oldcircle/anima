@@ -10,6 +10,7 @@ import type { ActionDefinition, ActionResult, ActionContext } from "../actions/t
 import type { CharacterState, Location, LocationTool } from "../world/types.js";
 import type { CharacterCard } from "../character/types.js";
 import { getWorkIncome } from "../world/economy.js";
+import { inviteOutAction, shareSecretAction } from "../actions/relationship-actions.js";
 
 export interface ToolBuildContext {
   state: CharacterState;
@@ -18,6 +19,8 @@ export interface ToolBuildContext {
   nearbyCharacters: Array<{ id: string; name: string }>;
   allLocations: Location[];
   gold: number;
+  /** 关系管理器（用于条件浮现关系工具） */
+  relationships?: import("../world/relationships.js").RelationshipManager;
 }
 
 /**
@@ -103,6 +106,24 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
           };
         },
       });
+    }
+  }
+
+  // 3b. 关系深度工具（附近有人 + 关系达标时浮现）
+  if (ctx.nearbyCharacters.length > 0 && ctx.relationships) {
+    let hasInvite = false;
+    let hasSecret = false;
+    for (const nearby of ctx.nearbyCharacters) {
+      const rel = ctx.relationships.get(ctx.card.id, nearby.id);
+      if (!hasInvite && rel.level >= 30) {
+        tools.push(inviteOutAction);
+        hasInvite = true;
+      }
+      if (!hasSecret && rel.level >= 60) {
+        tools.push(shareSecretAction);
+        hasSecret = true;
+      }
+      if (hasInvite && hasSecret) break;
     }
   }
 

@@ -54,6 +54,7 @@ export class AnimaDB {
         char_b TEXT NOT NULL,
         level INTEGER DEFAULT 0,
         type TEXT DEFAULT 'stranger',
+        bond TEXT,
         last_interaction INTEGER DEFAULT 0,
         history TEXT DEFAULT '[]',
         PRIMARY KEY (char_a, char_b)
@@ -163,18 +164,19 @@ export class AnimaDB {
 
   // --- 关系 ---
 
-  saveRelationship(a: string, b: string, level: number, type: string, lastInteraction: number, history: string[]) {
+  saveRelationship(a: string, b: string, level: number, type: string, lastInteraction: number, history: string[], bond?: string) {
     const [charA, charB] = a < b ? [a, b] : [b, a];
     this.db.prepare(`
-      INSERT OR REPLACE INTO relationships (char_a, char_b, level, type, last_interaction, history)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(charA, charB, level, type, lastInteraction, JSON.stringify(history));
+      INSERT OR REPLACE INTO relationships (char_a, char_b, level, type, bond, last_interaction, history)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(charA, charB, level, type, bond ?? null, lastInteraction, JSON.stringify(history));
   }
 
-  loadRelationships(): Array<{ charA: string; charB: string; level: number; type: string; lastInteraction: number; history: string[] }> {
+  loadRelationships(): Array<{ charA: string; charB: string; level: number; type: string; bond?: string; lastInteraction: number; history: string[] }> {
     const rows = this.db.prepare("SELECT * FROM relationships").all() as any[];
     return rows.map((r) => ({
       charA: r.char_a, charB: r.char_b, level: r.level, type: r.type,
+      bond: r.bond ?? undefined,
       lastInteraction: r.last_interaction, history: JSON.parse(r.history),
     }));
   }
@@ -263,7 +265,7 @@ export class AnimaDB {
       this.saveWorldState(params.tick, params.weather);
       for (const c of params.characters) this.saveCharacter(c);
       for (const r of params.relationships) {
-        this.saveRelationship(r.characterA, r.characterB, r.level, r.type, r.lastInteraction, r.history);
+        this.saveRelationship(r.characterA, r.characterB, r.level, r.type, r.lastInteraction, r.history, r.bond);
       }
       for (const m of params.memories) {
         this.saveMemory(m.characterId, m.tick, m.type, m.content, m.importance);

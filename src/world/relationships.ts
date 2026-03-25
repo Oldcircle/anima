@@ -1,12 +1,19 @@
 /**
  * Relationship Manager — 角色关系管理
+ *
+ * 关系模型（借鉴模拟人生）：
+ * - friendship: 友谊轴（-100~100），对称，双方共享
+ * - bond: 显式关系身份（通过动作改变，如 colleague/partner）
+ * - type: 从 friendship 自动推算的标签（stranger → best_friend）
  */
 
 export interface Relationship {
   characterA: string;
   characterB: string;
-  level: number;        // -100 到 100
+  level: number;        // -100 到 100（friendship 轴）
   type: RelationType;
+  /** 显式关系身份（通过特定动作设定，如同事/恋人/前任） */
+  bond?: BondType;
   history: string[];    // 关键事件摘要
   lastInteraction: number; // 上次互动的 tick
 }
@@ -19,6 +26,14 @@ export type RelationType =
   | "best_friend"
   | "rival"
   | "romantic";
+
+export type BondType =
+  | "colleague"   // 同事
+  | "roommate"    // 室友
+  | "partner"     // 恋人
+  | "ex"          // 前任
+  | "mentor"      // 师徒
+  | "rival";      // 宿敌
 
 function typeFromLevel(level: number): RelationType {
   if (level < -20) return "rival";
@@ -93,6 +108,19 @@ export class RelationshipManager {
       }
     }
     return result;
+  }
+
+  /** 设置显式关系身份 */
+  setBond(a: string, b: string, bond: BondType | undefined, tick: number, eventSummary?: string): void {
+    const rel = this.get(a, b);
+    rel.bond = bond;
+    rel.lastInteraction = tick;
+    if (eventSummary) {
+      rel.history.push(eventSummary);
+      if (rel.history.length > 20) {
+        rel.history = rel.history.slice(-20);
+      }
+    }
   }
 
   /** 获取所有关系 */

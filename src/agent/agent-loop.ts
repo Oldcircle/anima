@@ -81,7 +81,7 @@ export async function runAgentTick(params: {
       const currentAction = c.currentAction
         ? describeObservableAction(c.name, c.currentAction.name)
         : undefined;
-      return { id: c.id, name: c.name, relationship: rel, currentAction };
+      return { id: c.id, name: c.name, relationship: rel ? { level: rel.level, type: rel.type, bond: rel.bond } : undefined, currentAction };
     });
 
   const recentEvents = eventBus.query({ actorId: card.id, limit: 5 });
@@ -95,6 +95,7 @@ export async function runAgentTick(params: {
     nearbyCharacters: nearbyCharacters.map((c) => ({ id: c.id, name: c.name })),
     allLocations: world.getAllLocations(),
     gold: state.gold,
+    relationships: params.relationships,
   });
 
   // 构建 prompt

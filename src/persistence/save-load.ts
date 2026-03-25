@@ -117,6 +117,9 @@ export function loadGame(sim: Simulation, dbPath: string): boolean {
     const savedRels = db.loadRelationships();
     for (const r of savedRels) {
       sim.relationships.set(r.charA, r.charB, r.level, r.type as any);
+      if (r.bond) {
+        sim.relationships.setBond(r.charA, r.charB, r.bond as any, 0);
+      }
     }
 
     // 恢复记忆

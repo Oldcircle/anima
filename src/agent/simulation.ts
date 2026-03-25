@@ -84,6 +84,31 @@ export class Simulation {
         modelId: config.modelId,
       });
     }
+
+    // 自动检测同事关系：共享 workplace 的角色设为 colleague
+    this._initColleagueBonds(config.characters);
+  }
+
+  /** 检测共享工作地点的角色，自动设置 colleague bond */
+  private _initColleagueBonds(characters: CharacterCard[]): void {
+    const workplaceMap = new Map<string, string[]>();
+    for (const card of characters) {
+      const wp = card.life?.workplace;
+      if (wp) {
+        const existing = workplaceMap.get(wp) ?? [];
+        existing.push(card.id);
+        workplaceMap.set(wp, existing);
+      }
+    }
+    for (const [, ids] of workplaceMap) {
+      if (ids.length >= 2) {
+        for (let i = 0; i < ids.length; i++) {
+          for (let j = i + 1; j < ids.length; j++) {
+            this.relationships.setBond(ids[i]!, ids[j]!, "colleague", 0, "同事");
+          }
+        }
+      }
+    }
   }
 
   onTick(listener: SimulationListener): () => void {

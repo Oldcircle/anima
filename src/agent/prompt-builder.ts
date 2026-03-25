@@ -211,23 +211,44 @@ function formatPreferencesHint(card: CharacterCard): string {
   return `## 你的生活习惯\n${lines.join("\n")}`;
 }
 
-function describeRelationshipFeel(type?: string): string {
+function describeBond(bond?: string): string {
+  switch (bond) {
+    case "colleague": return "你们是同事。";
+    case "roommate": return "你们是室友。";
+    case "partner": return "这是你最重要的人。";
+    case "ex": return "你们曾经在一起过。";
+    case "mentor": return "你们是师徒关系。";
+    case "rival": return "你和这个人之间有解不开的结。";
+    default: return "";
+  }
+}
+
+function describeRelationshipFeel(type?: string, bond?: string): string {
+  const bondDesc = describeBond(bond);
+  let relDesc: string;
   switch (type) {
     case "best_friend":
-      return "你和这个人已经非常亲近，相处时会自然放松下来。";
+      relDesc = "你和这个人已经非常亲近，相处时会自然放松下来。";
+      break;
     case "close_friend":
-      return "你对这个人有明显的亲近感，愿意多停留一会儿。";
+      relDesc = "你对这个人有明显的亲近感，愿意多停留一会儿。";
+      break;
     case "friend":
-      return "你和这个人已经算熟悉了，说话不会太拘谨。";
+      relDesc = "你和这个人已经算熟悉了，说话不会太拘谨。";
+      break;
     case "acquaintance":
-      return "你对这个人有些印象，算是点头之交。";
+      relDesc = "你对这个人有些印象，算是点头之交。";
+      break;
     case "rival":
-      return "你和这个人之间有些紧绷，最好留意自己的分寸。";
+      relDesc = "你和这个人之间有些紧绷，最好留意自己的分寸。";
+      break;
     case "romantic":
-      return "这个人会牵动你的情绪，你很难完全当作普通朋友。";
+      relDesc = "这个人会牵动你的情绪，你很难完全当作普通朋友。";
+      break;
     default:
-      return "你对这个人还不算熟，只能凭眼前的举止慢慢判断。";
+      relDesc = "你对这个人还不算熟，只能凭眼前的举止慢慢判断。";
   }
+  return bondDesc ? `${bondDesc}${relDesc}` : relDesc;
 }
 
 export function buildUserPrompt(params: {
@@ -237,7 +258,7 @@ export function buildUserPrompt(params: {
   nearbyCharacters: Array<{
     id: string;
     name: string;
-    relationship?: { level: number; type: string };
+    relationship?: { level: number; type: string; bond?: string };
     /** 当前正在做什么（可观察状态） */
     currentAction?: string;
   }>;
@@ -307,7 +328,7 @@ export function buildUserPrompt(params: {
             curiosities.push(`关于${c.name}：${imp.unresolved[0]}`);
           }
         } else {
-          parts.push(`- ${c.name}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type)}`);
+          parts.push(`- ${c.name}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type, c.relationship?.bond)}`);
         }
       }
       // 注入未解疑惑作为对话方向提示
@@ -316,7 +337,7 @@ export function buildUserPrompt(params: {
       }
     } else {
       const people = nearbyCharacters.map((c) => {
-        return `- ${c.name}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type)}`;
+        return `- ${c.name}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type, c.relationship?.bond)}`;
       }).join("\n");
       parts.push(`\n## 你对他们的主观感觉\n${people}`);
     }
