@@ -262,7 +262,7 @@ export class Simulation {
 
     // 3.5 反应轮：信箱有新消息的角色获得额外决策机会
     // 限制：每 tick 最多 1 轮反应，每对角色每 tick 最多交换 2 次，对话后冷却 2 tick
-    const MAX_REACTION_ROUNDS = 1;
+    const MAX_REACTION_ROUNDS = 3;
     const pairExchangeCount = new Map<string, number>();
     const pairKey = (a: string, b: string) => [a, b].sort().join(":");
     for (let round = 0; round < MAX_REACTION_ROUNDS; round++) {
@@ -271,7 +271,8 @@ export class Simulation {
         const state = this.world.getCharacter(id);
         if (!state) continue;
         if (state.inbox.length === 0) continue;
-        if (state.currentAction && state.currentAction.remainingTicks > 4) continue;
+        // 有信箱消息时，即使在执行多 tick 行为也允许进入反应轮
+        // （agent-loop 会中断行为来回应）
         // 检查对话对的交换次数限制 + 跨 tick 冷却
         const lastMsg = state.inbox[state.inbox.length - 1];
         if (lastMsg) {

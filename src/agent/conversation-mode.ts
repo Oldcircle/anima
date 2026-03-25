@@ -63,19 +63,16 @@ export class ConversationTracker {
 
   /**
    * 判断是否应该进入对话模式。
-   * 条件：在最近 2 tick 内，双方各至少说了 1 句（有来有回）
+   * 条件：在最近 3 tick 内，双方之间有 2+ 条交换记录。
+   * 不再要求双方都说过话（单向追问也应进入对话模式以获得完整历史）。
    */
   isActiveConversation(charA: string, charB: string, currentTick: number): boolean {
     const history = this.getHistory(charA, charB);
     if (history.length < 2) return false;
 
-    // 只看最近 2 tick 内的交换
-    const recentExchanges = history.filter((e) => currentTick - e.tick <= 2);
-    if (recentExchanges.length < 2) return false;
-
-    // 必须双方都说过话（有来有回）
-    const speakers = new Set(recentExchanges.map((e) => e.speakerId));
-    return speakers.size >= 2;
+    // 看最近 3 tick 内的交换（放宽窗口，允许因 work 中断的对话恢复）
+    const recentExchanges = history.filter((e) => currentTick - e.tick <= 3);
+    return recentExchanges.length >= 2;
   }
 
   /** 清理过期对话（超过 8 tick 没有新消息的） */

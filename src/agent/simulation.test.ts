@@ -77,7 +77,7 @@ describe("Simulation", () => {
     expect(world.getCharacter("tomori")!.needs.hunger).toBe(tomoriBefore.hunger - 2);
   });
 
-  it("talk 通过信箱发送消息", async () => {
+  it("talk 通过信箱发送消息并触发反应轮", async () => {
     // 把两人放到同一地点
     world.moveCharacter("tomori", "cafe");
     world.moveCharacter("anon", "cafe");
@@ -86,18 +86,22 @@ describe("Simulation", () => {
     mockLLM.enqueueResponse("看到爱音了", [
       { name: "talk", arguments: { target: "anon", message: "你、你好……" } },
     ]);
-    // Anon 自己的决策
+    // Anon 正常决策
     mockLLM.enqueueResponse("吃点东西", [
       { name: "eat", arguments: { location: "cafe" } },
     ]);
+    // Anon 反应轮（收到 Tomori 消息后被触发）
+    mockLLM.enqueueResponse("回应", [
+      { name: "talk", arguments: { target: "tomori", message: "嗨！" } },
+    ]);
 
-    await sim.runOneTick(tickToGameTime(48));
+    const summary = await sim.runOneTick(tickToGameTime(48));
 
-    // Anon 的信箱应该有 Tomori 的消息
-    const anonState = world.getCharacter("anon")!;
-    expect(anonState.inbox).toHaveLength(1);
-    expect(anonState.inbox[0]!.fromId).toBe("tomori");
-    expect(anonState.inbox[0]!.content).toBe("你、你好……");
+    // 消息已传递：反应轮被触发（总 results > 2）
+    expect(summary.results.length).toBeGreaterThan(2);
+    // 关系应该因为 talk 而提升
+    const rel = sim.relationships.get("tomori", "anon");
+    expect(rel.level).toBeGreaterThan(0);
   });
 
   it("单次 talk 只推动一次共享关系，不再双重加分", async () => {

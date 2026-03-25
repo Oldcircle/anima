@@ -55,15 +55,22 @@ export async function runAgentTick(params: {
     return { characterId: card.id, thought: "", skipped: true, skipReason: "角色不存在" };
   }
 
-  // 如果正在执行多 tick 行为，跳过（惰性决策）
+  // 如果正在执行多 tick 行为：
+  // - 有信箱消息时中断行为来回应（真人被搭话也会停下来）
+  // - 没有消息时继续执行
   if (state.currentAction && state.currentAction.remainingTicks > 0) {
-    state.currentAction.remainingTicks--;
-    return {
-      characterId: card.id,
-      thought: `继续${state.currentAction.name}`,
-      skipped: true,
-      skipReason: `执行中: ${state.currentAction.name} (还剩 ${state.currentAction.remainingTicks} tick)`,
-    };
+    const hasInboxMessages = state.inbox.length > 0;
+    if (!hasInboxMessages) {
+      state.currentAction.remainingTicks--;
+      return {
+        characterId: card.id,
+        thought: `继续${state.currentAction.name}`,
+        skipped: true,
+        skipReason: `执行中: ${state.currentAction.name} (还剩 ${state.currentAction.remainingTicks} tick)`,
+      };
+    }
+    // 有人对我说话了 — 中断当前行为来回应
+    state.currentAction = undefined;
   }
 
   // 获取上下文

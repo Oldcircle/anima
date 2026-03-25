@@ -88,12 +88,13 @@ describe("ConversationTracker", () => {
     expect(tracker.isActiveConversation("mutsumi", "sakiko", 52)).toBe(true);
   });
 
-  it("not active if only one side talked", () => {
+  it("active even if only one side talked (for dedup)", () => {
     const tracker = new ConversationTracker();
     tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "你好！", 50);
     tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "在吗？", 51);
 
-    expect(tracker.isActiveConversation("mutsumi", "sakiko", 52)).toBe(false);
+    // 单向追问也应进入对话模式，以获得完整历史防止重复
+    expect(tracker.isActiveConversation("mutsumi", "sakiko", 52)).toBe(true);
   });
 
   it("not active if exchanges are too old", () => {
@@ -101,6 +102,7 @@ describe("ConversationTracker", () => {
     tracker.recordTalk("mutsumi", "要乐奏", "sakiko", "你好！", 40);
     tracker.recordTalk("sakiko", "祥子", "mutsumi", "你好。", 41);
 
+    // 3 tick 窗口外
     expect(tracker.isActiveConversation("mutsumi", "sakiko", 52)).toBe(false);
   });
 
