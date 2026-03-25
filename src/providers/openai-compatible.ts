@@ -80,6 +80,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const choice = data.choices[0];
     if (!choice) throw new Error("No response from LLM");
 
+    // token 截断检测（finish_reason=length 或使用率 >90%）
+    if (choice.finish_reason === "length" || (data.usage && data.usage.completion_tokens / (request.maxTokens ?? 2048) > 0.9)) {
+      console.warn(`[LLM] ⚠️ 可能截断: out=${data.usage?.completion_tokens ?? "?"}/${request.maxTokens ?? 2048} finish=${choice.finish_reason}`);
+    }
+
     const content = choice.message.content ?? "";
     const toolCalls: ToolCall[] = (choice.message.tool_calls ?? []).map((tc) => ({
       name: tc.function.name,

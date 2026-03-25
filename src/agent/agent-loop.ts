@@ -115,7 +115,7 @@ export async function runAgentTick(params: {
       messages: [{ role: "user", content: userPrompt }],
       tools: actions.map((a) => a.tool),
       temperature: 0.8,
-      maxTokens: isSocialScene ? 2048 : 512,
+      maxTokens: isSocialScene ? 1024 : 512,
     };
   })();
 

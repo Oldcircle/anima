@@ -202,12 +202,13 @@ export class Simulation {
     const agentResults = await Promise.all(promises);
     results.push(...agentResults);
 
-    // 3. talk 产生的关系变化（双向）+ 记录对话（含 manner）
+    // 3. talk 产生的关系变化（共享关系）+ 记录对话（含 manner）
     for (const r of results) {
       if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
         const targetId = this._resolveCharacterId(r.action.args.target as string);
-        this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, r.result?.description ?? "聊天");
-        this.relationships.modify(targetId, r.characterId, 2, gameTime.tick, `${r.characterId} 对你说话`);
+        // RelationshipManager 是对称关系，同一条 talk 只应推动一次，
+        // 否则会因为“你对我说话 / 我对你说话”被重复加分，亲密度涨得过快。
+        this.relationships.modify(r.characterId, targetId, 2, gameTime.tick, r.result?.description ?? "聊天");
         const charState = this.world.getCharacter(r.characterId);
         this.conversations.recordTalk(
           r.characterId,
@@ -299,8 +300,7 @@ export class Simulation {
         if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
           hasNewTalk = true;
           const targetId = this._resolveCharacterId(r.action.args.target as string);
-          this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, r.result?.description ?? "回复");
-          this.relationships.modify(targetId, r.characterId, 2, gameTime.tick, `${r.characterId} 回复了你`);
+          this.relationships.modify(r.characterId, targetId, 2, gameTime.tick, r.result?.description ?? "回复");
           const charState = this.world.getCharacter(r.characterId);
           this.conversations.recordTalk(
             r.characterId,

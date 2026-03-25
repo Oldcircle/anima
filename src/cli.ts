@@ -103,6 +103,7 @@ const api = createApiServer({
   simulation,
   engine,
   staticDir: join(import.meta.dirname, "..", "web"),
+  characterCards: new Map(characters.map((c) => [c.id, c])),
 });
 api.start();
 

@@ -204,7 +204,7 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
 
 然后调用 talk 工具。参数说明：
 - target: "${partnerCard.id}"
-- message: 只写你说出口的台词。可以很短（"嗯。"、"...是吗"），也可以一口气说好几句话——真人面对面说话经常一口气说完想说的，不用一句一句地蹦。可以改口、犹豫、词不达意。不要写心理描写。
+- message: 只写你说出口的台词。像正常人说话一样，一两句到三四句就够了。可以很短（"嗯。"、"...是吗"），可以改口、犹豫、词不达意。不要写心理描写，不要长篇大论。
 - manner: 你说话时的身体语言，用白描写法，一句话。比如"低头搅着杯子里的咖啡"、"视线移向窗外，过了一会儿才回过头"、"嘴角动了动，像是想笑又忍住了"。
 
 如果你不想说话：
@@ -266,6 +266,6 @@ export function buildConversationRequest(params: {
     messages: [{ role: "user", content: userPrompt }],
     tools: params.actions.map((a) => a.tool),
     temperature: 1.0, // 对话模式温度更高，增加自然感
-    maxTokens: 3072,  // 中文 token 效率低，需要足够空间避免截断
+    maxTokens: 1024,  // 对话模式：思考精简 + 消息自然长度
   };
 }

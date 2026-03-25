@@ -62,4 +62,23 @@ describe("prompt-builder", () => {
     expect(prompt).not.toContain("42");
   });
 
+  it("社交值过高时会提示不必继续硬社交", () => {
+    const state = createState();
+    state.needs.social = 92;
+
+    const prompt = buildUserPrompt({
+      card: baseCard,
+      state,
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [],
+      recentEvents: [],
+      locationName: "咖啡馆",
+      locationType: "commercial",
+      allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
+    });
+
+    expect(prompt).toContain("社交上基本是饱的");
+    expect(prompt).toContain("不必硬找话题");
+  });
+
 });

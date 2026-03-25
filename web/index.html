@@ -6,340 +6,462 @@
   <title>Anima — AI 生命模拟</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; height: 100vh; overflow: hidden; }
+    body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; height: 100vh; overflow: hidden; font-size: 13px; }
 
-    #app { display: grid; grid-template-rows: 48px 1fr; grid-template-columns: 1fr 380px; height: 100vh; }
+    #app { display: grid; grid-template-rows: 44px 1fr; grid-template-columns: 220px 1fr 360px; height: 100vh; }
 
-    /* 顶部状态栏 */
-    .topbar { grid-column: 1 / -1; background: #16213e; display: flex; align-items: center; padding: 0 20px; gap: 16px; border-bottom: 1px solid #0f3460; }
-    .topbar .time { font-size: 16px; font-weight: bold; color: #e94560; }
-    .topbar .weather-badge { font-size: 13px; padding: 2px 10px; border-radius: 10px; background: #1a1a3e; }
-    .topbar .speed { display: flex; gap: 4px; }
-    .topbar .speed button { background: #0f3460; border: 1px solid #333; color: #aaa; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
-    .topbar .speed button:hover { border-color: #e94560; color: #eee; }
-    .topbar .speed button.active { background: #e94560; color: #fff; border-color: #e94560; }
-    .topbar .status { margin-left: auto; color: #666; font-size: 12px; }
+    /* ── 顶栏 ── */
+    .topbar { grid-column: 1 / -1; background: #161b22; display: flex; align-items: center; padding: 0 16px; gap: 12px; border-bottom: 1px solid #30363d; }
+    .topbar .time { font-size: 15px; font-weight: 600; color: #58a6ff; font-variant-numeric: tabular-nums; }
+    .topbar .weather { font-size: 12px; color: #8b949e; }
+    .topbar .speed { display: flex; gap: 2px; }
+    .topbar .speed button { background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+    .topbar .speed button:hover { border-color: #58a6ff; color: #c9d1d9; }
+    .topbar .speed button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+    .topbar .conn { margin-left: auto; font-size: 11px; color: #484f58; }
 
-    /* 左侧主区域 */
-    .main-area { display: flex; flex-direction: column; overflow: hidden; }
+    /* ── 左侧角色列表 ── */
+    .sidebar { background: #0d1117; border-right: 1px solid #21262d; overflow-y: auto; padding: 8px; }
+    .char-card { background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 8px; margin-bottom: 6px; cursor: pointer; transition: border-color .15s; }
+    .char-card:hover { border-color: #30363d; }
+    .char-card.selected { border-color: #58a6ff; background: #0d1117; }
+    .char-card .cc-name { font-weight: 600; font-size: 13px; color: #f0f6fc; }
+    .char-card .cc-meta { font-size: 11px; color: #484f58; margin-top: 2px; }
+    .char-card .cc-loc { color: #8b949e; }
+    .mini-bars { display: flex; gap: 2px; margin-top: 4px; }
+    .mini-bar { flex: 1; height: 3px; background: #21262d; border-radius: 2px; overflow: hidden; }
+    .mini-bar .fill { height: 100%; border-radius: 2px; }
 
-    /* 地图 */
-    .map-area { flex: 1; overflow: auto; padding: 16px; }
-    .map-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-    .location-card { background: #1a1a3e; border: 1px solid #0f3460; border-radius: 8px; padding: 10px; min-height: 80px; transition: border-color 0.3s; }
-    .location-card.has-chars { border-color: #0f3460; }
-    .location-card .loc-name { font-size: 13px; font-weight: bold; color: #e94560; margin-bottom: 6px; }
-    .location-card .characters { display: flex; flex-wrap: wrap; gap: 4px; }
-    .char-badge { background: #0f3460; border-radius: 12px; padding: 2px 8px; font-size: 11px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
-    .char-badge:hover { background: #e94560; transform: scale(1.05); }
-    .char-badge.selected { background: #e94560; }
+    /* ── 中间时间线 ── */
+    .timeline { overflow-y: auto; padding: 12px 16px; background: #0d1117; }
+    .tick-group { margin-bottom: 16px; }
+    .tick-header { font-size: 11px; color: #484f58; font-weight: 600; padding: 4px 0; border-bottom: 1px solid #161b22; margin-bottom: 6px; position: sticky; top: 0; background: #0d1117; z-index: 1; }
+    .tick-entry { padding: 4px 0 4px 12px; border-left: 2px solid #21262d; margin-bottom: 4px; }
+    .tick-entry.is-talk { border-left-color: #3fb950; }
+    .tick-entry.is-skip { border-left-color: transparent; opacity: 0.4; }
+    .tick-entry.is-fail { border-left-color: #f85149; }
+    .tick-entry.is-random { border-left-color: #d29922; }
+    .tick-entry.is-reflect { border-left-color: #a371f7; }
+    .te-actor { font-weight: 600; color: #58a6ff; font-size: 12px; }
+    .te-action { color: #8b949e; font-size: 12px; }
+    .te-thought { color: #484f58; font-size: 11px; font-style: italic; margin-top: 2px; white-space: pre-wrap; }
+    .te-dialogue { margin-top: 3px; padding: 4px 8px; background: #161b22; border-radius: 4px; border-left: 2px solid #3fb950; }
+    .te-manner { color: #8b949e; font-size: 11px; }
+    .te-message { color: #c9d1d9; font-size: 12px; margin-top: 1px; }
+    .te-message::before { content: '「'; color: #3fb950; }
+    .te-message::after { content: '」'; color: #3fb950; }
+    .te-target { color: #d2a8ff; }
 
-    /* 底部事件流 */
-    .event-stream { height: 180px; background: #0d1b2a; border-top: 1px solid #0f3460; overflow-y: auto; padding: 8px 16px; font-size: 12px; }
-    .event-stream .stream-item { padding: 3px 0; border-bottom: 1px solid #111; display: flex; gap: 8px; }
-    .stream-item .st-time { color: #e94560; min-width: 120px; font-size: 11px; }
-    .stream-item .st-icon { min-width: 16px; }
-    .stream-item.gossip { color: #c084fc; }
-    .stream-item.random-event { color: #fbbf24; }
-    .stream-item.conversation { color: #34d399; }
-    .stream-item.reflection { color: #60a5fa; }
+    /* ── 右侧面板 ── */
+    .detail { background: #161b22; border-left: 1px solid #21262d; overflow-y: auto; display: flex; flex-direction: column; }
+    .detail-tabs { display: flex; border-bottom: 1px solid #21262d; background: #0d1117; flex-shrink: 0; }
+    .detail-tabs button { flex: 1; background: transparent; border: none; color: #484f58; padding: 8px 4px; font-size: 11px; cursor: pointer; border-bottom: 2px solid transparent; }
+    .detail-tabs button:hover { color: #c9d1d9; }
+    .detail-tabs button.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+    .detail-body { flex: 1; overflow-y: auto; padding: 12px; }
 
-    /* 右侧面板 */
-    .panel { background: #0f3460; border-left: 1px solid #16213e; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-    .panel h3 { color: #e94560; font-size: 13px; margin-bottom: 2px; }
-    .section { background: #1a1a3e; border-radius: 8px; padding: 10px; }
-    .section-title { font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+    .d-section { margin-bottom: 14px; }
+    .d-section-title { font-size: 11px; color: #484f58; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
 
-    .char-info .name { font-size: 16px; font-weight: bold; }
-    .char-info .meta { color: #888; font-size: 12px; margin-top: 2px; }
+    /* 角色档案 */
+    .profile-header { text-align: center; padding: 12px 0; }
+    .profile-header .p-name { font-size: 18px; font-weight: 700; color: #f0f6fc; }
+    .profile-header .p-meta { font-size: 12px; color: #8b949e; margin-top: 2px; }
+    .profile-text { font-size: 12px; color: #8b949e; line-height: 1.6; white-space: pre-wrap; }
 
-    .need-bar { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 11px; }
-    .need-bar .label { width: 36px; color: #888; }
-    .need-bar .bar { flex: 1; height: 6px; background: #16213e; border-radius: 3px; overflow: hidden; }
-    .need-bar .bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
-    .need-bar .value { width: 24px; text-align: right; color: #666; font-size: 10px; }
+    .need-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+    .need-row .n-label { width: 32px; font-size: 11px; color: #8b949e; }
+    .need-row .n-bar { flex: 1; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
+    .need-row .n-fill { height: 100%; border-radius: 3px; transition: width .4s; }
+    .need-row .n-val { width: 24px; text-align: right; font-size: 10px; color: #484f58; }
 
-    .conversation { margin: 6px 0; padding: 6px 8px; background: #16213e; border-radius: 6px; border-left: 2px solid #34d399; }
-    .conv-msg { font-size: 11px; padding: 2px 0; line-height: 1.4; }
-    .conv-msg .speaker { color: #e94560; font-weight: bold; }
+    .rel-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; cursor: pointer; }
+    .rel-row:hover { color: #f0f6fc; }
+    .rel-row .r-name { flex: 1; }
+    .rel-row .r-type { color: #8b949e; font-size: 11px; }
+    .rel-row .r-bar { width: 48px; height: 4px; background: #21262d; border-radius: 2px; overflow: hidden; }
+    .rel-row .r-fill { height: 100%; border-radius: 2px; }
 
-    /* 关系网络 */
-    .rel-item { display: flex; justify-content: space-between; align-items: center; font-size: 11px; padding: 2px 0; }
-    .rel-item .rel-name { color: #eee; }
-    .rel-item .rel-type { color: #888; font-size: 10px; }
-    .rel-item .rel-bar { width: 60px; height: 4px; background: #16213e; border-radius: 2px; overflow: hidden; }
-    .rel-item .rel-fill { height: 100%; border-radius: 2px; }
+    /* 印象卡 */
+    .imp-card { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+    .imp-card .imp-target { font-weight: 600; color: #d2a8ff; font-size: 12px; }
+    .imp-card .imp-label { display: inline-block; background: #1f6feb22; color: #58a6ff; padding: 1px 6px; border-radius: 8px; font-size: 10px; margin-left: 6px; }
+    .imp-card .imp-summary { color: #c9d1d9; font-size: 12px; margin-top: 4px; }
+    .imp-card .imp-obs { color: #8b949e; font-size: 11px; margin-top: 3px; }
+    .imp-card .imp-q { color: #d29922; font-size: 11px; margin-top: 3px; font-style: italic; }
 
-    .chat-input { display: flex; gap: 4px; margin-top: 6px; }
-    .chat-input input { flex: 1; background: #16213e; border: 1px solid #0f3460; color: #eee; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
-    .chat-input button { background: #e94560; border: none; color: #fff; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    /* 记忆 */
+    .mem-item { padding: 4px 0; border-bottom: 1px solid #161b22; font-size: 11px; }
+    .mem-item .m-type { display: inline-block; width: 14px; text-align: center; }
+    .mem-item .m-content { color: #8b949e; }
+    .mem-item .m-imp { color: #484f58; font-size: 10px; float: right; }
 
-    .tab-bar { display: flex; gap: 2px; margin-bottom: 8px; }
-    .tab-bar button { background: #1a1a3e; border: none; color: #888; padding: 4px 10px; border-radius: 4px 4px 0 0; cursor: pointer; font-size: 11px; }
-    .tab-bar button.active { background: #e94560; color: #fff; }
+    .no-data { color: #30363d; text-align: center; padding: 20px; font-size: 12px; }
 
-    .no-selection { color: #555; text-align: center; padding: 30px 16px; font-size: 13px; }
-    .btn-back { background: #16213e; border: 1px solid #333; color: #aaa; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; width: 100%; margin-top: 4px; }
-    .btn-back:hover { border-color: #e94560; color: #eee; }
+    /* 全局面板（无选中时） */
+    .global-overview { padding: 12px; }
+    .go-title { font-size: 11px; color: #484f58; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
+    .go-char { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; cursor: pointer; border-bottom: 1px solid #21262d; }
+    .go-char:hover { color: #f0f6fc; }
   </style>
 </head>
 <body>
   <div id="app">
     <div class="topbar">
-      <div class="time" id="game-time">-- 连接中 --</div>
-      <span class="weather-badge" id="weather-badge"></span>
+      <div class="time" id="game-time">-- : --</div>
+      <span class="weather" id="weather"></span>
       <div class="speed">
-        <button onclick="setSpeed(0)">⏸</button>
-        <button onclick="setSpeed(0.5)">½</button>
+        <button onclick="setSpeed(0)">&#9208;</button>
+        <button onclick="setSpeed(0.5)">&frac12;</button>
         <button class="active" onclick="setSpeed(1)">1x</button>
         <button onclick="setSpeed(2)">2x</button>
         <button onclick="setSpeed(5)">5x</button>
       </div>
-      <div class="status" id="status">连接中...</div>
+      <div class="conn" id="conn">...</div>
     </div>
 
-    <div class="main-area">
-      <div class="map-area">
-        <div class="map-grid" id="map-grid"></div>
-      </div>
-      <div class="event-stream" id="event-stream"></div>
-    </div>
-
-    <div class="panel" id="panel">
-      <div class="no-selection">点击地图上的角色名查看详情<br><br>角色每 ~15 秒行动一次</div>
-    </div>
+    <div class="sidebar" id="sidebar"></div>
+    <div class="timeline" id="timeline"><div class="no-data">等待连接...</div></div>
+    <div class="detail" id="detail"></div>
   </div>
 
   <script>
-    let state = null;
-    let selectedCharId = null;
-    let streamItems = [];
-    let conversations = [];
+    // ── State ──
+    let S = { characters: [], locations: [], weather: 'sunny', formattedTime: '', tick: 0, nameMap: {} };
     let relationships = [];
-    let wsConnection = null;
-    let panelTab = 'info';
+    let selectedId = null;
+    let detailTab = 'profile';
+    let tickLog = [];       // [{time, events, randomEvents, gossips, reflections}]
+    let charDetail = null;   // 来自 get_character 的详细数据
+    let charCards = null;    // 来自 /api/cards 的角色卡
+    let ws = null;
 
-    const weatherEmoji = { sunny: '☀️ 晴', cloudy: '☁️ 多云', rainy: '🌧️ 雨', stormy: '⛈️ 暴风雨', snowy: '❄️ 雪' };
+    const WEATHER = { sunny: '&#9728;&#65039; 晴', cloudy: '&#9729;&#65039; 多云', rainy: '&#127783;&#65039; 雨', stormy: '&#9928;&#65039; 暴风雨', snowy: '&#10052;&#65039; 雪' };
+    const NEED_LABEL = { hunger: '饱食', energy: '精力', social: '社交', happiness: '快乐', hygiene: '卫生' };
+    const MEM_ICON = { event: '&#9733;', conversation: '&#128172;', thought: '&#128173;', observation: '&#128065;' };
+    const needColor = v => v > 60 ? '#3fb950' : v > 30 ? '#d29922' : '#f85149';
+    const relColor = v => v > 50 ? '#3fb950' : v > 20 ? '#58a6ff' : v > 0 ? '#8b949e' : '#f85149';
+    const N = id => S.nameMap[id] || id;
 
+    // ── WebSocket ──
     function connect() {
-      const ws = new WebSocket(`ws://${location.host}`);
-      wsConnection = ws;
-      ws.onopen = () => { document.getElementById('status').textContent = '● 已连接'; document.getElementById('status').style.color = '#0f9'; };
-      ws.onclose = () => { document.getElementById('status').textContent = '● 断开'; document.getElementById('status').style.color = '#f44'; setTimeout(connect, 2000); };
-      ws.onmessage = (e) => {
+      ws = new WebSocket(`ws://${location.host}`);
+      ws.onopen = () => { document.getElementById('conn').innerHTML = '&#9679; &#24050;&#36830;&#25509;'; document.getElementById('conn').style.color = '#3fb950'; };
+      ws.onclose = () => { document.getElementById('conn').innerHTML = '&#9679; &#26029;&#24320;'; document.getElementById('conn').style.color = '#f85149'; setTimeout(connect, 2000); };
+      ws.onmessage = e => {
         const msg = JSON.parse(e.data);
-        if (msg.type === 'snapshot') { state = msg.data; render(); }
-        else if (msg.type === 'tick') { handleTick(msg.data); }
+        if (msg.type === 'snapshot') { Object.assign(S, msg.data); render(); }
+        else if (msg.type === 'tick') handleTick(msg.data);
+        else if (msg.type === 'character_detail') { charDetail = msg.data; renderDetail(); }
       };
     }
-    connect();
+
+    // ── 加载角色卡 ──
+    fetch('/api/cards').then(r => r.json()).then(d => { charCards = d; renderDetail(); }).catch(() => {});
 
     function handleTick(d) {
-      state = { ...state, ...d, tick: d.tick, formattedTime: d.formattedTime };
-      if (d.characters) state.characters = d.characters;
-      if (d.weather) state.weather = d.weather;
+      S.tick = d.tick;
+      S.formattedTime = d.formattedTime;
+      if (d.characters) S.characters = d.characters;
+      if (d.weather) S.weather = d.weather;
+      if (d.nameMap) S.nameMap = d.nameMap;
       if (d.relationships) relationships = d.relationships;
+      if (d.gameTime) S.gameTime = d.gameTime;
 
-      // 更新地点角色列表
-      if (state.locations && d.characters) {
-        for (const loc of state.locations) loc.presentCharacters = [];
+      // 更新 locations
+      if (S.locations && d.characters) {
+        for (const loc of S.locations) loc.presentCharacters = [];
         for (const ch of d.characters) {
-          const loc = state.locations.find(l => l.id === ch.locationId);
+          const loc = S.locations.find(l => l.id === ch.locationId);
           if (loc) loc.presentCharacters.push(ch.id);
         }
       }
 
-      // 事件流
-      for (const evt of (d.events || []))
-        streamItems.push({ time: d.formattedTime, icon: '🎬', text: `${evt.characterId}: ${evt.description || evt.thought}`, cls: '' });
-      for (const re of (d.randomEvents || []))
-        streamItems.push({ time: d.formattedTime, icon: '⚡', text: re.description, cls: 'random-event' });
-      for (const g of (d.gossips || []))
-        streamItems.push({ time: d.formattedTime, icon: '🗣', text: `${g.from} 告诉 ${g.to}: ${g.about}`, cls: 'gossip' });
-      for (const conv of (d.conversations || [])) {
-        conversations.push({ ...conv, time: d.formattedTime });
-        const preview = conv.messages[0] ? `${conv.messages[0].speakerName}: ${conv.messages[0].content.slice(0,40)}...` : '';
-        streamItems.push({ time: d.formattedTime, icon: '💬', text: `对话 (${conv.messages.length}轮) ${preview}`, cls: 'conversation' });
-      }
-      for (const ref of (d.reflections || []))
-        if (ref.insights.length) streamItems.push({ time: d.formattedTime, icon: '🧠', text: `${ref.characterId} 反思: ${ref.insights[0]}`, cls: 'reflection' });
+      // 时间线追加
+      tickLog.push({
+        time: d.formattedTime,
+        events: d.events || [],
+        randomEvents: d.randomEvents || [],
+        gossips: d.gossips || [],
+        reflections: d.reflections || [],
+      });
+      if (tickLog.length > 300) tickLog = tickLog.slice(-300);
 
-      if (streamItems.length > 200) streamItems = streamItems.slice(-200);
-      if (conversations.length > 30) conversations = conversations.slice(-30);
       render();
     }
 
+    // ── Render ──
     function render() {
-      if (!state) return;
-      // 顶栏
-      document.getElementById('game-time').textContent = state.formattedTime ?? '--';
-      document.getElementById('weather-badge').textContent = weatherEmoji[state.weather] ?? state.weather ?? '';
-
-      renderMap();
-      renderStream();
-      renderPanel();
+      document.getElementById('game-time').textContent = S.formattedTime || '-- : --';
+      document.getElementById('weather').innerHTML = WEATHER[S.weather] || S.weather || '';
+      renderSidebar();
+      renderTimeline();
+      renderDetail();
     }
 
-    function renderMap() {
-      const grid = document.getElementById('map-grid');
-      if (!state.locations) return;
-      const emoji = { residential: '🏠', commercial: '🏪', public: '🏛', nature: '🌿' };
-
-      grid.innerHTML = state.locations.map(loc => {
-        const chars = (state.characters || []).filter(c => c.locationId === loc.id);
-        const badges = chars.map(c =>
-          `<span class="char-badge ${c.id === selectedCharId ? 'selected' : ''}" onclick="selectChar('${c.id}')">${c.name.split(' ')[0]}</span>`
-        ).join('');
-        return `<div class="location-card ${chars.length ? 'has-chars' : ''}">
-          <div class="loc-name">${emoji[loc.type]||''} ${loc.name}</div>
-          <div class="characters">${badges || '<span style="color:#333;font-size:11px">-</span>'}</div>
+    function renderSidebar() {
+      const el = document.getElementById('sidebar');
+      el.innerHTML = S.characters.map(c => {
+        const loc = S.locations?.find(l => l.id === c.locationId);
+        const sel = c.id === selectedId ? 'selected' : '';
+        const bars = ['hunger','energy','social','happiness','hygiene'].map(k => {
+          const v = c.needs?.[k] ?? 0;
+          return `<div class="mini-bar"><div class="fill" style="width:${v}%;background:${needColor(v)}"></div></div>`;
+        }).join('');
+        const action = c.currentAction ? `${c.currentAction.name}` : '';
+        return `<div class="char-card ${sel}" onclick="selectChar('${c.id}')">
+          <div class="cc-name">${c.name}</div>
+          <div class="cc-meta"><span class="cc-loc">${loc?.name || c.locationId}</span> &middot; &#128176;${c.gold ?? 0} ${action ? '&middot; ' + action : ''}</div>
+          <div class="mini-bars">${bars}</div>
         </div>`;
       }).join('');
     }
 
-    function renderStream() {
-      const el = document.getElementById('event-stream');
-      const items = streamItems.slice(-30).reverse();
-      el.innerHTML = items.map(i =>
-        `<div class="stream-item ${i.cls}"><span class="st-time">${i.time}</span><span class="st-icon">${i.icon}</span><span>${i.text}</span></div>`
-      ).join('') || '<div style="color:#444;padding:20px;text-align:center">等待事件...</div>';
+    function renderTimeline() {
+      const el = document.getElementById('timeline');
+      // 取最近 40 个 tick
+      const recent = tickLog.slice(-40);
+      if (recent.length === 0) { el.innerHTML = '<div class="no-data">&#31561;&#24453;&#20107;&#20214;...</div>'; return; }
+
+      let html = '';
+      for (const tick of recent) {
+        const entries = [];
+
+        // 随机事件
+        for (const re of tick.randomEvents) {
+          entries.push(`<div class="tick-entry is-random"><span class="te-action">&#9889; ${re.description}</span></div>`);
+        }
+
+        // 角色行为
+        for (const evt of tick.events) {
+          const name = N(evt.characterId);
+          if (evt.skipped && evt.skipReason?.startsWith('执行中')) continue; // 跳过正在执行的
+
+          if (evt.skipped) {
+            // 跳过的 tick
+            continue;
+          }
+
+          const isTalk = evt.action === 'talk';
+          const isFail = evt.success === false;
+          const cls = isFail ? 'is-fail' : isTalk ? 'is-talk' : '';
+
+          let inner = `<span class="te-actor">${name}</span> `;
+          if (isFail) {
+            inner += `<span class="te-action" style="color:#f85149">&#10007; ${evt.description}</span>`;
+          } else if (isTalk && evt.args) {
+            const target = N(evt.args.target || '');
+            const manner = evt.args.manner || '';
+            const message = evt.args.message || '';
+            inner += `<span class="te-action">&#8594; <span class="te-target">${target}</span></span>`;
+            if (evt.thought) inner += `<div class="te-thought">${escHtml(evt.thought)}</div>`;
+            inner += `<div class="te-dialogue">`;
+            if (manner) inner += `<div class="te-manner">${escHtml(manner)}</div>`;
+            inner += `<div class="te-message">${escHtml(message)}</div></div>`;
+          } else {
+            inner += `<span class="te-action">${evt.action || 'idle'} &mdash; ${evt.description || ''}</span>`;
+            if (evt.thought) inner += `<div class="te-thought">${escHtml(evt.thought)}</div>`;
+          }
+
+          entries.push(`<div class="tick-entry ${cls}">${inner}</div>`);
+        }
+
+        // 反思
+        for (const ref of tick.reflections) {
+          if (!ref.insights?.length) continue;
+          const name = N(ref.characterId);
+          entries.push(`<div class="tick-entry is-reflect">
+            <span class="te-actor">${name}</span> <span class="te-action">&#128218; &#21453;&#24605; (${ref.mood})</span>
+            <div class="te-thought">${ref.insights.map(i => '&#8226; ' + escHtml(i)).join('\n')}</div>
+          </div>`);
+        }
+
+        if (entries.length > 0) {
+          html += `<div class="tick-group"><div class="tick-header">${tick.time}</div>${entries.join('')}</div>`;
+        }
+      }
+
+      el.innerHTML = html || '<div class="no-data">&#26242;&#26080;&#20107;&#20214;</div>';
+      // 自动滚到底部
+      el.scrollTop = el.scrollHeight;
     }
 
-    function renderPanel() {
-      const panel = document.getElementById('panel');
-      if (!selectedCharId) { renderGlobalPanel(panel); return; }
+    // ── 右侧详情面板 ──
+    function renderDetail() {
+      const el = document.getElementById('detail');
 
-      const ch = (state.characters || []).find(c => c.id === selectedCharId);
-      if (!ch) { panel.innerHTML = '<div class="no-selection">角色不存在</div>'; return; }
+      if (!selectedId) {
+        // 全局概览
+        let html = '<div class="global-overview">';
+        // 关系网络
+        if (relationships.length > 0) {
+          html += `<div class="d-section"><div class="go-title">&#20851;&#31995;&#32593;&#32476;</div>`;
+          for (const r of relationships) {
+            const pct = Math.max(0, (r.level + 100) / 2);
+            html += `<div class="rel-row">
+              <span class="r-name" onclick="selectChar('${r.a}')">${N(r.a)}</span>
+              <span class="r-type">${r.type} (${r.level})</span>
+              <span class="r-name" onclick="selectChar('${r.b}')">${N(r.b)}</span>
+              <div class="r-bar"><div class="r-fill" style="width:${pct}%;background:${relColor(r.level)}"></div></div>
+            </div>`;
+          }
+          html += '</div>';
+        }
+        // 地点概览
+        if (S.locations?.length) {
+          html += `<div class="d-section"><div class="go-title">&#22320;&#28857;</div>`;
+          for (const loc of S.locations) {
+            const chars = S.characters.filter(c => c.locationId === loc.id);
+            const names = chars.map(c => `<span style="color:#58a6ff;cursor:pointer" onclick="selectChar('${c.id}')">${c.name}</span>`).join(', ');
+            html += `<div style="padding:2px 0;font-size:12px">${loc.name}: ${names || '<span style="color:#30363d">&#26080;&#20154;</span>'}</div>`;
+          }
+          html += '</div>';
+        }
+        html += '</div>';
+        el.innerHTML = html;
+        return;
+      }
 
-      const loc = (state.locations || []).find(l => l.id === ch.locationId);
-      const charConvs = conversations.filter(c => c.participants?.includes(ch.id)).slice(-3).reverse();
+      const ch = S.characters.find(c => c.id === selectedId);
+      if (!ch) { el.innerHTML = '<div class="no-data">&#26410;&#25214;&#21040;</div>'; return; }
+
+      // Tab bar
+      const tabs = ['profile', 'memory', 'impressions'];
+      const tabLabels = { profile: '&#26723;&#26696;', memory: '&#35760;&#24518;', impressions: '&#21360;&#35937;' };
+      let tabHtml = '<div class="detail-tabs">';
+      tabHtml += `<button onclick="selectChar(null)" style="flex:0;padding:8px 10px;color:#8b949e">&larr;</button>`;
+      for (const t of tabs) {
+        tabHtml += `<button class="${detailTab === t ? 'active' : ''}" onclick="setDetailTab('${t}')">${tabLabels[t]}</button>`;
+      }
+      tabHtml += '</div>';
+
+      let body = '';
+      if (detailTab === 'profile') body = renderProfileTab(ch);
+      else if (detailTab === 'memory') body = renderMemoryTab(ch);
+      else if (detailTab === 'impressions') body = renderImpressionsTab(ch);
+
+      el.innerHTML = tabHtml + `<div class="detail-body">${body}</div>`;
+    }
+
+    function renderProfileTab(ch) {
+      const loc = S.locations?.find(l => l.id === ch.locationId);
+      const card = charCards?.[ch.id];
       const charRels = relationships.filter(r => r.a === ch.id || r.b === ch.id);
-      const needColor = v => v > 60 ? '#34d399' : v > 30 ? '#fbbf24' : '#ef4444';
-      const relColor = v => v > 50 ? '#34d399' : v > 20 ? '#60a5fa' : v > 0 ? '#888' : '#ef4444';
 
-      panel.innerHTML = `
-        <div class="section char-info">
-          <div class="name">${ch.name}</div>
-          <div class="meta">📍 ${loc?.name || ch.locationId} &nbsp; 💰 ${ch.gold ?? 100}
-          ${ch.currentAction ? `<br>🔄 ${ch.currentAction.name} (${ch.currentAction.remainingTicks} tick)` : ''}</div>
-        </div>
+      let html = `<div class="profile-header">
+        <div class="p-name">${ch.name}</div>
+        <div class="p-meta">${loc?.name || ch.locationId} &middot; &#128176;${ch.gold ?? 0}${ch.currentAction ? ' &middot; ' + ch.currentAction.name : ''}</div>
+      </div>`;
 
-        <div class="section">
-          <div class="section-title">需求</div>
-          ${['hunger','energy','social','happiness','hygiene'].map(k => {
-            const v = ch.needs[k] ?? 0;
-            const l = {hunger:'饥饿',energy:'精力',social:'社交',happiness:'快乐',hygiene:'卫生'}[k];
-            return `<div class="need-bar"><span class="label">${l}</span><div class="bar"><div class="bar-fill" style="width:${v}%;background:${needColor(v)}"></div></div><span class="value">${Math.round(v)}</span></div>`;
-          }).join('')}
-        </div>
+      // 需求
+      html += '<div class="d-section"><div class="d-section-title">&#38656;&#27714;</div>';
+      for (const [k, label] of Object.entries(NEED_LABEL)) {
+        const v = ch.needs?.[k] ?? 0;
+        html += `<div class="need-row"><span class="n-label">${label}</span><div class="n-bar"><div class="n-fill" style="width:${v}%;background:${needColor(v)}"></div></div><span class="n-val">${Math.round(v)}</span></div>`;
+      }
+      html += '</div>';
 
-        ${charRels.length > 0 ? `<div class="section">
-          <div class="section-title">关系</div>
-          ${charRels.map(r => {
-            const other = r.a === ch.id ? r.b : r.a;
-            const pct = Math.max(0, (r.level + 100) / 2);
-            return `<div class="rel-item">
-              <span class="rel-name" style="cursor:pointer" onclick="selectChar('${other}')">${other}</span>
-              <span class="rel-type">${r.type} (${r.level})</span>
-              <div class="rel-bar"><div class="rel-fill" style="width:${pct}%;background:${relColor(r.level)}"></div></div>
-            </div>`;
-          }).join('')}
-        </div>` : ''}
+      // 关系
+      if (charRels.length > 0) {
+        html += '<div class="d-section"><div class="d-section-title">&#20851;&#31995;</div>';
+        for (const r of charRels) {
+          const other = r.a === ch.id ? r.b : r.a;
+          const pct = Math.max(0, (r.level + 100) / 2);
+          html += `<div class="rel-row" onclick="selectChar('${other}')"><span class="r-name">${N(other)}</span><span class="r-type">${r.type} (${r.level})</span><div class="r-bar"><div class="r-fill" style="width:${pct}%;background:${relColor(r.level)}"></div></div></div>`;
+        }
+        html += '</div>';
+      }
 
-        ${charConvs.length > 0 ? `<div class="section">
-          <div class="section-title">最近对话</div>
-          ${charConvs.map(c => `<div class="conversation">${c.messages.slice(0,4).map(m =>
-            `<div class="conv-msg"><span class="speaker">${m.speakerName.split(' ')[0]}:</span> ${m.content}</div>`
-          ).join('')}${c.messages.length>4?`<div style="color:#666;font-size:10px">...共${c.messages.length}轮</div>`:''}</div>`).join('')}
-        </div>` : ''}
+      // 角色卡信息
+      if (card) {
+        if (card.appearance) html += `<div class="d-section"><div class="d-section-title">&#22806;&#35980;</div><div class="profile-text">${escHtml(card.appearance)}</div></div>`;
+        if (card.personality?.coreTraits) html += `<div class="d-section"><div class="d-section-title">&#24615;&#26684;</div><div class="profile-text">${escHtml(card.personality.coreTraits)}</div></div>`;
+        if (card.personality?.psychology) html += `<div class="d-section"><div class="d-section-title">&#20869;&#24515;</div><div class="profile-text">${escHtml(card.personality.psychology)}</div></div>`;
+        if (card.personality?.speech) {
+          let speech = card.personality.speech.style || '';
+          if (card.personality.speech.habits?.length) speech += '\n&#21475;&#30316;: ' + card.personality.speech.habits.join('&#12289;');
+          if (card.personality.speech.examples?.length) speech += '\n&#20363;&#21477;:\n' + card.personality.speech.examples.map(e => '&#12300;' + e + '&#12301;').join('\n');
+          html += `<div class="d-section"><div class="d-section-title">&#35828;&#35805;&#26041;&#24335;</div><div class="profile-text">${escHtml(speech)}</div></div>`;
+        }
+        if (card.personality?.interests?.length) html += `<div class="d-section"><div class="d-section-title">&#20852;&#36259;</div><div class="profile-text">${escHtml(card.personality.interests.join('&#12289;'))}</div></div>`;
+        if (card.backstory?.length) {
+          const bs = card.backstory.map(b => `&#8226; ${b.event} &#8594; ${b.impact}`).join('\n');
+          html += `<div class="d-section"><div class="d-section-title">&#36807;&#21435;</div><div class="profile-text">${escHtml(bs)}</div></div>`;
+        }
+      }
 
-        <div class="section">
-          <div class="section-title">和 ${ch.name.split(' ')[0]} 说话</div>
-          <div class="chat-input">
-            <input id="player-input" type="text" placeholder="说点什么..." onkeydown="if(event.key==='Enter')sendPlayerMsg('${ch.id}')">
-            <button onclick="sendPlayerMsg('${ch.id}')">发送</button>
-          </div>
-          <div id="player-conv" style="margin-top:6px;font-size:11px;color:#aaa"></div>
-        </div>
-
-        <button class="btn-back" onclick="selectChar(null)">← 返回全局视图</button>
-      `;
+      return html;
     }
 
-    function renderGlobalPanel(panel) {
-      // 关系网络
-      const relHtml = relationships.length > 0 ? `
-        <div class="section">
-          <div class="section-title">关系网络</div>
-          ${relationships.map(r => {
-            const pct = Math.max(0, (r.level + 100) / 2);
-            const color = r.level > 50 ? '#34d399' : r.level > 20 ? '#60a5fa' : '#888';
-            return `<div class="rel-item">
-              <span class="rel-name" style="cursor:pointer" onclick="selectChar('${r.a}')">${r.a}</span>
-              <span class="rel-type">${r.type} ${r.level}</span>
-              <span class="rel-name" style="cursor:pointer" onclick="selectChar('${r.b}')">${r.b}</span>
-            </div>`;
-          }).join('')}
-        </div>` : '';
+    function renderMemoryTab(ch) {
+      if (!charDetail || charDetail.id !== ch.id) {
+        // 请求详细数据
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'get_character', data: { id: ch.id } }));
+        }
+        return '<div class="no-data">&#21152;&#36733;&#20013;...</div>';
+      }
 
-      // 角色总览
-      const charsHtml = (state.characters || []).map(c => {
-        const loc = (state.locations || []).find(l => l.id === c.locationId);
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px;cursor:pointer;border-bottom:1px solid #16213e" onclick="selectChar('${c.id}')">
-          <span>${c.name}</span>
-          <span style="color:#888">${loc?.name?.slice(0,6)||c.locationId} 💰${c.gold??100}</span>
+      const memories = charDetail.memories || [];
+      if (memories.length === 0) return '<div class="no-data">&#26242;&#26080;&#35760;&#24518;</div>';
+
+      let html = '';
+      for (const m of memories.slice().reverse()) {
+        const icon = MEM_ICON[m.type] || '&#9675;';
+        html += `<div class="mem-item"><span class="m-type">${icon}</span> <span class="m-content">${escHtml(m.content)}</span><span class="m-imp">&#9734;${m.importance}</span></div>`;
+      }
+      return html;
+    }
+
+    function renderImpressionsTab(ch) {
+      if (!charDetail || charDetail.id !== ch.id) {
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'get_character', data: { id: ch.id } }));
+        }
+        return '<div class="no-data">&#21152;&#36733;&#20013;...</div>';
+      }
+
+      const imps = charDetail.impressions || [];
+      if (imps.length === 0) return '<div class="no-data">&#26242;&#26080;&#21360;&#35937;</div>';
+
+      let html = '';
+      for (const imp of imps) {
+        html += `<div class="imp-card">
+          <span class="imp-target">${N(imp.characterId)}</span>
+          ${imp.mentalLabel ? `<span class="imp-label">&#12300;${escHtml(imp.mentalLabel)}&#12301;</span>` : ''}
+          <div class="imp-summary">${escHtml(imp.summary)}</div>
+          ${imp.observations?.length ? `<div class="imp-obs">${imp.observations.map(o => '&#8226; ' + escHtml(o)).join('<br>')}</div>` : ''}
+          ${imp.unresolved?.length ? `<div class="imp-q">${imp.unresolved.map(q => '? ' + escHtml(q)).join('<br>')}</div>` : ''}
         </div>`;
-      }).join('');
-
-      const convHtml = conversations.slice(-2).reverse().map(c => `
-        <div class="conversation">
-          ${c.messages.slice(0,3).map(m => `<div class="conv-msg"><span class="speaker">${m.speakerName.split(' ')[0]}:</span> ${m.content}</div>`).join('')}
-          ${c.messages.length>3?`<div style="color:#666;font-size:10px">...共${c.messages.length}轮</div>`:''}
-        </div>
-      `).join('');
-
-      panel.innerHTML = `
-        <div class="section">
-          <div class="section-title">角色</div>
-          ${charsHtml}
-        </div>
-        ${relHtml}
-        ${convHtml ? `<h3>最近对话</h3>${convHtml}` : ''}
-      `;
+      }
+      return html;
     }
 
-    function selectChar(id) { selectedCharId = id; panelTab = 'info'; render(); }
+    // ── Actions ──
+    function selectChar(id) {
+      selectedId = id;
+      charDetail = null;
+      detailTab = 'profile';
+      if (id && ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'get_character', data: { id } }));
+      }
+      render();
+    }
+
+    function setDetailTab(tab) { detailTab = tab; renderDetail(); }
 
     function setSpeed(speed) {
       document.querySelectorAll('.speed button').forEach(b => b.classList.remove('active'));
       event.target.classList.add('active');
-      if (wsConnection?.readyState === WebSocket.OPEN)
-        wsConnection.send(JSON.stringify({ type: 'set_speed', data: { speed } }));
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'set_speed', data: { speed } }));
     }
 
-    function sendPlayerMsg(targetId) {
-      const input = document.getElementById('player-input');
-      const msg = input.value.trim();
-      if (!msg) return;
-      input.value = '';
-      const convDiv = document.getElementById('player-conv');
-      convDiv.innerHTML = '<div style="color:#e94560">思考中...</div>';
-      if (wsConnection?.readyState === WebSocket.OPEN) {
-        wsConnection.send(JSON.stringify({ type: 'player_talk', data: { targetId, message: msg } }));
-        const handler = (e) => {
-          const data = JSON.parse(e.data);
-          if (data.type === 'player_talk_result') {
-            wsConnection.removeEventListener('message', handler);
-            convDiv.innerHTML = data.data.messages.map(m =>
-              `<div class="conv-msg"><span class="speaker">${m.speakerName.split(' ')[0]}:</span> ${m.content}</div>`
-            ).join('');
-            conversations.push({ ...data.data, time: state?.formattedTime ?? '' });
-          }
-        };
-        wsConnection.addEventListener('message', handler);
-      }
+    function escHtml(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
+
+    connect();
   </script>
 </body>
 </html>

@@ -81,7 +81,7 @@ export function buildSystemPrompt(card: CharacterCard): string {
 - 如果"有人对你说"里有消息，优先考虑用 talk 回应（也可以选择不回应）
 - 如果你身无分文又饥肠辘辘，你可能需要做一些不太体面的事（乞讨、偷窃）——生存是第一位的
 - talk 发出的消息不会阻塞，对方会在下一轮看到
-- 你可以一口气说完想说的，不用一句一句地说——真人面对面说话经常一口气说好几句
+- 说话像正常人一样自然，一两句到三四句都可以，不要长篇大论
 - 你的内心想法用普通文本表达，行为用工具调用表达
 - 保持角色一致性，用你的说话风格和性格特点来决定行为
 
@@ -156,6 +156,10 @@ function buildConstraintWarnings(state: CharacterState, locationType: string): s
 
   if (state.gold === 0 && state.needs.hunger < 20) {
     warnings.push("⚠️ 你又穷又饿，处境非常危险。你必须立刻想办法解决——去工作赚钱、回家吃饭、向人乞讨、或者铤而走险去偷。不能再无所事事了。");
+  }
+
+  if (state.needs.social > 85) {
+    warnings.push("⚠️ 你今天已经和不少人说过话了，社交上基本是饱的。除非眼下真的有话想说，否则不必硬找话题；去工作、独处、散步、做自己的事也很自然。");
   }
 
   return warnings;

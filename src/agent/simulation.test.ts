@@ -100,6 +100,23 @@ describe("Simulation", () => {
     expect(anonState.inbox[0]!.content).toBe("你、你好……");
   });
 
+  it("单次 talk 只推动一次共享关系，不再双重加分", async () => {
+    world.moveCharacter("tomori", "cafe");
+    world.moveCharacter("anon", "cafe");
+
+    mockLLM.enqueueResponse("看到爱音了", [
+      { name: "talk", arguments: { target: "anon", message: "你、你好……" } },
+    ]);
+    mockLLM.enqueueResponse("先吃饭", [
+      { name: "eat", arguments: { location: "cafe" } },
+    ]);
+
+    await sim.runOneTick(tickToGameTime(48));
+
+    const rel = sim.relationships.get("tomori", "anon");
+    expect(rel.level).toBe(2);
+  });
+
   it("信箱消息在下一个 tick 被消费并注入 prompt", async () => {
     world.moveCharacter("tomori", "cafe");
     world.moveCharacter("anon", "cafe");

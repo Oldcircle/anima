@@ -99,7 +99,7 @@ export const goToAction: ActionDefinition = {
 export const talkAction: ActionDefinition = {
   tool: {
     name: "talk",
-    description: "在当前地点当面对某人说话。对方必须在同一位置。消息送到对方信箱，在场的人也可能注意到。你可以一口气说好几句话，不用每次只说一句。",
+    description: "在当前地点当面对某人说话。对方必须在同一位置。消息送到对方信箱，在场的人也可能注意到。",
     parameters: {
       type: "object",
       properties: {
@@ -109,7 +109,7 @@ export const talkAction: ActionDefinition = {
         },
         message: {
           type: "string",
-          description: "你说出口的话（只写台词，不写心理描写）。你可以一口气说完想说的，不用一句一句地说。比如先打招呼再聊正事，或者一口气问好几个问题。",
+          description: "你说出口的话（只写台词，不写心理描写）。像正常人说话一样，一两句到三四句都可以，不要太长。",
         },
         manner: {
           type: "string",
@@ -140,8 +140,8 @@ export const talkAction: ActionDefinition = {
     return {
       description,
       effects: [
-        { type: "need_change", targetId: ctx.characterId, field: "social", delta: 5 },
-        { type: "need_change", targetId: target, field: "social", delta: 3 },
+        { type: "need_change", targetId: ctx.characterId, field: "social", delta: 3 },
+        { type: "need_change", targetId: target, field: "social", delta: 1 },
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 1 },
         { type: "inbox_message", targetId: target, fromName: ctx.characterId, message },
       ],

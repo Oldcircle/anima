@@ -13,12 +13,15 @@ import type { Simulation, TickSummary } from "../agent/simulation.js";
 import type { TickEngine } from "../core/tick-engine.js";
 import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime, tickToGameTime } from "../core/tick-engine.js";
+import type { CharacterCard } from "../character/types.js";
 
 export interface ServerConfig {
   port: number;
   simulation: Simulation;
   engine?: TickEngine;
   staticDir?: string;
+  /** 角色卡映射（id → CharacterCard），用于前端展示角色身份信息 */
+  characterCards?: Map<string, CharacterCard>;
 }
 
 export function createApiServer(config: ServerConfig): { app: ReturnType<typeof express>; server: ReturnType<typeof createServer>; start: () => void; broadcast: (data: object) => void } {
@@ -60,7 +63,8 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
           const character = simulation.world.getCharacter(id);
           const memories = simulation.memory.getRecent(id, 20);
           const relationships = simulation.relationships.getRelationshipsOf(id);
-          ws.send(JSON.stringify({ type: "character_detail", data: { ...character, memories, relationships } }));
+          const impressions = simulation.impressions.getAllFor(id);
+          ws.send(JSON.stringify({ type: "character_detail", data: { ...character, memories, relationships, impressions } }));
         }
         break;
       }
@@ -83,13 +87,15 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
         gameTime: summary.gameTime,
         formattedTime: formatGameTime(summary.gameTime),
         characters: getCharactersState(simulation),
-        events: summary.results
-          .filter((r) => !r.skipped && r.result)
-          .map((r) => ({
+        events: summary.results.map((r) => ({
             characterId: r.characterId,
-            action: r.action?.name,
-            description: r.result?.description,
-            thought: r.thought.slice(0, 80),
+            action: r.action?.name ?? null,
+            args: r.action?.args ?? null,
+            description: r.result?.description ?? null,
+            thought: r.thought || null,
+            skipped: r.skipped ?? false,
+            skipReason: r.skipReason ?? null,
+            success: r.result?.success ?? true,
           })),
         randomEvents: (summary.randomEvents ?? []).map((re) => ({
           name: re.event.name,
@@ -110,6 +116,10 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
         relationships: simulation.relationships.getAll().map((r) => ({
           a: r.characterA, b: r.characterB, level: r.level, type: r.type,
         })),
+        // 角色名映射（ID→名字）
+        nameMap: Object.fromEntries(
+          simulation.world.getAllCharacters().map((c) => [c.id, c.name]),
+        ),
       },
     });
   });
@@ -143,6 +153,58 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
 
   app.get("/api/relationships", (_req, res) => {
     res.json(simulation.relationships.getAll());
+  });
+
+  app.get("/api/impressions", (_req, res) => {
+    // 返回所有角色的所有印象
+    const all: Record<string, any[]> = {};
+    for (const c of simulation.world.getAllCharacters()) {
+      const imps = simulation.impressions.getAllFor(c.id);
+      if (imps.length > 0) all[c.id] = imps;
+    }
+    res.json(all);
+  });
+
+  app.get("/api/impressions/:id", (req, res) => {
+    const imps = simulation.impressions.getAllFor(req.params.id);
+    res.json(imps);
+  });
+
+  app.get("/api/cards", (_req, res) => {
+    if (!config.characterCards) return res.json({});
+    const cards: Record<string, any> = {};
+    for (const [id, card] of config.characterCards) {
+      cards[id] = {
+        id: card.id, name: card.name, age: card.age,
+        occupation: card.occupation, appearance: card.appearance,
+        personality: {
+          traits: card.personality.traits,
+          coreTraits: card.personality.coreTraits,
+          psychology: card.personality.psychology,
+          speech: card.personality.speech,
+          interests: card.personality.interests,
+          dislikes: card.personality.dislikes,
+        },
+        backstory: card.backstory,
+        background: card.background,
+      };
+    }
+    res.json(cards);
+  });
+
+  app.get("/api/conversations", (_req, res) => {
+    // 返回当前所有活跃对话历史
+    const chars = simulation.world.getAllCharacters();
+    const convs: Record<string, any[]> = {};
+    for (let i = 0; i < chars.length; i++) {
+      for (let j = i + 1; j < chars.length; j++) {
+        const history = simulation.conversations.getHistory(chars[i]!.id, chars[j]!.id);
+        if (history.length > 0) {
+          convs[`${chars[i]!.id}:${chars[j]!.id}`] = history;
+        }
+      }
+    }
+    res.json(convs);
   });
 
   // 静态文件

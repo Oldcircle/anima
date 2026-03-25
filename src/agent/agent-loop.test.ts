@@ -122,7 +122,7 @@ describe("Agent Loop", () => {
     await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
 
     // Tomori 社交值增加
-    expect(world.getCharacter("tomori")!.needs.social).toBeGreaterThan(60); // 初始 60 + 5
+    expect(world.getCharacter("tomori")!.needs.social).toBeGreaterThan(60); // 初始 60 + 3
     // Anon 信箱应有消息
     const anon = world.getCharacter("anon")!;
     expect(anon.inbox).toHaveLength(1);

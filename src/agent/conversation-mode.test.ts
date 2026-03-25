@@ -219,7 +219,7 @@ describe("buildConversationRequest", () => {
     });
 
     expect(request.temperature).toBe(1.0);
-    expect(request.maxTokens).toBe(3072);
+    expect(request.maxTokens).toBe(1024);
   });
 
   it("includes tools from actions", () => {
