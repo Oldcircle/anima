@@ -133,7 +133,8 @@ export async function runAgentTick(params: {
   let response;
   try {
     response = await provider.chat(request, modelId);
-  } catch (err) {
+  } catch (err: any) {
+    console.error(`[${card.id}] LLM 调用失败:`, err?.message ?? err);
     return { characterId: card.id, thought: "", skipped: true, skipReason: "LLM 调用失败" };
   }
 
@@ -146,11 +147,17 @@ export async function runAgentTick(params: {
 
   // 如果没有工具调用，也回退
   if (response.toolCalls.length === 0) {
+    console.warn(`[${card.id}] LLM 未调用工具 | thought: ${thought.slice(0, 60)} | 可用工具: ${dynamicActions.map(a => a.tool.name).join(",")}`);
     return { characterId: card.id, thought, skipped: true, skipReason: "LLM 未调用工具" };
   }
 
   // 执行第一个工具调用
   const toolCall = response.toolCalls[0]!;
+  const availableNames = dynamicActions.map(a => a.tool.name);
+  console.log(`[${card.id}] 工具=${toolCall.name} | 可用=${availableNames.join(",")}`);
+  if (!availableNames.includes(toolCall.name)) {
+    console.log(`[${card.id}] ⚠️ 不存在的工具: ${toolCall.name}`);
+  }
   const result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought);
 
   // 收到的信箱消息存入记忆，并给读信者加社交

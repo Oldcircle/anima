@@ -62,7 +62,7 @@ describe("prompt-builder", () => {
     expect(prompt).not.toContain("42");
   });
 
-  it("需求值正常时不显示身体感受章节", () => {
+  it("需求值正常时显示身体状态不错", () => {
     const state = createState(); // all needs are high
     const prompt = buildUserPrompt({
       card: baseCard,
@@ -75,7 +75,7 @@ describe("prompt-builder", () => {
       allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
     });
 
-    expect(prompt).not.toContain("你的身体感受");
+    expect(prompt).toContain("身体状态不错");
     expect(prompt).not.toContain("/100");
     expect(prompt).not.toContain("饥饿:");
   });

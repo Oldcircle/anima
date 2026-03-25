@@ -106,21 +106,24 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     }
   }
 
-  // 4. hobby（永远可用——随时可以发呆、想事情）
-  tools.push({
-    tool: {
-      name: "hobby",
-      description: "做自己喜欢的事：发呆、想事情、看风景、写笔记",
-      parameters: { type: "object", properties: {} },
-    },
-    handler: (_args, actx): ActionResult => ({
-      description: "做了一会儿自己喜欢的事",
-      effects: [
-        { type: "need_change", targetId: actx.characterId, field: "happiness", delta: 10 },
-      ],
-      duration: 2,
-    }),
-  });
+  // 4. hobby（只在地点没有提供 hobby 工具时才添加默认版本）
+  const hasHobby = tools.some((t) => t.tool.name === "hobby");
+  if (!hasHobby) {
+    tools.push({
+      tool: {
+        name: "hobby",
+        description: "做自己喜欢的事：发呆、想事情、看风景、写笔记",
+        parameters: { type: "object", properties: {} },
+      },
+      handler: (_args, actx): ActionResult => ({
+        description: "做了一会儿自己喜欢的事",
+        effects: [
+          { type: "need_change", targetId: actx.characterId, field: "happiness", delta: 10 },
+        ],
+        duration: 2,
+      }),
+    });
+  }
 
   // 5. 极端状态工具（平时隐藏）
   if (ctx.gold === 0) {
@@ -170,7 +173,16 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     });
   }
 
-  return tools;
+  // 去重（防止地点工具和通用工具同名）
+  const seen = new Set<string>();
+  const uniqueTools: ActionDefinition[] = [];
+  for (const t of tools) {
+    if (!seen.has(t.tool.name)) {
+      seen.add(t.tool.name);
+      uniqueTools.push(t);
+    }
+  }
+  return uniqueTools;
 }
 
 // ── go_to 工具（动态参数） ──
