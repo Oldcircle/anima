@@ -76,6 +76,8 @@ export interface CharacterState {
   locationId: string;
   needs: CharacterNeeds;
   gold: number;
+  /** 可变的生活状态（职业、技能、目标等） */
+  life?: import("../character/types.js").LifeState;
   /** 当前正在执行的行为（多 tick 行为） */
   currentAction?: { name: string; remainingTicks: number };
   /** 当前还挂在心上的短期意图/未完事务，会自然过期 */

@@ -98,7 +98,9 @@ export async function runAgentTick(params: {
   });
 
   // 构建 prompt
-  const systemPrompt = buildSystemPrompt(card);
+  const workplaceId = state.life?.workplace ?? card.life?.workplace;
+  const workplaceName = workplaceId ? world.getLocation(workplaceId)?.name : undefined;
+  const systemPrompt = buildSystemPrompt(card, workplaceName);
   const userPrompt = buildUserPrompt({
     card,
     state,
@@ -218,6 +220,13 @@ async function executeAction(
   }
 
   const location = world.getLocation(state.locationId);
+  // 确定当前工作技能：如果角色在自己的工作地点，提取第一个技能作为工作技能
+  const life = state.life ?? card.life;
+  let workSkill: string | undefined;
+  if (life && state.locationId === life.workplace) {
+    const skillKeys = Object.keys(life.skills);
+    workSkill = skillKeys.length > 0 ? skillKeys[0] : undefined;
+  }
   const ctx = {
     characterId: card.id,
     locationId: state.locationId,
@@ -226,6 +235,7 @@ async function executeAction(
     nearbyCharacters: world.getCharactersAtLocation(state.locationId).filter((id) => id !== card.id),
     gold: state.gold,
     needs: { ...state.needs },
+    workSkill,
   };
 
   const result = actionDef.handler(toolCall.arguments, ctx);
@@ -275,6 +285,12 @@ async function executeAction(
           });
         }
         break;
+      case "skill_up":
+        if (effect.skill && effect.delta !== undefined && state.life) {
+          const current = state.life.skills[effect.skill] ?? 0;
+          state.life.skills[effect.skill] = Math.min(10, current + effect.delta);
+        }
+        break;
     }
   }
 
@@ -285,7 +301,7 @@ async function executeAction(
     state.gold = Math.max(0, state.gold - toolCost);
   }
   if (toolCall.name === "work") {
-    state.gold += getWorkIncome(card.occupation);
+    state.gold += state.life?.income ?? card.life?.income ?? getWorkIncome(card.occupation);
   } else if (toolCall.name === "steal") {
     const stolenAmount = (result as any)._stolenAmount;
     if (typeof stolenAmount === "number") {

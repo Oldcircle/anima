@@ -5,7 +5,7 @@
  * User prompt: 当前世界状态 + 约束预提醒（每 tick 变化）
  */
 
-import type { CharacterCard } from "../character/types.js";
+import type { CharacterCard, LifeState } from "../character/types.js";
 import type { CharacterState, CharacterNeeds, Weather, InboxMessage, LocationAtmosphere } from "../world/types.js";
 import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime } from "../core/tick-engine.js";
@@ -14,10 +14,70 @@ import { weatherDescription, weatherHint } from "../world/weather.js";
 import { getAtmosphereText } from "../world/location-loader.js";
 import type { ImpressionStore } from "../memory/impressions.js";
 
-export function buildSystemPrompt(card: CharacterCard): string {
+/**
+ * 格式化技能认知：将技能数值转为自然语言描述
+ */
+const SKILL_NAMES: Record<string, string> = {
+  baking: "烘焙",
+  social: "社交",
+  barista: "咖啡调制",
+  piano: "钢琴",
+  etiquette: "礼仪",
+  botany: "植物学",
+  guitar: "吉他",
+  organizing: "整理收纳",
+  observation: "观察力",
+  writing: "写作",
+  knowledge: "知识",
+};
+
+function formatSkillLevel(skill: string, level: number): string {
+  const name = SKILL_NAMES[skill] ?? skill;
+  if (level >= 8) return `${name}（精通）`;
+  if (level >= 5) return `${name}（熟练）`;
+  if (level >= 3) return `${name}（有基础）`;
+  if (level >= 1) return `${name}（在学习）`;
+  return `${name}（刚入门）`;
+}
+
+/**
+ * 格式化生活状态注入 system prompt
+ */
+function formatLifeContext(life: LifeState, workplaceName?: string): string {
   const parts: string[] = [];
 
-  parts.push(`你是 ${card.name}，${card.age} 岁，${card.occupation}。`);
+  // 工作认知
+  const wpName = workplaceName ?? life.workplace;
+  parts.push(`你在${wpName}当${life.occupation}。`);
+
+  // 技能认知
+  const skillEntries = Object.entries(life.skills).filter(([, v]) => v > 0);
+  if (skillEntries.length > 0) {
+    const skillDescs = skillEntries.map(([k, v]) => formatSkillLevel(k, v));
+    parts.push(`你的技能：${skillDescs.join("、")}。`);
+  }
+
+  // 长期抱负
+  if (life.aspiration) {
+    parts.push(`你内心深处一直想：${life.aspiration}。`);
+  }
+
+  return parts.join("\n");
+}
+
+export function buildSystemPrompt(card: CharacterCard, workplaceName?: string): string {
+  const parts: string[] = [];
+
+  const life = card.life;
+  const age = life?.age ?? card.age;
+  const occupation = life?.occupation ?? card.occupation;
+
+  parts.push(`你是 ${card.name}，${age} 岁，${occupation}。`);
+
+  // 生活状态认知
+  if (life) {
+    parts.push(`\n## 你的生活\n${formatLifeContext(life, workplaceName)}`);
+  }
 
   // 外貌
   if (card.appearance) {
@@ -81,6 +141,14 @@ export function buildSystemPrompt(card: CharacterCard): string {
 - 先简短写出你的想法，然后调用一个工具
 - 不要重复你刚才做过的事或说过的话
 - 保持角色一致性，用你的说话风格和性格特点来决定行为
+
+## 社交行为指引
+- 说话时考虑你和对方的关系、你当前的心情、以及你想达到什么目的
+- 你可以选择说什么、不说什么、怎么说——不是每次都要直来直去
+- 你可以犹豫、改口、词不达意、言不由衷——这些都是真实的表达
+- 如果对方让你不舒服，你可以转移话题、找借口离开、或者沉默不语
+- 注意观察周围的环境和其他人的状态，这些会影响你的感受和决定
+- 想说话时，考虑当前场景和气氛是否适合——有些话不是什么时候都能说的
 
 ## 说话风格
 - 说话要像正常人说话，不是写诗。少用比喻，多用大白话
@@ -275,6 +343,17 @@ export function buildUserPrompt(params: {
       .map((m) => `- ${m.fromName}(ID:${m.fromId}) 对你说：「${m.content}」`)
       .join("\n");
     parts.push(`\n## 有人对你说\n${msgs}\n（这些话刚刚在你耳边发生。你可以用 talk 回应，也可以无视或转身离开。）`);
+  }
+
+  // 生活目标/担忧（从反思涌现的内在驱动力）
+  const life = state.life ?? card.life;
+  if (life) {
+    const lifeHints: string[] = [];
+    if (life.currentGoal) lifeHints.push(`你最近想做的事：${life.currentGoal}`);
+    if (life.currentConcern) lifeHints.push(`你有点担心的事：${life.currentConcern}`);
+    if (lifeHints.length > 0) {
+      parts.push(`\n## 你心里挂着的事\n${lifeHints.join("\n")}`);
+    }
   }
 
   const prefsHint = formatPreferencesHint(card);

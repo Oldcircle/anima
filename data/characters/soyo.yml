@@ -59,4 +59,14 @@ preferences:
   evening: "回家后做饭、打扫、整理，让自己一直忙着不停下来"
   social: "主动关心每一个人，记住别人说过的每一个细节，让人觉得被重视"
 
+life:
+  occupation: "图书馆管理员"
+  workplace: "library"
+  age: 20
+  income: 14
+  skills:
+    social: 3
+    organizing: 4
+  aspiration: "成为不可或缺的人"
+
 relationships: {}

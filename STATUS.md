@@ -1,10 +1,39 @@
 # Anima — 开发状态
 
-## 当前状态：对话系统两大问题已修复，待 Live 验证
+## 当前状态：角色系统深化 — Phase 7A 开发中
 
-详见 DESIGN.md §7.3 + PLAN.md 实施任务
+**分支**：`feature/life-state-system`
 
 **最后更新**：2026-03-25
+
+### 背景
+
+角色卡全部字段（age/occupation/home）都是静态写死的，角色不知道自己在哪上班，没有技能成长，没有人生目标。借鉴模拟人生的设计思路，将角色卡拆分为"灵魂层（不变）"和"生活状态层（可变）"，让角色有工作认知、技能成长、职业阶梯、愿望驱动、关系类型化、情绪层次。
+
+详见 DESIGN.md §2.2-2.4，PLAN.md Phase 7A-7D。
+
+### Phase 7A：生活状态层（Life State）— 进行中
+
+- [x] `LifeState` 类型定义（`src/character/types.ts`）
+- [x] `CharacterState` 挂载 `life`（`src/world/types.ts`）
+- [x] `character/loader.ts` 加载 YAML `life` 段
+- [x] 5 个角色 YAML 新增 `life` 段（workplace、初始技能、aspiration）
+- [x] `prompt-builder.ts` 改造：
+  - [x] system prompt 从 life 读取 age/occupation
+  - [x] 注入工作认知："你在海风面包坊当面包店学徒"
+  - [x] 注入技能认知："烘焙（在学习）、观察力（有基础）"
+  - [x] 注入抱负："你内心深处一直想：找到能理解我的人"
+  - [x] user prompt 注入 currentGoal / currentConcern
+- [x] `ActionEffect` 新增 `skill_up` type
+- [x] `work` action 产生 `skill_up` effect
+- [x] `agent-loop.ts` 处理 `skill_up` effect，更新 `life.skills`
+- [x] work 收入从 `life.income` 读取（优先于旧 occupation 映射表）
+- [x] `World.addCharacter` 支持传入 `life`
+- [x] cli.ts + 4 个 sim 测试文件适配
+- [x] `pnpm build` 通过
+- [x] `pnpm test` 通过（154 tests）
+- [ ] 新增 life-state 专项单元测试
+- [ ] Live 半天验证
 
 ### 一日模拟结果（2026-03-24）
 

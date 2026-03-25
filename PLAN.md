@@ -210,7 +210,7 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 ### 心智系统
 
 - [x] **思考持久化**：LLM 内心独白存入记忆，念头跨 tick 延续
-- [ ] **心情系统**：happiness 衰减 + 情境修正 + mood 注入 prompt
+- [ ] **心情系统**：happiness 衰减 + 情境修正 + mood 注入 prompt → 移至 Phase 7D Moodlet
 - [ ] **生存紧迫**：hunger/energy 极低时更强 prompt 警告 + 生物安全网
 
 ### 体验打磨
@@ -223,4 +223,98 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 ### 规模扩展
 - [ ] 更多角色（8-10）
 - [ ] 更多模型提供商
-- [ ] 角色成长机制
+- [x] 角色成长机制 → 移至 Phase 7
+
+---
+
+## 当前：角色系统深化（模拟人生启发）
+
+> **目标：让 AI 可以自由生活的世界。角色不只是"有性格的对话机器"，而是有工作、有成长、有人生目标、有社会关系的完整个体。**
+>
+> 借鉴模拟人生：技能成长、职业阶梯、关系类型化、愿望系统、Moodlet 情绪。
+> 详见 DESIGN.md §2.2-2.4。
+
+### Phase 7A：生活状态层（Life State）— 地基
+
+**目标**：角色知道自己在哪上班、有什么技能、追求什么。
+
+- [ ] `CharacterCard` 新增 `life` 段 + `LifeState` 类型
+  - occupation（可变）、workplace、age、income、skills、aspiration
+  - currentGoal / currentConcern（从反思涌现）
+- [ ] `CharacterState` 挂载 `life: LifeState`
+- [ ] `character/loader.ts` 加载 YAML `life` 段
+- [ ] 5 个角色 YAML 新增 `life` 段（含 workplace、初始技能、aspiration）
+- [ ] `prompt-builder.ts` 改造：
+  - 第一行从 `life` 读取（不再硬编码 age/occupation）
+  - 注入工作认知："你在海风面包坊当面包店学徒"
+  - 注入技能认知："你的烘焙技能还在学习基础"
+  - 注入抱负："你一直想找到一个能理解自己的人"
+  - 注入 currentGoal / currentConcern（如有）
+- [ ] `work` action 新增 skill_up effect
+- [ ] `simulation.ts` 处理 `skill_up` effect，更新 `life.skills`
+- [ ] 测试：types、loader、prompt-builder、skill growth
+- [ ] Live 半天验证：角色行为是否体现工作认知和目标感
+
+### Phase 7B：关系类型化 + 社交动作
+
+**目标**：关系有友谊/浪漫双轴，有告白/绝交等关系转变动作。
+
+- [ ] `relationships.ts` 改造：
+  - `level` → `friendship`（改名）
+  - 新增 `bond?: BondType`
+  - 新增 `RomanticFeelings` 单向存储
+- [ ] 新文件 `actions/relationship-actions.ts`：
+  - `confess`（告白）: friendship >= 30, romantic +30
+  - `invite_out`（邀请出去）: friendship >= 30
+  - `share_secret`（分享秘密）: friendship >= 60
+- [ ] `prompt-builder.ts`：关系深度影响社交认知描述
+  - 区分友谊/浪漫/bond 给出不同引导
+- [ ] 社交工具条件浮现：invite_out 只在 friend+ 时出现
+- [ ] 印象系统 + 关系类型联动
+- [ ] 测试：双轴关系、bond 转变、工具条件浮现
+- [ ] DB 持久化：romantic_feelings 表
+- [ ] Live 半天验证：观察关系类型是否影响对话风格
+
+### Phase 7C：愿望系统（从反思涌现）
+
+**目标**：角色有持续的内在驱动力，不只是"饿了就吃、困了就睡"。
+
+- [ ] `reflection.ts` 改造：
+  - prompt 新增"最想做的事"和"担心的事"
+  - `ReflectionResult` 新增 `wish` / `concern`
+- [ ] 反思结果回写 `life.currentGoal` / `life.currentConcern`
+- [ ] `prompt-builder.ts` 注入愿望/担忧到 user prompt
+- [ ] 职业晋升检查（每日反思时）：
+  - 技能达标 → 更新 occupation/income → 记忆"升职了"
+- [ ] 测试：反思愿望提取、职业晋升、prompt 注入
+- [ ] Live 一日验证：角色是否表现出目标驱动行为
+
+### Phase 7D：Moodlet 情绪叠加
+
+**目标**：情绪有原因、有时效、有层次，替代单一 happiness。
+
+- [ ] 新文件 `src/world/moodlets.ts`：
+  - `Moodlet` 类型（emotion/intensity/reason/expiry/source）
+  - `MoodletManager`：add/tick/getDominant/format
+- [ ] `CharacterState` 新增 `moodlets: Moodlet[]`
+- [ ] 行为效果产生 moodlet 而非直接改 happiness：
+  - talk → happy moodlet
+  - confess 被拒 → embarrassed moodlet
+  - 晋升 → confident moodlet
+  - 长期 social 低 → lonely moodlet
+- [ ] 需求级联：极低需求产生负面 moodlet + 行为效率影响
+- [ ] `prompt-builder.ts`：注入情绪列表 + 主导情绪
+- [ ] 测试：moodlet 生命周期、叠加、主导情绪、级联
+- [ ] Live 半天验证：情绪是否影响决策风格
+
+### 实施顺序与依赖
+
+```
+Phase 7A (Life State) ← 地基，所有后续依赖它
+    ↓
+Phase 7B (关系类型化) ← 依赖 7A 的 skills（social 技能影响关系）
+    ↓
+Phase 7C (愿望系统) ← 依赖 7A 的 life state + 7B 的关系事件
+    ↓
+Phase 7D (Moodlet) ← 依赖 7A-7C 的各种事件源
+```

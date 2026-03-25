@@ -45,7 +45,7 @@ console.log(`📋 加载了 ${characters.length} 个角色: ${characters.map((c)
 // --- 初始化世界 ---
 const world = new World(LOCATIONS, 24); // 从 06:00 开始 (tick 24)
 for (const card of characters) {
-  world.addCharacter(card.id, card.name, card.home);
+  world.addCharacter(card.id, card.name, card.home, undefined, card.life);
 }
 
 const eventBus = new EventBus();

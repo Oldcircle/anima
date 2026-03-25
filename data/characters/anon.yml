@@ -59,4 +59,14 @@ preferences:
   evening: "下班后精力会突然耗尽，一个人窝在沙发上刷手机到睡着"
   social: "主动和所有人搭话，但深夜独处时会怀疑这些关系是不是真的"
 
+life:
+  occupation: "咖啡馆店员"
+  workplace: "cafe"
+  age: 20
+  income: 12
+  skills:
+    social: 4
+    barista: 2
+  aspiration: "被真正地喜欢，而不是表演出来的"
+
 relationships: {}

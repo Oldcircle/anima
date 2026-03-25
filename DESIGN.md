@@ -182,7 +182,269 @@ preferences:
 - **说话有样例**。3-5 句真实台词，让 LLM 模仿语气
 - **习惯不是时间表**。"喜欢早起"不等于"06:00 一定起床"，心情和环境会改变决定
 
-### 2.2 需求系统
+### 2.2 生活状态系统（Life State）
+
+> **核心理念：角色 = 不变的灵魂 + 随时间演变的社会身份。**
+>
+> 灵感来源：模拟人生的角色不是一组静态标签，而是一个持续成长的个体——会换工作、交朋友、学技能、追求人生目标。Anima 的角色也应如此。
+
+#### 问题：角色卡全是静态的
+
+当前角色卡的 `age`、`occupation`、`home` 都是写死在 YAML 里的常量。灯永远是 19 岁面包店学徒，她不知道自己在哪上班，不会成长，没有人生目标。世界在运转，但角色的社会身份是冻结的。
+
+#### 解法：拆分 Identity 和 Life State
+
+**Identity（灵魂层，不变）：**
+- `personality`（core_traits / psychology / stress_response / speech）
+- `backstory`（过去的经历）
+- `appearance`（基本外貌）
+- `aspiration`（长期抱负——从性格中定义，极少变化）
+
+**Life State（生活层，可变）：**
+
+```typescript
+export interface LifeState {
+  occupation: string;              // "面包店学徒" → 可晋升为 "面包师"
+  workplace: string;               // "bakery" — 角色知道自己在哪上班
+  age: number;                     // 随游戏年递增
+  income: number;                  // 每次 work 的收入，随职业等级变化
+
+  // 技能（通过行为积累）
+  skills: Record<string, number>;  // { baking: 3.2, social: 1.5 }, 0~10
+
+  // 内在驱动力（从反思中涌现，非预设）
+  currentGoal?: string;            // "想学会做法棍"
+  currentConcern?: string;         // "这个月快没钱了"
+  aspiration: string;              // "找到能理解我的人"（从角色卡初始化）
+}
+```
+
+**角色卡 YAML 新增 `life` 段：**
+
+```yaml
+life:
+  occupation: "面包店学徒"
+  workplace: "bakery"
+  income: 8
+  skills:
+    baking: 1
+    observation: 3
+  aspiration: "找到能理解我的人"
+```
+
+**CharacterState 挂载 life：**
+
+```typescript
+export interface CharacterState {
+  // ... 现有字段
+  life: LifeState;
+}
+```
+
+#### Prompt 注入变化
+
+之前：
+```
+你是 高松灯，19 岁，面包店学徒。
+```
+
+之后：
+```
+你是 高松灯，19 岁。
+你在海风面包坊当面包店学徒，每天要去那里上班。
+你的烘焙技能还在学习基础（1/10）。
+你一直想找到一个能理解自己的人。
+最近在意的事：想学会做法棍但总是失败。
+```
+
+#### 技能成长
+
+角色执行相关行为时，技能自然增长：
+
+| 行为 | 对应技能 | 增长 |
+|------|---------|------|
+| work（在 bakery） | baking | +0.1/次 |
+| talk（成功对话） | social | +0.05/次 |
+| read（在 library） | knowledge | +0.1/次 |
+| hobby（写东西） | writing | +0.1/次 |
+
+技能影响：
+- **自我认知**：prompt 里 "你的烘焙技能很熟练了" vs "你还在学习基础"
+- **工作收入**：高技能 → 高收入
+- **职业晋升**：技能达标 → 触发晋升事件
+
+#### 职业阶梯
+
+地点 YAML 定义职业路径：
+
+```yaml
+# data/locations/bakery.yml
+career_track:
+  - level: 1
+    title: "面包店学徒"
+    income: 8
+    required_skill: { baking: 0 }
+  - level: 2
+    title: "面包师"
+    income: 15
+    required_skill: { baking: 5 }
+  - level: 3
+    title: "主厨"
+    income: 25
+    required_skill: { baking: 8 }
+```
+
+每天反思时检查：技能达标 → 自动晋升 → 更新 `life.occupation` + `life.income` → 写入记忆"今天被告知升职了"。
+
+#### 愿望与担忧（从反思涌现）
+
+不是预设愿望池，而是利用现有反思系统自动提炼：
+
+```
+反思 prompt 新增：
+4. 基于今天的经历，你现在最想做的一件事是什么？（一句话）
+5. 有什么让你担心的事吗？（一句话，没有就说"没有"）
+```
+
+反思结果回写 `life.currentGoal` 和 `life.currentConcern`，下一天 prompt 自动注入。**愿望是从记忆涌现的，不是预设的**，完全符合第一性原理。
+
+#### 长期抱负（Aspiration）
+
+每个角色有一个从性格定义的长期抱负，极少变化：
+
+| 角色 | 抱负 | 来源 |
+|------|------|------|
+| 灯 | "找到能理解我的人" | psychology: 害怕被当成怪人 |
+| 爱音 | "被真正地喜欢，而不是表演出来的" | psychology: 害怕不被喜欢 |
+| 祥子 | "靠自己的力量站住脚" | backstory: 前大小姐，用礼貌当盔甲 |
+| 睦 | "找到表达真实自己的方式" | core_traits: 沉默寡言，暗地弹吉他 |
+| 素世 | "成为不可或缺的人" | psychology: 控制欲藏在善意下 |
+
+抱负影响决策倾向——不是硬规则，是 prompt 里的一个方向感。
+
+### 2.3 关系类型化
+
+> **核心理念：关系不是一个数字，是一段有类型、有方向、有记忆的连接。**
+>
+> 借鉴模拟人生：友谊和浪漫是两条独立的轴，关系身份通过显式动作改变。
+
+#### 当前问题
+
+关系只有 `level`（0~100）和自动推算的 `type`（stranger→friend→best_friend）。不区分友情和爱情，没有"告白"、"绝交"等关系转变事件。
+
+#### 新关系模型
+
+```typescript
+export interface Relationship {
+  characterA: string;
+  characterB: string;
+  friendship: number;       // -100 ~ 100（原 level 改名）
+  type: RelationType;       // 从 friendship 自动算
+  bond?: BondType;          // 显式关系身份（通过动作改变）
+  history: string[];
+  lastInteraction: number;
+}
+
+// 单向浪漫感情（A→B 和 B→A 独立存储）
+export type RomanticFeelings = Map<string, Map<string, number>>;  // 0~100
+
+export type BondType =
+  | 'roommate'   // 室友
+  | 'partner'    // 恋人
+  | 'ex'         // 前任
+  | 'rival'      // 宿敌
+  | 'mentor'     // 师徒
+  | 'colleague'; // 同事
+```
+
+#### 关系转变动作
+
+新增工具：
+
+| 工具 | 前置条件 | 效果 | 风险 |
+|------|---------|------|------|
+| `confess` | friendship >= 30, 同地点 | 自身 romantic +30, 对方收到告白消息 | 可能被拒 |
+| `invite_out` | friendship >= 30 | 双方 social/happiness 提升 | — |
+| `share_secret` | friendship >= 60 | friendship +10 | 对方可能 gossip |
+| `propose_roommate` | friendship >= 50 | 设置 bond=roommate | 可能被拒 |
+| `break_up` | bond=partner | 清除 bond, 双方 happiness 大降 | 不可逆 |
+
+告白/求婚等不是机制判定成功/失败——消息送到对方信箱，对方在下个 tick 自主决定接受或拒绝。**关系转变也是涌现的**。
+
+#### Prompt 注入
+
+根据关系深度和类型给出不同的社交认知：
+
+```
+stranger:     "你对这个人还不了解，会保持礼貌的距离"
+friend:       "你和这个人已经熟了，可以轻松地开玩笑"
+close_friend: "你信任这个人，可以和她聊更私密的话题"
+有 romantic:  "看到这个人时心跳会加速一点"
+bond=partner: "这是你最重要的人"
+bond=rival:   "你和这个人之间有解不开的结"
+```
+
+### 2.4 Moodlet 情绪系统
+
+> **核心理念：情绪不是一个数值，是一叠有原因、有时效的感受。**
+>
+> 借鉴模拟人生 4 的 Moodlet 系统：多个临时情绪 buff 叠加，主导情绪 = 最强的那个。
+
+#### 当前问题
+
+`happiness` 是一个 0-100 的数值，角色不知道自己为什么开心或难过。
+
+#### 新模型
+
+```typescript
+export interface Moodlet {
+  id: string;
+  emotion: 'happy' | 'sad' | 'angry' | 'embarrassed'
+         | 'anxious' | 'confident' | 'lonely' | 'grateful';
+  intensity: number;        // 1-5
+  reason: string;           // "和爱音聊得很开心"
+  expiresAtTick: number;
+  source: 'social' | 'work' | 'need' | 'event' | 'memory';
+}
+```
+
+行为产生 moodlet 而非直接改 happiness：
+```typescript
+// talk 后
+{ emotion: "happy", intensity: 2, reason: "和人聊了天", duration: 8 ticks }
+
+// 告白被拒
+{ emotion: "embarrassed", intensity: 4, reason: "告白被拒绝了", duration: 24 ticks }
+
+// 晋升
+{ emotion: "confident", intensity: 3, reason: "升职了！", duration: 48 ticks }
+```
+
+#### Prompt 注入
+
+不再是 "happiness: 65"，而是：
+```
+你现在的心情：
+- 有点开心（刚才和爱音聊得不错）
+- 有点累（工作了一整天）
+你整体的情绪偏向：开心
+```
+
+主导情绪 = 最高 intensity 的 moodlet 类型。主导情绪影响角色的行为风格（angry 时更容易 argue，lonely 时更倾向社交）。
+
+#### 需求级联
+
+需求之间形成因果网络，而非独立衰减：
+
+```
+hunger 极低 → 产生 moodlet("anxious", "饿得慌")
+              → work 效率下降（收入减半）
+energy 极低 → 产生 moodlet("sad", "累到不想动")
+              → talk 时 manner 自动偏向疲惫
+长期 social 极低 → 产生 moodlet("lonely", intensity 4)
+```
+
+### 2.5 需求系统
 
 | 需求 | 衰减 | 满足方式 |
 |------|------|---------|

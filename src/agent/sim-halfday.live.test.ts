@@ -41,7 +41,7 @@ describeIf("半天 Live 模拟 (P0+P1)", () => {
 
     const world = new World(locations, 24); // 06:00
     for (const card of characters) {
-      world.addCharacter(card.id, card.name, card.home);
+      world.addCharacter(card.id, card.name, card.home, undefined, card.life);
     }
 
     const eventBus = new EventBus();

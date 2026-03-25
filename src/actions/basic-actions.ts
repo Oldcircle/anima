@@ -4,7 +4,7 @@
  * 约束检查在 handler 内：不满足前置条件 → success: false
  */
 
-import type { ActionDefinition, ActionResult, ActionContext } from "./types.js";
+import type { ActionDefinition, ActionResult, ActionContext, ActionEffect } from "./types.js";
 import { getConsumptionCost } from "../world/economy.js";
 
 export const eatAction: ActionDefinition = {
@@ -171,12 +171,17 @@ export const workAction: ActionDefinition = {
       return { description: "太累了，干不动活，需要先休息", effects: [], success: false };
     }
     const activity = (args.activity as string) ?? "工作";
+    const effects: ActionEffect[] = [
+      { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -15 },
+      { type: "need_change", targetId: ctx.characterId, field: "hunger", delta: -10 },
+    ];
+    // 工作时提升对应技能
+    if (ctx.workSkill) {
+      effects.push({ type: "skill_up", targetId: ctx.characterId, skill: ctx.workSkill, delta: 0.1 });
+    }
     return {
       description: `在工作：${activity}`,
-      effects: [
-        { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -15 },
-        { type: "need_change", targetId: ctx.characterId, field: "hunger", delta: -10 },
-      ],
+      effects,
       duration: 8,
     };
   },

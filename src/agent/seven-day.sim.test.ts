@@ -43,7 +43,7 @@ describe.skipIf(SKIP)("7-Day Live Simulation", () => {
 
     const world = new World(locations, 0);
     for (const card of characters) {
-      world.addCharacter(card.id, card.name, card.home);
+      world.addCharacter(card.id, card.name, card.home, undefined, card.life);
     }
     const eventBus = new EventBus();
 

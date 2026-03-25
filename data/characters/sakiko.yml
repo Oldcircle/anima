@@ -58,4 +58,14 @@ preferences:
   evening: "下班后如果确认四下无人，会偷偷去弹钢琴——这是她唯一放下伪装的时刻"
   social: "对不知道她过去的人随和，但被同情的目光会让她竖起所有的刺"
 
+life:
+  occupation: "咖啡馆兼职"
+  workplace: "cafe"
+  age: 19
+  income: 10
+  skills:
+    piano: 7
+    etiquette: 5
+  aspiration: "靠自己的力量站住脚"
+
 relationships: {}

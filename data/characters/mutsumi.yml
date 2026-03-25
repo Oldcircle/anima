@@ -59,4 +59,14 @@ preferences:
   evening: "关上花店后去地下室弹吉他，弹到手指发红才停"
   social: "不主动找人，但如果有人安静地陪她待着不说话，她会觉得舒服"
 
+life:
+  occupation: "花店店主"
+  workplace: "flower_shop"
+  age: 21
+  income: 18
+  skills:
+    botany: 5
+    guitar: 3
+  aspiration: "找到表达真实自己的方式"
+
 relationships: {}

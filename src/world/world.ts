@@ -3,6 +3,7 @@
  */
 
 import type { Location, Weather, WorldState, CharacterState, CharacterNeeds, InboxMessage, CharacterIntent } from "./types.js";
+import type { LifeState } from "../character/types.js";
 import { tickToGameTime, type GameTime } from "../core/tick-engine.js";
 
 const DEFAULT_NEEDS: CharacterNeeds = {
@@ -69,13 +70,14 @@ export class World {
 
   // --- 角色 ---
 
-  addCharacter(id: string, name: string, locationId: string, needs?: Partial<CharacterNeeds>): void {
+  addCharacter(id: string, name: string, locationId: string, needs?: Partial<CharacterNeeds>, life?: LifeState): void {
     const state: CharacterState = {
       id,
       name,
       locationId,
       needs: { ...DEFAULT_NEEDS, ...needs },
       gold: 100,
+      life,
       inbox: [],
     };
     this._characters.set(id, state);

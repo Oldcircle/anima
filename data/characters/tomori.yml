@@ -59,4 +59,14 @@ preferences:
   evening: "天气好的时候会去海边看星星，边看边在笔记本上写东西"
   social: "不主动找人说话，但如果有人耐心等她把话说完，她会记很久"
 
+life:
+  occupation: "面包店学徒"
+  workplace: "bakery"
+  age: 19
+  income: 8
+  skills:
+    baking: 1
+    observation: 3
+  aspiration: "找到能理解我的人"
+
 relationships: {}

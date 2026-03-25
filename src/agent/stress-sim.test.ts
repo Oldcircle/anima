@@ -466,7 +466,7 @@ function printDiagnostics(stats: SimStats, world: World, label: string): string[
 function createSimulation(llm: SmartMockLLM) {
   const world = new World(LOCATIONS, 24); // 从 06:00 开始
   for (const card of CHARACTERS) {
-    world.addCharacter(card.id, card.name, card.home);
+    world.addCharacter(card.id, card.name, card.home, undefined, card.life);
   }
   const eventBus = new EventBus();
   const sim = new Simulation(world, eventBus, {
