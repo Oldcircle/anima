@@ -15,6 +15,7 @@ tools:
     description: "上厕所"
     effects: { bladder: 100 }
     duration: 1
+    condition: "bladder < 70"
 
 atmosphere:
   morning: |

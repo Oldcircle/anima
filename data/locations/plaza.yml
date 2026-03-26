@@ -12,6 +12,10 @@ tools:
     description: "在长椅上坐一会儿，晒晒太阳"
     effects: { energy: 3, fun: 5 }
     duration: 2
+  - name: rest
+    description: "在长椅上坐着歇会儿"
+    effects: { energy: 5, fun: -2 }
+    duration: 1
 
 atmosphere:
   morning: |

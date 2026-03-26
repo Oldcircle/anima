@@ -59,6 +59,11 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     }
   }
 
+  // 2b2. 员工制作工具（在自己工作地点 + 有 shop 时，可以免费制作菜单上的东西）
+  if (workplace && ctx.location.id === workplace && ctx.location.shop && ctx.location.shop.length > 0) {
+    tools.push(buildPrepareTool(ctx.location.shop, ctx));
+  }
+
   // 2c. 商店工具（地点有 shop 时浮现 buy）
   if (ctx.location.shop && ctx.location.shop.length > 0) {
     const buyTool = buildBuyTool(ctx.location.shop, ctx);
@@ -103,10 +108,10 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     tools.push(buildCookTool(ctx));
   }
 
-  // 2h. read：在图书馆时无条件可用（图书馆有书）
-  if (ctx.location.id === "library") {
+  // 2h. read：在图书馆时无条件可用（图书馆有书）— 后续应迁移到 YAML
+  if (ctx.location.id === "library" && !tools.some(t => t.tool.name === "read")) {
     tools.push({
-      tool: { name: "read", description: "从书架上拿本书看。安静但久坐会累。", parameters: { type: "object", properties: { thought: { type: "string", description: "你在想什么" } } } },
+      tool: { name: "read", description: "从书架上拿本书看。安静但久坐会累，而且一个人看书会有点孤独。", parameters: { type: "object", properties: { thought: { type: "string", description: "你在想什么" } } } },
       handler: (_args, actx): ActionResult => ({
         description: "在图书馆看书",
         effects: [
@@ -450,6 +455,45 @@ function describeLocationTool(lt: LocationTool, ctx: ToolBuildContext): string {
 }
 
 // ── 物品工具 ──
+
+/**
+ * prepare 工具：员工可以从自家店铺菜单制作任意物品（免费），物品进入背包。
+ * 制作后可以 give 给别人，或自己 eat。
+ */
+function buildPrepareTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition {
+  const itemList = shop.map(s => s.name).join("、");
+
+  return {
+    tool: {
+      name: "prepare",
+      description: `制作店里的东西（你是这里的员工，不用花钱）。可以做：${itemList}`,
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么" },
+          item: { type: "string", description: `要做什么：${itemList}` },
+        },
+        required: ["item"],
+      },
+    },
+    handler: (args, actx): ActionResult => {
+      const rawItem = args.item as string;
+      const resolved = resolveItem(rawItem);
+      const shopItem = shop.find(s => s.name === rawItem || s.id === rawItem || (resolved && s.id === resolved.id));
+      if (!shopItem) {
+        return { description: `不知道怎么做${rawItem}`, effects: [], success: false };
+      }
+      return {
+        description: `做了一份${shopItem.name}`,
+        effects: [
+          { type: "need_change", targetId: actx.characterId, field: "energy", delta: -2 },
+        ],
+        duration: 1,
+        _buyItem: { defId: shopItem.id, price: 0 }, // 员工免费
+      } as ActionResult & { _buyItem: { defId: string; price: number } };
+    },
+  };
+}
 
 function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition | null {
   // 只列出买得起的物品

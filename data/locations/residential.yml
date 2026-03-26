@@ -11,10 +11,12 @@ _residential_tools: &home_tools
     description: "洗澡梳洗"
     effects: { hygiene: 100 }
     duration: 2
+    condition: "hygiene < 70"
   - name: use_toilet
     description: "上厕所"
     effects: { bladder: 100 }
     duration: 1
+    condition: "bladder < 70"
   - name: nap
     description: "小睡一会儿"
     effects: { energy: 25, fun: -5 }

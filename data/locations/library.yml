@@ -18,7 +18,11 @@ worker_tools:
     duration: 1
     income: 2
 
-tools: []
+tools:
+  - name: read
+    description: "从书架上拿本书看"
+    effects: { fun: 20, energy: -5, social: -3 }
+    duration: 4
 
 career_track:
   - level: 1

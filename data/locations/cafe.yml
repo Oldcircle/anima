@@ -34,6 +34,7 @@ tools:
     description: "上厕所"
     effects: { bladder: 100 }
     duration: 1
+    condition: "bladder < 70"
 
 career_track:
   - level: 1
