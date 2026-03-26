@@ -23,12 +23,7 @@ worker_tools:
     duration: 1
     income: 3
 
-tools:
-  - name: buy_flowers
-    description: "买一束花（10金币）"
-    effects: { fun: 10 }
-    cost: 10
-    duration: 1
+tools: []
 
 career_track:
   - level: 1

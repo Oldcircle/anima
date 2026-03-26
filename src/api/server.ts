@@ -13,6 +13,7 @@ import type { Simulation, TickSummary } from "../agent/simulation.js";
 import type { TickEngine } from "../core/tick-engine.js";
 import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime, tickToGameTime } from "../core/tick-engine.js";
+import * as itemRegistry from "../world/item-registry.js";
 import type { CharacterCard } from "../character/types.js";
 
 export interface ServerConfig {
@@ -273,5 +274,17 @@ function getCharactersState(sim: Simulation) {
       intensity: m.intensity,
       reason: m.reason,
     })) : undefined,
+    inventory: c.inventory && c.inventory.length > 0 ? c.inventory.map((i) => {
+      const def = itemRegistry.getItemDef(i.defId);
+      return {
+        defId: i.defId,
+        name: def?.name ?? i.defId,
+        type: def?.type,
+        quantity: i.quantity,
+        giftedBy: i.giftedBy,
+        memoryTag: i.memoryTag,
+        customDesc: i.customDesc,
+      };
+    }) : undefined,
   }));
 }

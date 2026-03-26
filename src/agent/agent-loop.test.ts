@@ -45,6 +45,10 @@ describe("Agent Loop", () => {
   });
 
   it("LLM 调用 cook 工具 → 更新饥饿值（在家做饭）", async () => {
+    // cook 需要食材
+    const { addToInventory } = await import("../world/item-registry.js");
+    addToInventory(world.getCharacter("tomori")!.inventory, "ingredients");
+
     mockLLM.enqueueResponse("肚子饿了，在家做饭吧", [
       { name: "cook", arguments: {} },
     ]);

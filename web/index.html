@@ -165,7 +165,7 @@
     let ws = null;
 
     const WEATHER = { sunny: '&#9728;&#65039; 晴', cloudy: '&#9729;&#65039; 多云', rainy: '&#127783;&#65039; 雨', stormy: '&#9928;&#65039; 暴风雨', snowy: '&#10052;&#65039; 雪' };
-    const NEED_LABEL = { hunger: '饱食', energy: '精力', social: '社交', happiness: '快乐', hygiene: '卫生' };
+    const NEED_LABEL = { hunger: '饱食', energy: '精力', social: '社交', fun: '娱乐', hygiene: '卫生', bladder: '生理' };
     const MEM_ICON = { event: '&#9733;', conversation: '&#128172;', thought: '&#128173;', observation: '&#128065;' };
     const needColor = v => v > 60 ? '#3fb950' : v > 30 ? '#d29922' : '#f85149';
     const relColor = v => v > 50 ? '#3fb950' : v > 20 ? '#58a6ff' : v > 0 ? '#8b949e' : '#f85149';
@@ -236,7 +236,7 @@
       el.innerHTML = S.characters.map(c => {
         const loc = S.locations?.find(l => l.id === c.locationId);
         const sel = c.id === selectedId ? 'selected' : '';
-        const bars = ['hunger','energy','social','happiness','hygiene'].map(k => {
+        const bars = ['hunger','energy','social','fun','hygiene','bladder'].map(k => {
           const v = c.needs?.[k] ?? 0;
           return `<div class="mini-bar"><div class="fill" style="width:${v}%;background:${needColor(v)}"></div></div>`;
         }).join('');
@@ -427,6 +427,19 @@
         for (const m of moodlets) {
           const stars = '&#9733;'.repeat(m.intensity);
           html += `<div style="margin:3px 0"><span class="moodlet-tag moodlet-${m.emotion}">${EMOTION_LABEL[m.emotion] || m.emotion} ${stars}</span> <span style="font-size:11px;color:#484f58">${escHtml(m.reason)}</span></div>`;
+        }
+        html += '</div>';
+      }
+
+      // 背包
+      const inventory = ch.inventory || [];
+      if (inventory.length > 0) {
+        html += '<div class="d-section"><div class="d-section-title">随身物品</div>';
+        for (const item of inventory) {
+          const qty = item.quantity > 1 ? ` &times;${item.quantity}` : '';
+          const from = item.giftedBy ? `<span style="color:#484f58;font-size:10px"> (${escHtml(item.giftedBy)}送的)</span>` : '';
+          const tag = item.memoryTag ? `<span style="color:#484f58;font-size:10px"> (${escHtml(item.memoryTag)})</span>` : '';
+          html += `<div style="margin:2px 0;font-size:12px">&#128188; ${escHtml(item.name || item.defId)}${qty}${from}${tag}</div>`;
         }
         html += '</div>';
       }

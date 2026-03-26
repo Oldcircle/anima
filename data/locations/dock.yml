@@ -4,10 +4,6 @@ type: nature
 summary: 钓鱼、看海、看渔船
 
 tools:
-  - name: fish
-    description: "在码头钓鱼"
-    effects: { fun: 10, energy: -5 }
-    duration: 8
   - name: explore
     description: "在码头逛逛，看看渔船和渔民"
     effects: { fun: 5, energy: -2 }
