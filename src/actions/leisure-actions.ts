@@ -74,26 +74,4 @@ export const drinkAction: ActionDefinition = {
   },
 };
 
-export const hobbyAction: ActionDefinition = {
-  tool: {
-    name: "hobby",
-    description: "做自己的爱好（园艺、下棋、写作、唱歌等）。",
-    parameters: {
-      type: "object",
-      properties: {
-        activity: { type: "string", description: "具体做什么" },
-      },
-      required: ["activity"],
-    },
-  },
-  handler: (args, ctx): ActionResult => ({
-    description: `在做爱好：${args.activity}`,
-    effects: [
-      { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 15 },
-      { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -8 },
-    ],
-    duration: 8, // 2 小时
-  }),
-};
-
-export const ALL_LEISURE_ACTIONS: ActionDefinition[] = [readAction, exploreAction, drinkAction, hobbyAction];
+export const ALL_LEISURE_ACTIONS: ActionDefinition[] = [readAction, exploreAction, drinkAction];

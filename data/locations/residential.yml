@@ -16,9 +16,9 @@ _residential_tools: &home_tools
     description: "自己做饭吃（免费）"
     effects: { hunger: 50, energy: 10, happiness: 3 }
     duration: 3
-  - name: hobby
-    description: "在家做自己喜欢的事"
-    effects: { happiness: 10 }
+  - name: rest
+    description: "在沙发上躺一会儿，放松一下"
+    effects: { energy: 5, happiness: 3 }
     duration: 2
 
 _residential_atmosphere: &residential
