@@ -17,32 +17,56 @@
 设计文档：DESIGN.md §2.5 和 §3.1（含新增 §3.1.1 提示词三层架构）
 实施计划：PLAN.md Phase 8A/8B
 
-### Phase 8A 进度：数据驱动需求系统
+### Phase 8A 进度：数据驱动需求系统 ✅
 
-- [x] DESIGN.md 更新（§2.5 需求系统完全重写）
-- [x] PLAN.md 更新（Phase 8A/8B 实施计划）
-- [ ] `src/world/need-definitions.ts`：NeedDefinition 接口 + 6 维定义
-- [ ] `src/world/types.ts`：CharacterNeeds 改为 Record<string, number>
-- [ ] `src/world/world.ts`：衰减循环改为通用遍历
-- [ ] `src/agent/prompt-builder.ts`：formatBodyFeelings 数据驱动化
-- [ ] 全模块 happiness → fun/moodlet 适配
-- [ ] 测试更新 + 构建验证
+- [x] `src/world/need-definitions.ts`：NeedDefinition 接口 + 6 维定义 + 感受化文案
+- [x] `src/world/types.ts`：CharacterNeeds 改为 Record<string, number>
+- [x] `src/world/world.ts`：衰减循环改为通用遍历
+- [x] `src/agent/prompt-builder.ts`：formatBodyFeelings 迁移到 need-definitions.ts
+- [x] 全模块 happiness → fun/moodlet 适配（30+ 文件）
+- [x] 数据库 needs_json 列适配
+- [x] 207 tests passing, build clean
 
-### Phase 8B 进度：工具系统重设计
+### Phase 8B 进度：工具系统重设计 ✅（核心完成）
 
-- [x] DESIGN.md 更新（§3.1 情境工具系统完全重写 + §3.1.1 提示词架构）
-- [ ] action effects 适配 6 维需求
-- [ ] 新增工具（use_toilet/nap/cook/journal/practice/craft/help_work/observe）
-- [ ] SocialModifier + observableState 机制
-- [ ] 状态影响行为质量 + 行为链追踪
-- [ ] tool-builder.ts 自然语言描述
-- [ ] 地点 YAML 更新
-- [ ] 测试 + Live 验证
+- [x] action effects 适配 6 维需求（所有行为有代价）
+- [x] 新增工具：use_toilet、nap、cook、journal、practice
+- [x] tool-builder.ts 自然语言动态描述（一句人话，不是数值表）
+- [x] 12 个地点 YAML 全面更新（happiness→fun、新工具、代价体系）
+- [x] system prompt 新增"世界的常识"段
+- [x] go_to 描述包含角色认知（"家——能休息、做饭、洗澡"）
+- [x] sim-reporter 适配动态需求维度
+- [x] Live 半天验证通过（5 test files, 9 tests, 251s）
+- [ ] SocialModifier 自动应用（设计完成，实现留后续）
+- [ ] observableState 字段（设计完成，实现留后续）
+- [ ] 状态影响行为质量 + 行为链追踪（设计完成，实现留后续）
+
+### Live 半天验证结果（2026-03-26）
+
+日志：`logs/sim-halfday-20260326-192416.md`
+
+| 角色 | 饿 | 力 | 社 | 净 | 乐 | 厕 | 行为次数 |
+|------|-----|-----|-----|-----|-----|-----|---------|
+| 爱音 | 88 | 79 | 100 | 86 | 44 | 94 | 23 |
+| 睦 | 70 | 97 | 97 | 72 | 73 | 28 | 22 |
+| 祥子 | 73 | 48 | 42 | 92 | 39 | 99 | 17 |
+| 素世 | 73 | 44 | 55 | 72 | 3 | 88 | 21 |
+| 灯 | 74 | 87 | 29 | 62 | 24 | 84 | 20 |
+
+亮点：
+- **bladder 在运作**：睦 bladder=28（一直工作没上厕所），角色自然使用 use_toilet
+- **fun 驱动行为**：素世 fun=3（图书馆工作一整天）、灯 fun=24，会驱动寻找娱乐
+- **印象精准**：6 条——爱音→素世「优雅淑女」、素世→爱音「阳光自来熟」、祥子→睦「沉默观察者」
+- **对话自然**：灯和爱音交换面包/三明治、睦寡言特征完美、祥子保持距离感
+- **新工具被自然使用**：use_toilet、cook、nap 都出现在行为日志中
+- **argue 工具在 fun 低时自然浮现**（但未被选择——角色选择更合理的行为）
 
 ### 下次继续入口
 
-1. 从 Phase 8A 开始实现：`src/world/need-definitions.ts` → 类型重构 → 衰减重构 → prompt 重构
-2. 然后 Phase 8B：action effects 重映射 → 新工具 → tool-builder 重构
+1. **SocialModifier 实现**：行为效果根据同地点有人自动调整
+2. **observableState**：行为产生可观察描述，喂给 observation 系统
+3. **行为链追踪**：检测连续行为模式 → 触发 moodlet（过劳/孤僻/宿醉）
+4. **fun 平衡调整**：work 的 fun -10 可能过重，素世连续工作 fun 掉到 3
 
 ### 前置：Phase 7A-7D 全部完成 ✅
 
