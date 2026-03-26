@@ -18,6 +18,25 @@
 设计文档：DESIGN.md §2.5 物品系统
 实施计划：PLAN.md Phase 9A-9E
 
+### Phase 9 进度
+
+- [x] **9A 物品基础**：ItemDef/ItemInstance 类型、30+ 基础物品定义（6 类）、背包操作函数、19 个测试
+- [x] **9B 物品工具 + 集成**：buy/use/give 工具、tool-builder 根据背包启用工具（notebook→journal 等）、prompt 注入随身物品
+- [x] **9B 商店系统**：6 个商业地点新增 shop 段、杂货店卖工具和日用品
+- [x] **9C 工作角色工具**：4 个地点新增 worker_tools、tool-builder 区分员工/客人
+- [x] **9D 角色起始物品**：4 个角色 YAML 新增 starting_items（灯:笔记本、睦:吉他等）
+- [x] **9E 行为链追踪**：5 种模式检测（过劳/孤僻/无聊/宿醉/社交疲惫）→ moodlet 触发
+- [x] **DB 持久化**：inventory_json + recent_actions_json 列
+- [x] agent-loop 处理 _buyItem/_useItem/_giveItem 效果
+- [ ] Live 半天验证（运行中）
+- [ ] 旧工具完全迁移（eat/drink/give_gift 还保留在地点 YAML 中，和 buy/use 共存）
+
+### 下次继续入口
+
+1. **旧工具迁移完成**：从地点 YAML 移除旧 eat/drink 工具，完全用 buy+use 替代
+2. **Live 测试结果分析**：根据行为日志调整参数
+3. **save-load 适配**：inventory/recentActions 读档恢复
+
 ### Phase 8A 进度：数据驱动需求系统 ✅
 
 - [x] `src/world/need-definitions.ts`：NeedDefinition 接口 + 6 维定义 + 感受化文案
