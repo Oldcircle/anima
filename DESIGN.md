@@ -444,7 +444,201 @@ energy 极低 → 产生 moodlet("sad", "累到不想动")
 长期 social 极低 → 产生 moodlet("lonely", intensity 4)
 ```
 
-### 2.5 需求系统（数据驱动，可扩展）
+### 2.5 物品系统
+
+> **核心理念：物品不是装备，而是角色生活、关系和事件的媒介。**
+>
+> 物品是"可携带的可供性"。你能做什么不只取决于你在哪，还取决于你身上有什么。
+> 灯有笔记本才能写日记，睦有吉他才能练琴，你有食材才能做饭，你买了花才能送花。
+
+#### 物品在世界中的 5 个作用
+
+| 作用 | 举例 | 为什么重要 |
+|------|------|-----------|
+| **表达角色身份** | 灯的笔记本、睦的吉他 | 让角色有生活痕迹 |
+| **触发互动** | 借东西没还、送蛋糕、丢了围巾 | 物品推动情节 |
+| **承载记忆** | "这束花是爱音送的"、"海边捡的贝壳" | 物品是记忆的物理载体 |
+| **连接地点** | 面包店有面包、花店有花材、海边能捡贝壳 | 地点产出资源 |
+| **形成轻度经济** | 买卖日用品、送礼、交换 | 经济活动自然涌现 |
+
+#### 6 类物品
+
+| 类型 | 含义 | 举例 | 作用 |
+|------|------|------|------|
+| **consumable** | 用一次就没了 | 面包、咖啡、便当 | use → 消耗 → 效果生效 |
+| **tool** | 反复使用，启用行为 | 笔记本、吉他、鱼竿 | 持有就解锁对应工具 |
+| **gift** | 主要用途是送人 | 花束、手工饼干、信 | give → 对方收到，有情感价值 |
+| **material** | 被其他行为消耗 | 食材、花材 | cook 消耗食材，craft 消耗花材 |
+| **keepsake** | 不消耗，有纪念意义 | 收到的礼物、捡的贝壳 | 存在背包里影响 prompt |
+| **quest** | 事件驱动 | 遗失的钥匙、委托信 | 推动小镇事件 |
+
+#### 物品的 4 个存在层
+
+| 层 | 含义 | 例子 |
+|----|------|------|
+| **随身** | 角色身上带着的 | 笔记本、钱包、刚买的面包 |
+| **家中** | 角色家里存放的 | 食材、收藏、纪念品 |
+| **工作地点** | 所在商店/机构的物品 | 面包店的面粉、图书馆的书 |
+| **公共** | 放在世界里的物品 | 广场公告、海边石凳上的书、失物 |
+
+第一版实现**随身**层。家中/工作地点/公共层后续扩展。
+
+#### 数据结构
+
+```typescript
+/** 物品定义（共享，从 YAML 加载） */
+interface ItemDef {
+  id: string;              // "bread_red_bean", "notebook"
+  name: string;            // "红豆面包"
+  type: 'consumable' | 'tool' | 'gift' | 'material' | 'keepsake' | 'quest';
+  description?: string;    // "灯最拿手的面包，红豆馅甜而不腻"
+  /** consumable: 使用时的需求效果 */
+  effects?: Record<string, number>;
+  /** tool: 持有时解锁的工具 ID */
+  enables?: string[];
+  /** material: 被哪些行为消耗 */
+  usedBy?: string[];
+  /** 金币价值（买/卖） */
+  value?: number;
+  /** 可堆叠 */
+  stackable?: boolean;
+  /** 标签（用于事件触发和 prompt 描述） */
+  traits?: string[];       // ["romantic", "handmade", "fragile"]
+}
+
+/** 物品实例（每个角色持有的具体物品） */
+interface ItemInstance {
+  defId: string;           // 引用 ItemDef.id
+  quantity: number;        // 堆叠数量（不可堆叠的 = 1）
+  /** 谁给的（gift/keepsake 有情感价值） */
+  giftedBy?: string;
+  /** 什么时候获得的 */
+  obtainedTick?: number;
+  /** 自定义描述（手工制作、LLM 生成的特殊描述） */
+  customDesc?: string;
+  /** 记忆标签（"春种节那天送的", "第一次见面时买的"） */
+  memoryTag?: string;
+}
+
+// CharacterState 新增
+inventory: ItemInstance[];     // 随身物品
+```
+
+#### 物品流转（核心动词）
+
+物品的生命力在于流转。第一版支持的流转动作：
+
+| 动词 | 工具 | 效果 |
+|------|------|------|
+| **买** | `buy` | 花钱，物品进入背包 |
+| **用** | `use` | consumable 消耗并生效；tool 触发对应行为 |
+| **给** | `give` | 物品从自己背包转移到对方背包，对方记住是谁给的 |
+| **丢/放下** | `drop` | 物品离开背包，留在当前地点（成为公共物品） |
+| **捡** | `pick_up` | 拿起地点上的物品 |
+| **制作** | `craft` | 消耗 material，产出新物品 |
+
+后续扩展：借、还、偷、卖、修。
+
+#### 地点商店
+
+商业地点在 YAML 中定义可购买的物品：
+
+```yaml
+# bakery.yml
+shop:
+  - id: bread_plain
+    name: 白面包
+    price: 5
+  - id: bread_red_bean
+    name: 红豆面包
+    price: 8
+  - id: croissant
+    name: 可颂
+    price: 10
+```
+
+`buy` 工具在有 shop 的地点自动浮现，LLM 看到具体物品和价格。
+
+#### 角色初始物品
+
+角色卡 YAML 新增 `starting_items`：
+
+```yaml
+# tomori.yml
+starting_items:
+  - notebook    # 灯总是带着笔记本
+
+# mutsumi.yml
+starting_items:
+  - guitar      # 睦有一把吉他
+```
+
+#### 物品启用行为（item → tool）
+
+```
+背包有 notebook → journal 工具浮现
+背包有 guitar → practice_music 工具浮现
+背包有 fishing_rod + 在海边 → fish 工具浮现
+背包有 ingredients + 在家 → cook 工具浮现
+```
+
+没有笔记本就不能写日记。这不是限制，是世界的真实——你不能凭空做事。
+
+#### Prompt 注入
+
+随身物品注入 user prompt：
+
+```
+## 你身上带着的东西
+- 笔记本
+- 一个红豆面包
+- 爱音送的花束（花瓣有点蔫了）
+```
+
+keepsake 带记忆标签时，LLM 可能在决策时想起相关的人。
+
+#### 工作系统的变化
+
+有了物品，工作不再是 8 tick 的黑盒。员工每 tick 从 worker_tools 中选择具体动作：
+
+```yaml
+# bakery.yml
+worker_tools:
+  - name: knead_dough
+    description: "揉面团"
+    effects: { energy: -3, fun: -1 }
+    duration: 2
+  - name: bake
+    description: "烤面包"
+    effects: { energy: -2 }
+    duration: 3
+    income: 3
+  - name: serve_customer
+    description: "招呼客人"
+    effects: { energy: -2, social: 3 }
+    duration: 1
+    income: 3
+```
+
+tool-builder 区分员工和客人：在自己工作地点 → 看到 worker_tools；是客人 → 看到 buy(shop items)。
+
+#### 与第一性原理的对齐
+
+- 物品是世界状态的一部分，不是特殊机制
+- buy/use/give 和 eat/sleep/talk 一样是普通工具
+- 物品通过改变可用工具来影响行为（affordance）
+- 收到礼物 → keepsake 记住是谁给的 → 影响印象和记忆
+- 玩家也有背包，用同样的工具
+
+#### 第一版不做的
+
+- 复杂合成树 / 配方系统
+- 耐久度 / 品质等级
+- 大量物品数据库（先 30-50 个基础物品）
+- 家中物品 / 公共物品层（先只做随身）
+- AI 动态生成新物品类型（先用固定物品库）
+
+### 2.6 需求系统（数据驱动，可扩展）
 
 > **核心理念：需求创造行为动机的多样性。每个维度都应该驱动角色去做不同的事。**
 >

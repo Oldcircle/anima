@@ -399,3 +399,60 @@ Phase 7D (Moodlet) ← 依赖 7A-7C 的各种事件源
 - [ ] 测试更新
 - [ ] `pnpm build` + `pnpm test` 通过
 - [ ] Live 半天验证：行为多样性和决策质量
+
+---
+
+## 当前：Phase 9 — 物品系统 + 行为链追踪
+
+> **目标：物品不是装备，是角色生活、关系和事件的媒介。让世界有物质基础。**
+>
+> 详见 DESIGN.md §2.5 物品系统。
+
+### Phase 9A：物品基础
+
+- [ ] 新建 `src/world/item-types.ts`：ItemDef + ItemInstance 类型
+- [ ] 新建 `src/world/item-registry.ts`：物品定义加载器
+- [ ] 新建 `data/items.yml`：30-50 个基础物品定义（6 类）
+- [ ] `CharacterState` 新增 `inventory: ItemInstance[]`
+- [ ] `World` 新增物品管理方法（addItem/removeItem/transferItem）
+- [ ] DB 持久化：`inventory_json` 列
+- [ ] 角色卡 YAML 新增 `starting_items` 段
+- [ ] `character/loader.ts` 加载 starting_items
+- [ ] 测试：物品类型、增删改查、持久化
+
+### Phase 9B：物品工具 + tool-builder 集成
+
+- [ ] `buy` 工具：在有 shop 的地点浮现，列出可购买物品
+- [ ] `use` 工具：背包有 consumable 时浮现（吃/喝/使用）
+- [ ] `give` 工具：背包非空 + 附近有人时浮现
+- [ ] `drop` 工具：放下物品到当前地点
+- [ ] `pick_up` 工具：当前地点有公共物品时浮现
+- [ ] tool-builder 根据背包物品启用工具（notebook→journal, guitar→practice）
+- [ ] prompt-builder 注入随身物品描述（含 keepsake 记忆标签）
+- [ ] 地点 YAML 新增 `shop` 段（面包店、咖啡馆、花店、杂货店、酒吧）
+
+### Phase 9C：工作角色工具
+
+- [ ] 地点 YAML 新增 `worker_tools` 段
+- [ ] tool-builder 区分员工/客人工具集
+- [ ] 删除旧 `work` 黑盒（8 tick 一次性）
+- [ ] 收入改为通过 serve/make 等具体动作逐步获得
+- [ ] 员工工具含 produces/consumes（做咖啡、烤面包）
+
+### Phase 9D：旧工具迁移
+
+- [ ] 删除抽象 `eat`/`drink`/`give_gift` 工具
+- [ ] `cook` 改为消耗 `ingredients`，产出食物到背包
+- [ ] `fish` 改为需要 `fishing_rod`
+- [ ] `journal` 改为需要 `notebook`
+- [ ] `practice`（音乐）改为需要 `guitar` 等乐器
+
+### Phase 9E：行为链追踪
+
+- [ ] `CharacterState.recentActions: { actionId: string; tick: number }[]`
+- [ ] 模式检测逻辑（每 tick 执行）
+- [ ] 触发 moodlet：过劳（连续工作 12+ tick）
+- [ ] 触发 moodlet：孤僻（无社交 8+ tick）
+- [ ] 触发 moodlet：宿醉（drink_alcohol 2+次/天）
+- [ ] 触发 moodlet：无聊（连续 idle 4+ tick）
+- [ ] 测试 + Live 验证

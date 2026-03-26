@@ -71,6 +71,8 @@ export class World {
       life,
       moodlets: [],
       inbox: [],
+      inventory: [],
+      recentActions: [],
     };
     this._characters.set(id, state);
 

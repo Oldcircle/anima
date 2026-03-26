@@ -45,6 +45,10 @@ export interface Location {
   tools?: LocationTool[];
   /** 职业阶梯（从 YAML 加载） */
   careerTrack?: CareerLevel[];
+  /** 商店物品（从 YAML 加载） */
+  shop?: import("./item-types.js").ShopItem[];
+  /** 员工专属工具（从 YAML 加载） */
+  workerTools?: LocationTool[];
 }
 
 /** 临时情绪效果（Moodlet） */
@@ -107,4 +111,8 @@ export interface CharacterState {
   currentIntent?: CharacterIntent;
   /** 消息信箱：其他角色发来的消息 */
   inbox: InboxMessage[];
+  /** 随身物品 */
+  inventory: import("./item-types.js").ItemInstance[];
+  /** 最近行为记录（用于行为链追踪） */
+  recentActions: { actionId: string; tick: number }[];
 }
