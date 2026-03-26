@@ -1,10 +1,50 @@
 # Anima — 开发状态
 
-## 当前状态：角色系统深化 — Phase 7A 开发中
+## 当前状态：Phase 8 — 需求系统 + 工具系统重设计
 
-**分支**：`feature/life-state-system`
+**分支**：`feature/needs-tools-redesign`
 
-**最后更新**：2026-03-25
+**最后更新**：2026-03-26
+
+### Phase 8 概述
+
+需求系统和工具系统的深度重设计。目标：让角色从"看数据选菜单"变为"感受身体+感知环境→自然行动"。
+
+两大改造：
+1. **需求系统**：5 维固定 struct → 6 维数据驱动（删 happiness，加 fun/bladder）
+2. **工具系统**：每个行为有代价、有 solo/social 变体、有后果涟漪。工具描述是人话不是数值表
+
+设计文档：DESIGN.md §2.5 和 §3.1（含新增 §3.1.1 提示词三层架构）
+实施计划：PLAN.md Phase 8A/8B
+
+### Phase 8A 进度：数据驱动需求系统
+
+- [x] DESIGN.md 更新（§2.5 需求系统完全重写）
+- [x] PLAN.md 更新（Phase 8A/8B 实施计划）
+- [ ] `src/world/need-definitions.ts`：NeedDefinition 接口 + 6 维定义
+- [ ] `src/world/types.ts`：CharacterNeeds 改为 Record<string, number>
+- [ ] `src/world/world.ts`：衰减循环改为通用遍历
+- [ ] `src/agent/prompt-builder.ts`：formatBodyFeelings 数据驱动化
+- [ ] 全模块 happiness → fun/moodlet 适配
+- [ ] 测试更新 + 构建验证
+
+### Phase 8B 进度：工具系统重设计
+
+- [x] DESIGN.md 更新（§3.1 情境工具系统完全重写 + §3.1.1 提示词架构）
+- [ ] action effects 适配 6 维需求
+- [ ] 新增工具（use_toilet/nap/cook/journal/practice/craft/help_work/observe）
+- [ ] SocialModifier + observableState 机制
+- [ ] 状态影响行为质量 + 行为链追踪
+- [ ] tool-builder.ts 自然语言描述
+- [ ] 地点 YAML 更新
+- [ ] 测试 + Live 验证
+
+### 下次继续入口
+
+1. 从 Phase 8A 开始实现：`src/world/need-definitions.ts` → 类型重构 → 衰减重构 → prompt 重构
+2. 然后 Phase 8B：action effects 重映射 → 新工具 → tool-builder 重构
+
+### 前置：Phase 7A-7D 全部完成 ✅
 
 ### 背景
 

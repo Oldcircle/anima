@@ -18,8 +18,9 @@ export const readAction: ActionDefinition = {
   handler: (args, ctx): ActionResult => ({
     description: `阅读${args.book ?? "一本书"}`,
     effects: [
-      { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 10 },
+      { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 10 },
       { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -3 },
+      { type: "need_change", targetId: ctx.characterId, field: "social", delta: -3 },
     ],
     duration: 4, // 1 小时
   }),
@@ -39,7 +40,7 @@ export const exploreAction: ActionDefinition = {
   handler: (args, ctx): ActionResult => ({
     description: `散步探索：${args.area ?? "四处走走"}`,
     effects: [
-      { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 8 },
+      { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 8 },
       { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -5 },
     ],
     duration: 4,
@@ -65,13 +66,60 @@ export const drinkAction: ActionDefinition = {
     return {
       description: `喝了${args.beverage ?? "一杯饮料"}`,
       effects: [
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 8 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 8 },
         { type: "need_change", targetId: ctx.characterId, field: "hunger", delta: 5 },
         { type: "need_change", targetId: ctx.characterId, field: "energy", delta: 5 },
+        { type: "need_change", targetId: ctx.characterId, field: "bladder", delta: -15 },
       ],
       duration: 2,
     };
   },
 };
 
-export const ALL_LEISURE_ACTIONS: ActionDefinition[] = [readAction, exploreAction, drinkAction];
+export const journalAction: ActionDefinition = {
+  tool: {
+    name: "journal",
+    description: "写日记或随笔，整理心情。独处时效果更好。",
+    parameters: {
+      type: "object",
+      properties: {
+        topic: { type: "string", description: "写什么（可选）" },
+      },
+    },
+  },
+  handler: (args, ctx): ActionResult => ({
+    description: `写日记：${(args.topic as string) ?? "记录今天的事"}`,
+    effects: [
+      { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 8 },
+      { type: "need_change", targetId: ctx.characterId, field: "social", delta: -2 },
+    ],
+    duration: 2,
+  }),
+};
+
+export const practiceAction: ActionDefinition = {
+  tool: {
+    name: "practice",
+    description: "练习某项技能（乐器、绘画、手工等）。消耗精力但很有成就感。",
+    parameters: {
+      type: "object",
+      properties: {
+        skill: { type: "string", description: "练习什么（如 '吉他', '画画'）" },
+      },
+    },
+  },
+  handler: (args, ctx): ActionResult => {
+    const skill = (args.skill as string) ?? "技能";
+    return {
+      description: `练习${skill}`,
+      effects: [
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 10 },
+        { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -8 },
+        { type: "skill_up", targetId: ctx.characterId, skill, delta: 0.1 },
+      ],
+      duration: 4,
+    };
+  },
+};
+
+export const ALL_LEISURE_ACTIONS: ActionDefinition[] = [readAction, exploreAction, drinkAction, journalAction, practiceAction];

@@ -46,13 +46,13 @@ const mariaCard: CharacterCard = {
 
 const sakikoState: CharacterState = {
   id: "sakiko", name: "丰川祥子", locationId: "cafe",
-  needs: { hunger: 60, energy: 70, social: 35, happiness: 50, hygiene: 80 },
+  needs: { hunger: 60, energy: 70, social: 35, fun: 50, hygiene: 80, bladder: 90 },
   gold: 45, moodlets: [], inbox: [],
 };
 
 const mariaState: CharacterState = {
   id: "mutsumi", name: "要乐奏", locationId: "cafe",
-  needs: { hunger: 50, energy: 80, social: 60, happiness: 70, hygiene: 90 },
+  needs: { hunger: 50, energy: 80, social: 60, fun: 70, hygiene: 90, bladder: 90 },
   gold: 62, moodlets: [], inbox: [],
 };
 
@@ -187,14 +187,14 @@ describe("buildConversationPrompt", () => {
   });
 
   it("includes body feeling hints when needs are low", () => {
-    const lowState = { ...sakikoState, needs: { ...sakikoState.needs, social: 15, happiness: 20 } };
+    const lowState = { ...sakikoState, needs: { ...sakikoState.needs, social: 15, fun: 20 } };
     const prompt = buildConversationPrompt({
       card: sakikoCard, state: lowState,
       partnerCard: mariaCard, partnerState: mariaState,
       history, gameTime, locationName: "咖啡馆",
     });
 
-    expect(prompt).toContain("心情不太好");
+    expect(prompt).toContain("觉得没什么意思");
   });
 
   it("includes talk target ID reminder", () => {

@@ -105,4 +105,18 @@ export function generateNeedMoodlets(state: CharacterState, currentTick: number)
   if (needs.energy < 15) {
     addMoodlet(state, "sad", 3, "累到不想动", 4, "need", currentTick);
   }
+
+  // fun 低 → sad
+  if (needs.fun !== undefined && needs.fun < 15) {
+    addMoodlet(state, "sad", 3, "生活好无聊", 4, "need", currentTick);
+  } else if (needs.fun !== undefined && needs.fun < 25) {
+    addMoodlet(state, "sad", 1, "好像很久没做好玩的事了", 4, "need", currentTick);
+  }
+
+  // bladder 低 → anxious
+  if (needs.bladder !== undefined && needs.bladder < 15) {
+    addMoodlet(state, "anxious", 4, "快憋不住了", 3, "need", currentTick);
+  } else if (needs.bladder !== undefined && needs.bladder < 25) {
+    addMoodlet(state, "anxious", 2, "需要去一趟洗手间", 3, "need", currentTick);
+  }
 }

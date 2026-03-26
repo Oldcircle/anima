@@ -9,7 +9,7 @@ import type { CharacterState } from "./types.js";
 function makeState(overrides: Partial<CharacterState> = {}): CharacterState {
   return {
     id: "tomori", name: "高松灯", locationId: "home_tomori",
-    needs: { hunger: 80, energy: 70, social: 60, happiness: 70, hygiene: 80 },
+    needs: { hunger: 80, energy: 70, social: 60, fun: 70, hygiene: 80, bladder: 90 },
     gold: 100, moodlets: [], inbox: [],
     ...overrides,
   };
@@ -118,14 +118,14 @@ describe("formatMoodlets", () => {
 
 describe("generateNeedMoodlets", () => {
   it("社交极低时产生 lonely moodlet", () => {
-    const state = makeState({ needs: { hunger: 80, energy: 70, social: 10, happiness: 70, hygiene: 80 } });
+    const state = makeState({ needs: { hunger: 80, energy: 70, social: 10, fun: 70, hygiene: 80, bladder: 90 } });
     generateNeedMoodlets(state, 100);
     expect(state.moodlets.some((m) => m.emotion === "lonely")).toBe(true);
     expect(state.moodlets.find((m) => m.emotion === "lonely")!.intensity).toBe(4);
   });
 
   it("饥饿极低时产生 anxious moodlet", () => {
-    const state = makeState({ needs: { hunger: 10, energy: 70, social: 60, happiness: 70, hygiene: 80 } });
+    const state = makeState({ needs: { hunger: 10, energy: 70, social: 60, fun: 70, hygiene: 80, bladder: 90 } });
     generateNeedMoodlets(state, 100);
     expect(state.moodlets.some((m) => m.emotion === "anxious")).toBe(true);
   });

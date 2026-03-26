@@ -44,9 +44,10 @@ describe("World", () => {
 
     const tomoriAfter = world.getCharacter("tomori")!.needs;
     expect(tomoriAfter.hunger).toBe(tomoriBefore.hunger - 2);
-    expect(tomoriAfter.energy).toBe(tomoriBefore.energy - 0.5);
+    expect(tomoriAfter.energy).toBe(tomoriBefore.energy - 1);
     expect(tomoriAfter.social).toBe(tomoriBefore.social - 1);
-    expect(tomoriAfter.happiness).toBe(tomoriBefore.happiness); // 快乐不自动衰减
+    expect(tomoriAfter.fun).toBe(tomoriBefore.fun - 1.5);
+    expect(tomoriAfter.bladder).toBe(tomoriBefore.bladder - 1.5);
     expect(tomoriAfter.hygiene).toBe(tomoriBefore.hygiene - 0.5);
   });
 

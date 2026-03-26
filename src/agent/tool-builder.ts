@@ -68,7 +68,7 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
         return {
           description: `安慰${target}：${args.words ?? "一切都会好起来的"}`,
           effects: [
-            { type: "need_change", targetId: target, field: "happiness", delta: 15 },
+            { type: "need_change", targetId: target, field: "fun", delta: 15 },
             { type: "need_change", targetId: target, field: "social", delta: 10 },
             { type: "need_change", targetId: actx.characterId, field: "social", delta: 8 },
           ],
@@ -77,8 +77,12 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
       },
     });
 
-    // argue 只在心情低时浮现
-    if (ctx.state.needs.happiness < 30) {
+    // argue 只在有负面主导情绪或 fun 极低时浮现
+    const dominantMood = ctx.state.moodlets?.length
+      ? [...ctx.state.moodlets].sort((a, b) => b.intensity - a.intensity)[0]
+      : undefined;
+    const hasNegativeMood = dominantMood && ["sad", "angry", "anxious"].includes(dominantMood.emotion);
+    if (hasNegativeMood || (ctx.state.needs.fun !== undefined && ctx.state.needs.fun < 30)) {
       tools.push({
         tool: {
           name: "argue",
@@ -100,9 +104,11 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
           return {
             description: `和${target}吵了起来：${args.reason}`,
             effects: [
-              { type: "need_change", targetId: actx.characterId, field: "happiness", delta: -15 },
-              { type: "need_change", targetId: target, field: "happiness", delta: -15 },
+              { type: "need_change", targetId: actx.characterId, field: "fun", delta: -15 },
+              { type: "need_change", targetId: target, field: "fun", delta: -15 },
               { type: "need_change", targetId: actx.characterId, field: "social", delta: 5 },
+              { type: "mood_change", targetId: actx.characterId, value: "angry" },
+              { type: "mood_change", targetId: target, value: "angry" },
             ],
             duration: 2,
           };
@@ -142,7 +148,8 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
         return {
           description: `向路人乞讨，得到了 ${amount} 金币`,
           effects: [
-            { type: "need_change", targetId: actx.characterId, field: "happiness", delta: -10 },
+            { type: "need_change", targetId: actx.characterId, field: "fun", delta: -10 },
+            { type: "mood_change", targetId: actx.characterId, value: "sad" },
           ],
           duration: 1,
           _begAmount: amount,

@@ -66,13 +66,14 @@ export interface WorldState {
   locations: Map<string, Location>;
 }
 
-export interface CharacterNeeds {
-  hunger: number;    // 0-100, 低 = 饿
-  energy: number;    // 0-100, 低 = 累
-  social: number;    // 0-100, 低 = 孤独
-  happiness: number; // 0-100
-  hygiene: number;   // 0-100
-}
+/**
+ * CharacterNeeds — 数据驱动的需求系统。
+ * 键名对应 NeedDefinition.id（hunger/energy/social/hygiene/fun/bladder）。
+ * 值域 0-100，低 = 该需求未被满足。
+ *
+ * 不再是固定的 interface——维度由 need-definitions.ts 配置决定。
+ */
+export type CharacterNeeds = Record<string, number>;
 
 export interface InboxMessage {
   fromId: string;

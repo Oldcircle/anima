@@ -22,7 +22,7 @@ export interface RandomEvent {
   };
   /** 对被影响角色的效果 */
   effects: Array<{
-    field: "hunger" | "energy" | "social" | "happiness" | "hygiene";
+    field: "hunger" | "energy" | "social" | "fun" | "hygiene";
     delta: number;
   }>;
   /** 影响范围: self=只影响一个人, location=影响同地点所有人 */
@@ -38,7 +38,7 @@ export const RANDOM_EVENTS: RandomEvent[] = [
     description: "在路边发现了一丛漂亮的野花",
     template: "{character}在路边发现了一丛漂亮的野花，心情变好了",
     conditions: { season: ["spring", "summer"], weather: ["sunny", "cloudy"] },
-    effects: [{ field: "happiness", delta: 10 }],
+    effects: [{ field: "fun", delta: 10 }],
     scope: "self",
     probability: 0.03,
   },
@@ -48,7 +48,7 @@ export const RANDOM_EVENTS: RandomEvent[] = [
     description: "突然下起了小雨，没带伞的人被淋湿了",
     template: "突然下起了小雨，{character}被淋了一身",
     conditions: { weather: ["rainy", "cloudy"] },
-    effects: [{ field: "happiness", delta: -8 }, { field: "hygiene", delta: -10 }],
+    effects: [{ field: "fun", delta: -8 }, { field: "hygiene", delta: -10 }],
     scope: "self",
     probability: 0.04,
   },
@@ -68,7 +68,7 @@ export const RANDOM_EVENTS: RandomEvent[] = [
     description: "今天的日落格外美丽",
     template: "{character}看到了格外美丽的日落，驻足欣赏了一会儿",
     conditions: { hourRange: [17, 19], weather: ["sunny", "cloudy"] },
-    effects: [{ field: "happiness", delta: 12 }],
+    effects: [{ field: "fun", delta: 12 }],
     scope: "self",
     probability: 0.06,
   },
@@ -78,7 +78,7 @@ export const RANDOM_EVENTS: RandomEvent[] = [
     description: "一只流浪猫走过来蹭了蹭腿",
     template: "一只流浪猫走过来蹭了蹭{character}的腿",
     conditions: {},
-    effects: [{ field: "happiness", delta: 8 }, { field: "social", delta: 5 }],
+    effects: [{ field: "fun", delta: 8 }, { field: "social", delta: 5 }],
     scope: "self",
     probability: 0.02,
   },
@@ -88,7 +88,7 @@ export const RANDOM_EVENTS: RandomEvent[] = [
     description: "广场上有人在演奏音乐",
     template: "广场上有人在演奏音乐，{character}停下来听了一会儿",
     conditions: { hourRange: [14, 20] },
-    effects: [{ field: "happiness", delta: 10 }, { field: "social", delta: 8 }],
+    effects: [{ field: "fun", delta: 10 }, { field: "social", delta: 8 }],
     scope: "location",
     probability: 0.04,
   },
@@ -98,7 +98,7 @@ export const RANDOM_EVENTS: RandomEvent[] = [
     description: "一阵冷风吹来",
     template: "一阵冷风吹来，{character}打了个寒颤",
     conditions: { season: ["autumn", "winter"] },
-    effects: [{ field: "energy", delta: -5 }, { field: "happiness", delta: -3 }],
+    effects: [{ field: "energy", delta: -5 }, { field: "fun", delta: -3 }],
     scope: "self",
     probability: 0.04,
   },
@@ -108,7 +108,7 @@ export const RANDOM_EVENTS: RandomEvent[] = [
     description: "在地上捡到一枚硬币",
     template: "{character}在地上捡到一枚硬币，觉得今天运气不错",
     conditions: {},
-    effects: [{ field: "happiness", delta: 5 }],
+    effects: [{ field: "fun", delta: 5 }],
     scope: "self",
     probability: 0.02,
   },

@@ -14,7 +14,7 @@ function makeCtx(overrides: Partial<ActionContext> = {}): ActionContext {
     tick: 100,
     nearbyCharacters: ["anon"],
     gold: 100,
-    needs: { hunger: 50, energy: 50, social: 50, happiness: 50, hygiene: 50 },
+    needs: { hunger: 50, energy: 50, social: 50, fun: 50, hygiene: 50, bladder: 50 },
     ...overrides,
   };
 }
@@ -28,7 +28,7 @@ describe("invite_out", () => {
     expect(result.success).not.toBe(false);
     expect(result.description).toContain("邀请");
     expect(result.description).toContain("海边散步");
-    // 应该产生 social + happiness + relationship + inbox 效果
+    // 应该产生 social + fun + relationship + inbox 效果
     expect(result.effects.length).toBeGreaterThan(3);
   });
 

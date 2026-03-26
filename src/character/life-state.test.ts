@@ -120,7 +120,7 @@ describe("Prompt 注入 life 信息", () => {
       id: "tomori",
       name: "高松灯",
       locationId: "bakery",
-      needs: { hunger: 80, energy: 70, social: 60, happiness: 70, hygiene: 80 },
+      needs: { hunger: 80, energy: 70, social: 60, fun: 70, hygiene: 80, bladder: 90 },
       gold: 30,
       moodlets: [], inbox: [],
       life: {
@@ -151,7 +151,7 @@ describe("Prompt 注入 life 信息", () => {
       id: "tomori",
       name: "高松灯",
       locationId: "bakery",
-      needs: { hunger: 80, energy: 70, social: 60, happiness: 70, hygiene: 80 },
+      needs: { hunger: 80, energy: 70, social: 60, fun: 70, hygiene: 80, bladder: 90 },
       gold: 30,
       moodlets: [], inbox: [],
       life: { ...cardWithLife.life! },
@@ -204,7 +204,7 @@ describe("技能成长", () => {
       tick: 100,
       nearbyCharacters: [],
       gold: 100,
-      needs: { hunger: 50, energy: 50, social: 50, happiness: 50, hygiene: 50 },
+      needs: { hunger: 50, energy: 50, social: 50, fun: 50, hygiene: 50, bladder: 50 },
       ...overrides,
     };
   }
@@ -226,7 +226,7 @@ describe("技能成长", () => {
   });
 
   it("精力不足时 work 失败，不产生任何 effect", () => {
-    const result = workAction.handler({}, makeCtx({ needs: { hunger: 50, energy: 5, social: 50, happiness: 50, hygiene: 50 } }));
+    const result = workAction.handler({}, makeCtx({ needs: { hunger: 50, energy: 5, social: 50, fun: 50, hygiene: 50, bladder: 50 } }));
     expect(result.success).toBe(false);
     expect(result.effects).toHaveLength(0);
   });

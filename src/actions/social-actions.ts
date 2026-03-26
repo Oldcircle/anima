@@ -27,7 +27,7 @@ export const gossipAction: ActionDefinition = {
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "social", delta: 20 },
         { type: "need_change", targetId: target, field: "social", delta: 15 },
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 5 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 10 },
       ],
       duration: 2,
     };
@@ -59,8 +59,7 @@ export const giveGiftAction: ActionDefinition = {
       description: `送了${args.item}给${target}`,
       effects: [
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 5 },
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 10 },
-        { type: "need_change", targetId: target, field: "happiness", delta: 15 },
+        { type: "need_change", targetId: target, field: "social", delta: 8 },
       ],
       duration: 1,
     };
@@ -88,9 +87,10 @@ export const comfortAction: ActionDefinition = {
     return {
       description: `安慰${target}：${args.words ?? "一切都会好起来的"}`,
       effects: [
-        { type: "need_change", targetId: target, field: "happiness", delta: 15 },
         { type: "need_change", targetId: target, field: "social", delta: 10 },
         { type: "need_change", targetId: ctx.characterId, field: "social", delta: 8 },
+        { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -5 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: -5 },
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 3 },
       ],
       duration: 2,

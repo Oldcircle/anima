@@ -34,7 +34,7 @@ export interface ActionContext {
   tick: number;
   nearbyCharacters: string[];
   gold: number;
-  needs: { hunger: number; energy: number; social: number; happiness: number; hygiene: number };
+  needs: Record<string, number>;
   /** 当前工作地点对应的主技能名（用于 skill_up） */
   workSkill?: string;
 }

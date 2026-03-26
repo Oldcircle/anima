@@ -14,6 +14,7 @@ import { weatherDescription, weatherHint } from "../world/weather.js";
 import { formatMoodlets } from "../world/moodlets.js";
 import { getAtmosphereText } from "../world/location-loader.js";
 import type { ImpressionStore } from "../memory/impressions.js";
+import { formatBodyFeelings } from "../world/need-definitions.js";
 
 /**
  * 格式化技能认知：将技能数值转为自然语言描述
@@ -163,58 +164,7 @@ export function buildSystemPrompt(card: CharacterCard, workplaceName?: string, c
   return parts.join("\n");
 }
 
-/**
- * 将需求数值转化为自然语言身体感受。
- * 满的不提，偏低用身体感受，极低用紧急措辞。
- */
-function formatBodyFeelings(needs: CharacterNeeds, gold: number, hour?: number): string {
-  const feelings: string[] = [];
-
-  // 饥饿
-  if (needs.hunger < 15) feelings.push("饿到胃在抽痛，必须马上吃点东西。");
-  else if (needs.hunger < 30) feelings.push("饿得有点发晕，得找地方吃饭了。");
-  else if (needs.hunger < 60) feelings.push("肚子有点饿了。");
-
-  // 精力
-  if (needs.energy < 15) feelings.push("累到站不稳，眼睛都快睁不开了。");
-  else if (needs.energy < 30) feelings.push("眼皮很重，脑子转得慢，很想躺下来。");
-  else if (needs.energy < 60) feelings.push("有点累了，打了个哈欠。");
-
-  // 社交
-  if (needs.social > 85) feelings.push("今天和人聊了不少，想安静待一会儿。");
-  else if (needs.social < 15) feelings.push("一个人待太久了，心里空荡荡的，很想找人说说话。");
-  else if (needs.social < 30) feelings.push("有点寂寞，想找人聊聊。");
-
-  // 快乐
-  if (needs.happiness < 20) feelings.push("什么都提不起劲，心里闷闷的。");
-  else if (needs.happiness < 40) feelings.push("心情有点低落。");
-  else if (needs.happiness > 80) feelings.push("心情挺好的。");
-
-  // 卫生
-  if (needs.hygiene < 30) feelings.push("身上黏糊糊的，该洗个澡了。");
-  else if (needs.hygiene < 50) feelings.push("身上不太清爽。");
-
-  // 金币
-  if (gold === 0) feelings.push("口袋空空的，一个硬币都没有。");
-  else if (gold < 10) feelings.push(`口袋里只剩 ${gold} 金币，得省着花。`);
-
-  // 极端组合
-  if (gold === 0 && needs.hunger < 20) {
-    feelings.push("又穷又饿，处境很危险。");
-  }
-
-  // 深夜生物钟
-  if (hour !== undefined) {
-    if (hour >= 0 && hour < 5) {
-      feelings.push("已经是深夜了，正常人都已经睡了。你也该回家休息了。");
-    } else if (hour >= 22) {
-      feelings.push("夜深了，有点困了，差不多该回家了。");
-    }
-  }
-
-  if (feelings.length === 0) return "身体状态不错，精神也好。";
-  return feelings.join("");
-}
+// formatBodyFeelings 已移至 need-definitions.ts（数据驱动）
 
 function formatPreferencesHint(card: CharacterCard): string {
   if (!card.preferences || Object.keys(card.preferences).length === 0) {

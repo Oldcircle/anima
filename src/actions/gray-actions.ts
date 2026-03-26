@@ -30,8 +30,9 @@ export const argueAction: ActionDefinition = {
       description: `和${target}吵了一架：${reason}`,
       effects: [
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: -10 },
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: -15 },
-        { type: "need_change", targetId: target, field: "happiness", delta: -15 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 5 },
+        { type: "need_change", targetId: target, field: "fun", delta: -15 },
+        { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -8 },
         { type: "need_change", targetId: ctx.characterId, field: "social", delta: 5 },
         { type: "need_change", targetId: target, field: "social", delta: 5 },
       ],
@@ -60,7 +61,7 @@ export const stealAction: ActionDefinition = {
     if (caught) {
       // 被发现：没偷到钱，全镇关系 -20
       const effects: ActionEffect[] = [
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: -25 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: -25 },
       ];
       // 对所有附近的人关系 -20
       for (const witnessId of ctx.nearbyCharacters) {
@@ -77,7 +78,7 @@ export const stealAction: ActionDefinition = {
     return {
       description: `悄悄偷了${stolenAmount}金币`,
       effects: [
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: -5 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: -5 },
       ],
       // gold 变化在 agent-loop 的经济效果中处理，这里通过 description 传递金额
       duration: 1,
@@ -101,7 +102,7 @@ export const begAction: ActionDefinition = {
     return {
       description: `在街上乞讨，获得了${received}金币`,
       effects: [
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: -10 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: -10 },
         { type: "need_change", targetId: ctx.characterId, field: "social", delta: -5 },
       ],
       _begAmount: received,

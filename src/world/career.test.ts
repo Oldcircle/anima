@@ -10,7 +10,7 @@ import type { CharacterState, Location } from "./types.js";
 function makeState(overrides: Partial<CharacterState> = {}): CharacterState {
   return {
     id: "tomori", name: "高松灯", locationId: "bakery",
-    needs: { hunger: 80, energy: 70, social: 60, happiness: 70, hygiene: 80 },
+    needs: { hunger: 80, energy: 70, social: 60, fun: 70, hygiene: 80, bladder: 90 },
     gold: 100, moodlets: [], inbox: [],
     life: {
       occupation: "面包店学徒",

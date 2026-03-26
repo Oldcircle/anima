@@ -38,7 +38,7 @@ export const eatAction: ActionDefinition = {
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "hunger", delta: 50 },
         { type: "need_change", targetId: ctx.characterId, field: "energy", delta: 10 },
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 5 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 3 },
       ],
       duration: 2,
     };
@@ -65,6 +65,7 @@ export const sleepAction: ActionDefinition = {
       description: "回家睡觉了",
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "energy", delta: 100 },
+        { type: "need_change", targetId: ctx.characterId, field: "bladder", delta: -25 },
       ],
       duration: 32,
     };
@@ -93,6 +94,7 @@ export const goToAction: ActionDefinition = {
       effects: [
         { type: "location_change", targetId: ctx.characterId, value: location },
         { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -2 },
+        { type: "need_change", targetId: ctx.characterId, field: "bladder", delta: -3 },
       ],
       duration: 1,
     };
@@ -145,6 +147,7 @@ export const talkAction: ActionDefinition = {
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "social", delta: 3 },
         { type: "need_change", targetId: target, field: "social", delta: 1 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 2 },
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 1 },
         { type: "inbox_message", targetId: target, fromName: ctx.characterId, message },
       ],
@@ -174,6 +177,8 @@ export const workAction: ActionDefinition = {
     const effects: ActionEffect[] = [
       { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -15 },
       { type: "need_change", targetId: ctx.characterId, field: "hunger", delta: -10 },
+      { type: "need_change", targetId: ctx.characterId, field: "fun", delta: -10 },
+      { type: "need_change", targetId: ctx.characterId, field: "bladder", delta: -10 },
     ];
     // 工作时提升对应技能
     if (ctx.workSkill) {
@@ -207,9 +212,86 @@ export const washAction: ActionDefinition = {
       description: "洗了个澡，焕然一新",
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "hygiene", delta: 100 },
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 5 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 5 },
       ],
       duration: 2,
+    };
+  },
+};
+
+export const useToiletAction: ActionDefinition = {
+  tool: {
+    name: "use_toilet",
+    description: "上厕所，恢复膀胱值。",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+  },
+  handler: (_args, ctx): ActionResult => ({
+    description: "上厕所",
+    effects: [
+      { type: "need_change", targetId: ctx.characterId, field: "bladder", delta: 100 },
+    ],
+    duration: 1,
+  }),
+};
+
+export const napAction: ActionDefinition = {
+  tool: {
+    name: "nap",
+    description: "小睡一会儿，恢复少量精力。精力低于 60 时才需要。",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+  },
+  handler: (_args, ctx): ActionResult => {
+    if (ctx.needs.energy >= 60) {
+      return { description: "精力还行，不需要小睡", effects: [], success: false };
+    }
+    return {
+      description: "小睡了一会儿",
+      effects: [
+        { type: "need_change", targetId: ctx.characterId, field: "energy", delta: 25 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: -5 },
+      ],
+      duration: 4,
+    };
+  },
+};
+
+export const cookAction: ActionDefinition = {
+  tool: {
+    name: "cook",
+    description: "做饭，恢复饥饿值并获得乐趣。需要在家，花费 5 金币。",
+    parameters: {
+      type: "object",
+      properties: {
+        dish: {
+          type: "string",
+          description: "做什么菜（可选）",
+        },
+      },
+    },
+  },
+  handler: (args, ctx): ActionResult => {
+    if (ctx.locationType !== "residential") {
+      return { description: "这里没有厨房，得回家才能做饭", effects: [], success: false };
+    }
+    if (ctx.gold < 5) {
+      return { description: `想做饭但买不起食材（需要5金币，只有${ctx.gold}）`, effects: [], success: false };
+    }
+    const dish = (args.dish as string) ?? "一顿家常菜";
+    return {
+      description: `做了${dish}`,
+      effects: [
+        { type: "need_change", targetId: ctx.characterId, field: "hunger", delta: 60 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 5 },
+        { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -8 },
+        { type: "need_change", targetId: ctx.characterId, field: "hygiene", delta: -5 },
+      ],
+      duration: 3,
     };
   },
 };
@@ -225,6 +307,9 @@ export const ALL_BASIC_ACTIONS: ActionDefinition[] = [
   talkAction,
   workAction,
   washAction,
+  useToiletAction,
+  napAction,
+  cookAction,
   ...ALL_SOCIAL_ACTIONS,
   ...ALL_LEISURE_ACTIONS,
   ...ALL_GRAY_ACTIONS,

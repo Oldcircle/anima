@@ -318,3 +318,84 @@ Phase 7C (愿望系统) ← 依赖 7A 的 life state + 7B 的关系事件
     ↓
 Phase 7D (Moodlet) ← 依赖 7A-7C 的各种事件源
 ```
+
+---
+
+## 当前：Phase 8 — 需求系统重设计 + 工具系统重设计
+
+> **目标：让角色从"看数据选菜单"变为"感受身体+感知环境→自然行动"。**
+>
+> 两大改造：(A) 需求从 5 维固定 struct 变为 6 维数据驱动；(B) 工具从"按钮→数值"变为"情境入口→有代价的行为选择"。
+>
+> 详见 DESIGN.md §2.5 和 §3.1。
+
+### Phase 8A：数据驱动需求系统
+
+**目标**：CharacterNeeds 从硬编码 5 字段变为 `Record<string, number>` + 配置驱动。删 happiness，加 fun、bladder。
+
+- [ ] 新建 `src/world/need-definitions.ts`
+  - `NeedDefinition` / `FeelingLevel` 接口
+  - 6 维需求定义（hunger/energy/social/hygiene/fun/bladder）
+  - 每个维度的感受化文案（3 级：mild/moderate/urgent）
+  - `getDefaultNeeds()` / `getAllNeedIds()` / `getFeelings()` 等工具函数
+- [ ] 重构 `src/world/types.ts`
+  - `CharacterNeeds` 从 interface 改为 `Record<string, number>`
+  - 删除 `happiness` 字段引用
+  - 新增 `fun` 和 `bladder`
+- [ ] 重构 `src/world/world.ts`
+  - `DEFAULT_NEEDS` 从 need-definitions 读取
+  - `NEED_DECAY` 从 need-definitions 读取
+  - `decayNeeds()` 遍历定义列表而非硬编码字段
+- [ ] 重构 `src/agent/prompt-builder.ts`
+  - `formatBodyFeelings()` 改为从 NeedDefinition.feelings 读取
+  - 删除 happiness 相关感受
+  - 新增 fun/bladder 感受
+  - social 高值感受保留
+- [ ] 全局搜索替换 `needs.happiness` → 适配（部分改为 moodlet、部分改为 fun）
+- [ ] 更新 `src/world/moodlets.ts`：`generateNeedMoodlets` 适配新维度
+- [ ] 更新 `src/persistence/database.ts` + `save-load.ts`：needs_json 列自动适配
+- [ ] 测试更新：world.test.ts / prompt-builder.test.ts / life-state.test.ts / moodlets.test.ts 等
+- [ ] `pnpm build` + `pnpm test` 通过
+
+### Phase 8B：工具系统重设计
+
+**目标**：每个行为有代价、有 solo/social 变体、有后果涟漪。工具描述是人话不是数值表。
+
+- [ ] 更新所有 action effects 适配 6 维需求
+  - basic-actions.ts: eat/sleep/go_to/talk/work/wash 效果重映射
+  - social-actions.ts: gossip/give_gift/comfort 效果重映射
+  - leisure-actions.ts: read/explore/drink 效果重映射
+  - gray-actions.ts: argue/steal/beg 效果重映射
+  - relationship-actions.ts: invite_out/share_secret 效果重映射
+- [ ] 新增行为工具
+  - `use_toilet`（basic-actions）: bladder +100, 条件=有卫生间的地点
+  - `nap`（basic-actions）: energy +25, fun -5, 条件=energy<60
+  - `cook`（basic-actions）: hunger +60, fun +5, energy -8, hygiene -5, gold -5
+  - `journal`（leisure-actions）: fun +8, social -2, 触发 reflection
+  - `practice`（leisure-actions）: fun +10, energy -8, skill_up(高效)
+  - `craft`（leisure-actions）: fun +8, energy -8, 产物可用于 give_gift
+  - `help_work`（social-actions）: social +8(双方), energy -10, fun -5
+  - `observe`（social-actions）: 深度 observation 记忆, energy -2
+- [ ] 新增 `SocialModifier` 机制
+  - ActionDefinition 新增 `socialModifier` 字段
+  - agent-loop 执行时根据同地点有认识的人自动应用
+- [ ] 新增 `observableState` 字段
+  - ActionResult 新增 `observableState?: string`
+  - 各 action handler 返回可观察描述
+  - observation-reasoning 从 observableState 获取信息
+- [ ] 状态影响行为质量
+  - agent-loop 在应用效果时计算效率因子
+  - energy < 20 → 效果减半；fun < 15 → work 产出减半
+- [ ] 行为链追踪 + 后果涟漪
+  - CharacterState 新增 `recentActions`
+  - agent-loop 检查连续行为模式 → 触发 moodlet（过劳/孤僻/宿醉等）
+- [ ] 重构 tool-builder.ts
+  - 工具描述改为自然语言动态生成
+  - go_to destination 描述包含地点能做什么
+  - talk target 描述包含在场角色的可观察状态
+  - 社交语境融入工具描述
+- [ ] 更新地点 YAML 工具定义（适配新维度+新工具）
+- [ ] System prompt 新增"世界的常识"段（5 句话）
+- [ ] 测试更新
+- [ ] `pnpm build` + `pnpm test` 通过
+- [ ] Live 半天验证：行为多样性和决策质量

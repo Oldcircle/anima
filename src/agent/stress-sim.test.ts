@@ -30,12 +30,13 @@ class SmartMockLLM implements LLMProvider {
 
   async chat(request: LLMRequest, _modelId: string): Promise<LLMResponse> {
     this.callCount++;
-    const prompt = request.messages[0]?.content ?? "";
+    const prompt = request.messages[request.messages.length - 1]?.content ?? "";
     const inputTokens = Math.ceil(prompt.length / 4);
     this.totalInputTokens += inputTokens;
     this.totalOutputTokens += 30;
 
-    const toolCall = this._decide(prompt);
+    const available = (request.tools ?? []).map((t) => t.name);
+    const toolCall = this._decide(prompt, available);
     return {
       content: toolCall ? `决定${toolCall.name}` : "无事可做",
       toolCalls: toolCall ? [toolCall] : [],
@@ -43,116 +44,128 @@ class SmartMockLLM implements LLMProvider {
     };
   }
 
-  private _decide(prompt: string): ToolCall | null {
-    // 解析需求值
-    const hungerMatch = prompt.match(/饥饿[:：]\s*(\d+)/);
-    const energyMatch = prompt.match(/精力[:：]\s*(\d+)/);
-    const socialMatch = prompt.match(/社交[:：]\s*(\d+)/);
-    const happyMatch = prompt.match(/幸福[:：]\s*(\d+)/);
+  /** 检查工具是否可用 */
+  private _has(available: string[], name: string): boolean {
+    return available.includes(name);
+  }
 
-    const hunger = hungerMatch ? Number(hungerMatch[1]) : 60;
-    const energy = energyMatch ? Number(energyMatch[1]) : 60;
-    const social = socialMatch ? Number(socialMatch[1]) : 60;
-    const happy = happyMatch ? Number(happyMatch[1]) : 60;
+  private _decide(prompt: string, available: string[]): ToolCall | null {
+    if (available.length === 0) return null;
+
+    // 解析需求感受（新系统使用自然语言描述，不再输出数值）
+    const isHungry = prompt.includes("胃在抽痛") || prompt.includes("饿得") || prompt.includes("发晕");
+    const isMildHungry = isHungry || (prompt.includes("肚子") && prompt.includes("饿"));
+    const isTired = prompt.includes("站不稳") || prompt.includes("睁不开") || prompt.includes("眼皮很重");
+    const isMildTired = isTired || prompt.includes("有点累") || prompt.includes("哈欠");
+    const isLonely = prompt.includes("空荡荡") || prompt.includes("很想找人说说话") || prompt.includes("寂寞");
+    const isBored = prompt.includes("闷得发慌") || prompt.includes("无聊");
+    const isNight = prompt.includes("深夜") || prompt.includes("正常人都已经睡了");
+    const needsBathroom = prompt.includes("憋不住") || prompt.includes("憋得");
 
     // 解析时间
     const timeMatch = prompt.match(/(\d{2}):(\d{2})/);
     const hour = timeMatch ? Number(timeMatch[1]) : 12;
 
     // 解析附近的人
-    const nearbyMatch = prompt.match(/附近的人[：:]\s*([^\n]+)/);
-    const hasNearby = nearbyMatch && !nearbyMatch[1]!.includes("无");
+    const hasNearby = prompt.includes("你现在看见了谁");
+    const hasInbox = prompt.includes("## 有人对你说");
 
-    // 解析信箱消息
-    const hasInbox = prompt.includes("有人对你说");
+    // 可用地点
+    const allLocations = ["cafe", "plaza", "shop", "bar", "beach", "dock", "forest", "farm", "library", "flower_shop", "bakery"];
 
-    // 解析地点
-    const locationMatch = prompt.match(/当前位置[：:]\s*(\S+)/);
-    const location = locationMatch ? locationMatch[1]! : "";
+    // 决策优先级（只选可用的工具）
 
-    // 可用地点（12 个）
-    const allLocations = [
-      "cafe", "plaza", "shop", "bar", "beach", "dock",
-      "forest", "farm", "library", "flower_shop", "bakery",
-    ];
-
-    // 决策优先级
-    // 1. 极度饥饿 → 吃饭
-    if (hunger < 20) {
-      return { name: "eat", arguments: { location: location || "cafe", food: "一顿饱饭" } };
+    // 1. 极度饥饿 → 吃饭（或去能吃的地方）
+    if (isHungry) {
+      if (this._has(available, "eat")) return { name: "eat", arguments: {} };
+      if (this._has(available, "cook")) return { name: "cook", arguments: {} };
+      if (this._has(available, "go_to")) return { name: "go_to", arguments: { location: "cafe" } };
     }
 
-    // 2. 极度疲惫 → 睡觉
-    if (energy < 15) {
-      return { name: "sleep", arguments: {} };
+    // 2. 上厕所
+    if (needsBathroom) {
+      if (this._has(available, "use_toilet")) return { name: "use_toilet", arguments: {} };
+      // 回家
+      if (this._has(available, "go_to")) return { name: "go_to", arguments: { location: "home_tomori" } };
     }
 
-    // 3. 有信箱消息 → 回复
-    if (hasInbox) {
-      const targetMatch = prompt.match(/(\w+)对你说/);
-      const target = targetMatch ? targetMatch[1]! : "someone";
-      return { name: "talk", arguments: { target, message: "嗯嗯，说的有道理。" } };
+    // 3. 极度疲惫或深夜 → 睡觉
+    if (isTired || isNight) {
+      if (this._has(available, "sleep")) return { name: "sleep", arguments: {} };
+      if (this._has(available, "rest")) return { name: "rest", arguments: {} };
+      if (this._has(available, "nap")) return { name: "nap", arguments: {} };
+      // 回家睡觉
+      if (this._has(available, "go_to")) return { name: "go_to", arguments: { location: "home_tomori" } };
     }
 
-    // 4. 社交需求低 + 有附近的人 → 聊天
-    if (social < 35 && hasNearby) {
-      const targetMatch = prompt.match(/附近的人[：:]\s*(\w+)/);
-      const target = targetMatch ? targetMatch[1]! : "someone";
-      if (Math.random() < 0.6) {
-        return { name: "talk", arguments: { target, message: "今天天气不错啊！" } };
-      }
-      return { name: "gossip", arguments: { target, about: "最近小镇上的事" } };
+    // 4. 有信箱消息 → 回复
+    if (hasInbox && this._has(available, "talk")) {
+      const idMatch = prompt.match(/ID:(\w+)/);
+      return { name: "talk", arguments: { target: idMatch?.[1] ?? "someone", message: "嗯嗯，说的有道理。" } };
     }
 
-    // 5. 上午工作时间 → 工作
-    if (hour >= 8 && hour < 12 && energy > 30) {
-      return { name: "work", arguments: { activity: "日常工作" } };
+    // 5. 社交需求低 + 有附近的人 → 聊天
+    if (isLonely && hasNearby && this._has(available, "talk")) {
+      const idMatch = prompt.match(/ID:(\w+)/);
+      return { name: "talk", arguments: { target: idMatch?.[1] ?? "someone", message: "今天天气不错啊！" } };
     }
 
-    // 6. 饥饿中 → 吃饭
-    if (hunger < 40) {
-      return { name: "eat", arguments: { location: "cafe", food: "午餐" } };
+    // 6. 上午工作时间 → 工作
+    if (hour >= 8 && hour < 12 && !isMildTired && this._has(available, "work")) {
+      return { name: "work", arguments: {} };
     }
 
-    // 7. 下午工作时间 → 工作（概率）
-    if (hour >= 13 && hour < 17 && energy > 30 && Math.random() < 0.6) {
-      return { name: "work", arguments: { activity: "下午工作" } };
+    // 7. 轻微饥饿 → 吃饭
+    if (isMildHungry) {
+      if (this._has(available, "eat")) return { name: "eat", arguments: {} };
+      if (this._has(available, "cook")) return { name: "cook", arguments: {} };
+      if (this._has(available, "go_to")) return { name: "go_to", arguments: { location: "cafe" } };
     }
 
-    // 8. 社交需求低 → 去公共场所
-    if (social < 45) {
+    // 8. 下午工作
+    if (hour >= 13 && hour < 17 && !isMildTired && this._has(available, "work") && Math.random() < 0.6) {
+      return { name: "work", arguments: {} };
+    }
+
+    // 9. 社交需求低 → 去公共场所
+    if (isLonely && this._has(available, "go_to")) {
       const socialSpots = ["cafe", "plaza", "bar"];
       return { name: "go_to", arguments: { location: socialSpots[Math.floor(Math.random() * socialSpots.length)]! } };
     }
 
-    // 9. 晚上 → 去酒吧/娱乐
+    // 10. 晚上 → 休闲
     if (hour >= 18 && hour < 22) {
-      const r = Math.random();
-      if (r < 0.3) return { name: "drink", arguments: { beverage: "啤酒" } };
-      if (r < 0.5) return { name: "explore", arguments: { area: "海边日落" } };
-      if (r < 0.7 && hasNearby) {
-        const targetMatch = prompt.match(/附近的人[：:]\s*(\w+)/);
-        return { name: "talk", arguments: { target: targetMatch?.[1] ?? "someone", message: "晚上好！" } };
+      if (this._has(available, "drink") && Math.random() < 0.3) return { name: "drink", arguments: {} };
+      if (this._has(available, "explore") && Math.random() < 0.4) return { name: "explore", arguments: {} };
+      if (hasNearby && this._has(available, "talk")) {
+        const idMatch = prompt.match(/ID:(\w+)/);
+        return { name: "talk", arguments: { target: idMatch?.[1] ?? "someone", message: "晚上好！" } };
       }
-      return { name: "hobby", arguments: { activity: "练习爱好" } };
     }
 
-    // 10. 快乐低 → 休闲
-    if (happy < 40) {
-      const r = Math.random();
-      if (r < 0.3) return { name: "read", arguments: { book: "一本有趣的书" } };
-      if (r < 0.6) return { name: "explore", arguments: { area: "小镇周边" } };
-      return { name: "hobby", arguments: { activity: "放松一下" } };
+    // 11. 无聊 → 休闲
+    if (isBored) {
+      if (this._has(available, "read")) return { name: "read", arguments: {} };
+      if (this._has(available, "explore")) return { name: "explore", arguments: {} };
+      if (this._has(available, "hobby")) return { name: "hobby", arguments: {} };
+      if (this._has(available, "rest")) return { name: "rest", arguments: {} };
     }
 
-    // 11. 默认：随机日常活动
-    const r = Math.random();
-    if (r < 0.2) return { name: "work", arguments: { activity: "处理杂事" } };
-    if (r < 0.35) return { name: "go_to", arguments: { location: allLocations[Math.floor(Math.random() * allLocations.length)]! } };
-    if (r < 0.5) return { name: "read", arguments: {} };
-    if (r < 0.65) return { name: "explore", arguments: { area: "四处看看" } };
-    if (r < 0.8) return { name: "hobby", arguments: { activity: "享受生活" } };
-    return { name: "drink", arguments: { beverage: "咖啡" } };
+    // 12. 默认：从可用工具中选择合理的
+    // 排除 go_to，优先做当地的事
+    const localTools = available.filter((t) => t !== "go_to" && t !== "talk" && t !== "comfort");
+    if (localTools.length > 0 && Math.random() < 0.6) {
+      const tool = localTools[Math.floor(Math.random() * localTools.length)]!;
+      return { name: tool, arguments: {} };
+    }
+
+    // 13. 去别的地方
+    if (this._has(available, "go_to")) {
+      return { name: "go_to", arguments: { location: allLocations[Math.floor(Math.random() * allLocations.length)]! } };
+    }
+
+    // 14. 兜底：用第一个可用工具
+    return { name: available[0]!, arguments: {} };
   }
 }
 
@@ -201,23 +214,47 @@ const CHARACTERS: CharacterCard[] = [
   },
 ];
 
+// 共通工具定义
+const HOME_TOOLS = [
+  { name: "sleep", description: "睡觉休息", effects: { energy: 100 }, duration: 32, condition: "energy < 80" },
+  { name: "wash", description: "洗澡梳洗", effects: { hygiene: 100, fun: 5 }, duration: 2, condition: "hygiene < 80" },
+  { name: "cook", description: "自己做饭吃（免费）", effects: { hunger: 50, energy: 10, fun: 3 }, duration: 3 },
+  { name: "rest", description: "在沙发上躺一会儿", effects: { energy: 5, fun: 3 }, duration: 2 },
+];
+const CAFE_TOOLS = [
+  { name: "eat", description: "吃点东西", effects: { hunger: 40, fun: 5 }, cost: 15 },
+  { name: "drink", description: "喝杯咖啡", effects: { energy: 10, fun: 5 }, cost: 8 },
+  { name: "work", description: "在店里工作", effects: { energy: -15 }, condition: "isWorkplace" },
+];
+const WORK_TOOLS = [
+  { name: "work", description: "工作", effects: { energy: -15 }, condition: "isWorkplace" },
+];
+const PUBLIC_TOOLS = [
+  { name: "explore", description: "四处走走看看", effects: { fun: 10, energy: -5 } },
+  { name: "read", description: "读书", effects: { fun: 8 } },
+];
+const NATURE_TOOLS = [
+  { name: "explore", description: "在自然中漫步", effects: { fun: 15, energy: -5 } },
+  { name: "hobby", description: "享受自然", effects: { fun: 10 } },
+];
+
 const LOCATIONS = [
-  { id: "home_tomori", name: "灯的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "home_anon", name: "爱音的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "home_sakiko", name: "祥子的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "home_mutsumi", name: "睦的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "home_soyo", name: "素世的家", type: "residential" as const, presentCharacters: [] as string[] },
-  { id: "flower_shop", name: "潮声花店", type: "commercial" as const, openHours: { open: 8, close: 18 }, presentCharacters: [] as string[] },
-  { id: "bakery", name: "海风面包坊", type: "commercial" as const, openHours: { open: 7, close: 17 }, presentCharacters: [] as string[] },
-  { id: "cafe", name: "咖啡馆", type: "commercial" as const, openHours: { open: 7, close: 22 }, presentCharacters: [] as string[] },
-  { id: "plaza", name: "广场", type: "public" as const, presentCharacters: [] as string[] },
-  { id: "shop", name: "杂货店", type: "commercial" as const, openHours: { open: 8, close: 20 }, presentCharacters: [] as string[] },
-  { id: "bar", name: "酒吧", type: "commercial" as const, openHours: { open: 17, close: 2 }, presentCharacters: [] as string[] },
-  { id: "beach", name: "海边", type: "nature" as const, presentCharacters: [] as string[] },
-  { id: "dock", name: "码头", type: "nature" as const, presentCharacters: [] as string[] },
-  { id: "forest", name: "森林", type: "nature" as const, presentCharacters: [] as string[] },
-  { id: "farm", name: "农田", type: "nature" as const, presentCharacters: [] as string[] },
-  { id: "library", name: "图书馆", type: "public" as const, openHours: { open: 9, close: 18 }, presentCharacters: [] as string[] },
+  { id: "home_tomori", name: "灯的家", type: "residential" as const, presentCharacters: [] as string[], tools: HOME_TOOLS },
+  { id: "home_anon", name: "爱音的家", type: "residential" as const, presentCharacters: [] as string[], tools: HOME_TOOLS },
+  { id: "home_sakiko", name: "祥子的家", type: "residential" as const, presentCharacters: [] as string[], tools: HOME_TOOLS },
+  { id: "home_mutsumi", name: "睦的家", type: "residential" as const, presentCharacters: [] as string[], tools: HOME_TOOLS },
+  { id: "home_soyo", name: "素世的家", type: "residential" as const, presentCharacters: [] as string[], tools: HOME_TOOLS },
+  { id: "flower_shop", name: "潮声花店", type: "commercial" as const, openHours: { open: 8, close: 18 }, presentCharacters: [] as string[], tools: [...WORK_TOOLS, { name: "eat", description: "吃点东西", effects: { hunger: 30 }, cost: 10 }] },
+  { id: "bakery", name: "海风面包坊", type: "commercial" as const, openHours: { open: 7, close: 17 }, presentCharacters: [] as string[], tools: [...WORK_TOOLS, { name: "eat", description: "吃面包", effects: { hunger: 35, fun: 3 }, cost: 8 }] },
+  { id: "cafe", name: "咖啡馆", type: "commercial" as const, openHours: { open: 7, close: 22 }, presentCharacters: [] as string[], tools: CAFE_TOOLS },
+  { id: "plaza", name: "广场", type: "public" as const, presentCharacters: [] as string[], tools: PUBLIC_TOOLS },
+  { id: "shop", name: "杂货店", type: "commercial" as const, openHours: { open: 8, close: 20 }, presentCharacters: [] as string[], tools: [{ name: "eat", description: "买零食吃", effects: { hunger: 20, fun: 3 }, cost: 5 }] },
+  { id: "bar", name: "酒吧", type: "commercial" as const, openHours: { open: 17, close: 2 }, presentCharacters: [] as string[], tools: [{ name: "drink", description: "喝酒", effects: { fun: 15, social: 5 }, cost: 12 }, { name: "eat", description: "吃下酒菜", effects: { hunger: 30 }, cost: 10 }] },
+  { id: "beach", name: "海边", type: "nature" as const, presentCharacters: [] as string[], tools: NATURE_TOOLS },
+  { id: "dock", name: "码头", type: "nature" as const, presentCharacters: [] as string[], tools: NATURE_TOOLS },
+  { id: "forest", name: "森林", type: "nature" as const, presentCharacters: [] as string[], tools: NATURE_TOOLS },
+  { id: "farm", name: "农田", type: "nature" as const, presentCharacters: [] as string[], tools: [{ name: "work", description: "农活", effects: { energy: -15 } }] },
+  { id: "library", name: "图书馆", type: "public" as const, openHours: { open: 9, close: 18 }, presentCharacters: [] as string[], tools: [...PUBLIC_TOOLS, ...WORK_TOOLS] },
 ];
 
 // ────────── 统计收集器 ──────────
@@ -231,7 +268,7 @@ interface SimStats {
   characterStats: Map<string, {
     actions: number;
     skipped: number;
-    needsHistory: Array<{ tick: number; hunger: number; energy: number; social: number; happiness: number; hygiene: number }>;
+    needsHistory: Array<{ tick: number; hunger: number; energy: number; social: number; fun: number; hygiene: number; bladder: number }>;
     goldHistory: Array<{ tick: number; gold: number }>;
     locationHistory: Map<string, number>;
   }>;
@@ -318,8 +355,9 @@ function collectStats(summaries: TickSummary[], world: World, eventBus: EventBus
             hunger: c.needs.hunger,
             energy: c.needs.energy,
             social: c.needs.social,
-            happiness: c.needs.happiness,
+            fun: c.needs.fun,
             hygiene: c.needs.hygiene,
+            bladder: c.needs.bladder,
           });
           cs.goldHistory.push({ tick: s.tick, gold: c.gold });
           cs.locationHistory.set(c.locationId, (cs.locationHistory.get(c.locationId) ?? 0) + 1);
@@ -367,7 +405,7 @@ function printDiagnostics(stats: SimStats, world: World, label: string): string[
     const n = c.needs;
     const cs = stats.characterStats.get(c.id)!;
     console.log(
-      `  ${c.name}: 📍${c.locationId} 💰${c.gold} | H:${n.hunger.toFixed(0)} E:${n.energy.toFixed(0)} S:${n.social.toFixed(0)} Joy:${n.happiness.toFixed(0)} Hyg:${n.hygiene.toFixed(0)} | 行为:${cs.actions} 跳过:${cs.skipped}`,
+      `  ${c.name}: 📍${c.locationId} 💰${c.gold} | H:${n.hunger.toFixed(0)} E:${n.energy.toFixed(0)} S:${n.social.toFixed(0)} Fun:${n.fun.toFixed(0)} Hyg:${n.hygiene.toFixed(0)} Bld:${n.bladder.toFixed(0)} | 行为:${cs.actions} 跳过:${cs.skipped}`,
     );
   }
 
@@ -379,7 +417,8 @@ function printDiagnostics(stats: SimStats, world: World, label: string): string[
     if (n.hunger === 0) issues.push(`⚠️ ${c.name} 饿死了 (hunger=0)`);
     if (n.energy === 0) issues.push(`⚠️ ${c.name} 精力耗尽 (energy=0)`);
     if (n.social === 0) issues.push(`⚠️ ${c.name} 社交归零 (social=0)`);
-    if (n.happiness === 0) issues.push(`⚠️ ${c.name} 快乐归零 (happiness=0)`);
+    if (n.fun === 0) issues.push(`⚠️ ${c.name} 快乐归零 (fun=0)`);
+    if (n.bladder === 0) issues.push(`⚠️ ${c.name} 膀胱归零 (bladder=0)`);
     if (n.hygiene === 0) issues.push(`⚠️ ${c.name} 卫生归零 (hygiene=0)`);
   }
 
@@ -503,7 +542,7 @@ describe("压力测试：1 日模拟", () => {
 
     // 所有角色应该存活（需求不全归零）
     for (const c of world.getAllCharacters()) {
-      const aliveScore = c.needs.hunger + c.needs.energy + c.needs.social + c.needs.happiness;
+      const aliveScore = c.needs.hunger + c.needs.energy + c.needs.social + c.needs.fun;
       expect(aliveScore).toBeGreaterThan(0);
     }
 
@@ -538,7 +577,7 @@ describe("压力测试：7 日模拟", () => {
 
     // 7 天后角色仍然存活
     for (const c of world.getAllCharacters()) {
-      const aliveScore = c.needs.hunger + c.needs.energy + c.needs.social + c.needs.happiness;
+      const aliveScore = c.needs.hunger + c.needs.energy + c.needs.social + c.needs.fun;
       expect(aliveScore).toBeGreaterThan(0);
     }
 
@@ -562,7 +601,7 @@ describe("压力测试：7 日模拟", () => {
       console.log(`  ${card.name}:`);
       for (const snap of dailySnapshots) {
         const gt = tickToGameTime(snap.tick);
-        console.log(`    D${gt.day} ${String(gt.hour).padStart(2, "0")}:${String(gt.minute).padStart(2, "0")} — H:${snap.hunger.toFixed(0)} E:${snap.energy.toFixed(0)} S:${snap.social.toFixed(0)} Joy:${snap.happiness.toFixed(0)} Hyg:${snap.hygiene.toFixed(0)}`);
+        console.log(`    D${gt.day} ${String(gt.hour).padStart(2, "0")}:${String(gt.minute).padStart(2, "0")} — H:${snap.hunger.toFixed(0)} E:${snap.energy.toFixed(0)} S:${snap.social.toFixed(0)} Fun:${snap.fun.toFixed(0)} Hyg:${snap.hygiene.toFixed(0)} Bld:${snap.bladder.toFixed(0)}`);
       }
     }
 

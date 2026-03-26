@@ -34,7 +34,7 @@ describeIf("观察推理 Live 测试", () => {
         observerCard: sakiko,
         observerState: {
           id: "sakiko", name: "丰川祥子", locationId: "cafe",
-          needs: { hunger: 60, energy: 50, social: 40, happiness: 55, hygiene: 70 },
+          needs: { hunger: 60, energy: 50, social: 40, fun: 55, hygiene: 70, bladder: 80 },
           gold: 80, moodlets: [], inbox: [],
         },
         visibleCharacters: [
@@ -75,7 +75,7 @@ describeIf("观察推理 Live 测试", () => {
         observerCard: mutsumi,
         observerState: {
           id: "mutsumi", name: "要乐奏", locationId: "plaza",
-          needs: { hunger: 70, energy: 60, social: 30, happiness: 55, hygiene: 65 },
+          needs: { hunger: 70, energy: 60, social: 30, fun: 55, hygiene: 65, bladder: 80 },
           gold: 120, moodlets: [], inbox: [],
         },
         visibleCharacters: [

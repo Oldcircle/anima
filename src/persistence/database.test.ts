@@ -33,7 +33,7 @@ describe("AnimaDB", () => {
     db = new AnimaDB(TEST_DB);
     db.saveCharacter({
       id: "tomori", name: "高松灯", locationId: "cafe", gold: 200,
-      needs: { hunger: 50, energy: 80, social: 60, happiness: 70, hygiene: 90 },
+      needs: { hunger: 50, energy: 80, social: 60, fun: 70, hygiene: 90, bladder: 90 },
       currentAction: { name: "work", remainingTicks: 3 },
     });
 
@@ -49,7 +49,7 @@ describe("AnimaDB", () => {
     db = new AnimaDB(TEST_DB);
     db.saveCharacter({
       id: "tomori", name: "高松灯", locationId: "bakery", gold: 50,
-      needs: { hunger: 70, energy: 60, social: 50, happiness: 65, hygiene: 80 },
+      needs: { hunger: 70, energy: 60, social: 50, fun: 65, hygiene: 80, bladder: 85 },
       life: {
         occupation: "面包师",
         workplace: "bakery",
@@ -75,7 +75,7 @@ describe("AnimaDB", () => {
     db = new AnimaDB(TEST_DB);
     db.saveCharacter({
       id: "test", name: "测试", locationId: "plaza", gold: 100,
-      needs: { hunger: 80, energy: 100, social: 60, happiness: 70, hygiene: 90 },
+      needs: { hunger: 80, energy: 100, social: 60, fun: 70, hygiene: 90, bladder: 90 },
     });
 
     const chars = db.loadCharacters();
@@ -152,7 +152,7 @@ describe("AnimaDB", () => {
       weather: "snowy",
       characters: [{
         id: "tomori", name: "高松灯", locationId: "home", gold: 100,
-        needs: { hunger: 80, energy: 100, social: 60, happiness: 70, hygiene: 90 },
+        needs: { hunger: 80, energy: 100, social: 60, fun: 70, hygiene: 90, bladder: 90 },
       }],
       relationships: [{ characterA: "tomori", characterB: "anon", level: 30, type: "friend", lastInteraction: 40, history: [] }],
       memories: [{ characterId: "tomori", tick: 45, type: "event", content: "test", importance: 5 }],

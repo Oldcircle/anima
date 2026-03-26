@@ -28,11 +28,7 @@ export class AnimaDB {
         name TEXT NOT NULL,
         location_id TEXT NOT NULL,
         gold INTEGER DEFAULT 100,
-        hunger REAL DEFAULT 80,
-        energy REAL DEFAULT 100,
-        social REAL DEFAULT 60,
-        happiness REAL DEFAULT 70,
-        hygiene REAL DEFAULT 90,
+        needs_json TEXT NOT NULL DEFAULT '{}',
         current_action TEXT,
         current_action_remaining INTEGER DEFAULT 0,
         life_json TEXT,
@@ -119,17 +115,17 @@ export class AnimaDB {
 
   saveCharacter(c: {
     id: string; name: string; locationId: string; gold: number;
-    needs: { hunger: number; energy: number; social: number; happiness: number; hygiene: number };
+    needs: Record<string, number>;
     currentAction?: { name: string; remainingTicks: number };
     life?: import("../character/types.js").LifeState;
     moodlets?: import("../world/types.js").Moodlet[];
   }) {
     this.db.prepare(`
-      INSERT OR REPLACE INTO characters (id, name, location_id, gold, hunger, energy, social, happiness, hygiene, current_action, current_action_remaining, life_json, moodlets_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO characters (id, name, location_id, gold, needs_json, current_action, current_action_remaining, life_json, moodlets_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       c.id, c.name, c.locationId, c.gold,
-      c.needs.hunger, c.needs.energy, c.needs.social, c.needs.happiness, c.needs.hygiene,
+      JSON.stringify(c.needs),
       c.currentAction?.name ?? null, c.currentAction?.remainingTicks ?? 0,
       c.life ? JSON.stringify(c.life) : null,
       c.moodlets && c.moodlets.length > 0 ? JSON.stringify(c.moodlets) : null,
@@ -138,7 +134,7 @@ export class AnimaDB {
 
   loadCharacters(): Array<{
     id: string; name: string; locationId: string; gold: number;
-    needs: { hunger: number; energy: number; social: number; happiness: number; hygiene: number };
+    needs: Record<string, number>;
     currentAction?: { name: string; remainingTicks: number };
     life?: import("../character/types.js").LifeState;
     moodlets?: import("../world/types.js").Moodlet[];
@@ -146,7 +142,7 @@ export class AnimaDB {
     const rows = this.db.prepare("SELECT * FROM characters").all() as any[];
     return rows.map((r) => ({
       id: r.id, name: r.name, locationId: r.location_id, gold: r.gold,
-      needs: { hunger: r.hunger, energy: r.energy, social: r.social, happiness: r.happiness, hygiene: r.hygiene },
+      needs: r.needs_json ? JSON.parse(r.needs_json) : {},
       currentAction: r.current_action ? { name: r.current_action, remainingTicks: r.current_action_remaining } : undefined,
       life: r.life_json ? JSON.parse(r.life_json) : undefined,
       moodlets: r.moodlets_json ? JSON.parse(r.moodlets_json) : undefined,

@@ -17,7 +17,7 @@ function makeCtx(overrides: Partial<ActionContext> = {}): ActionContext {
     tick: 100,
     nearbyCharacters: ["bob"],
     gold: 100,
-    needs: { hunger: 50, energy: 50, social: 50, happiness: 50, hygiene: 50 },
+    needs: { hunger: 50, energy: 50, social: 50, fun: 50, hygiene: 50, bladder: 50 },
     ...overrides,
   };
 }
@@ -85,12 +85,12 @@ describe("工具约束", () => {
 
   describe("work", () => {
     it("精力充足 → 成功", () => {
-      const result = workAction.handler({}, makeCtx({ needs: { hunger: 50, energy: 50, social: 50, happiness: 50, hygiene: 50 } }));
+      const result = workAction.handler({}, makeCtx({ needs: { hunger: 50, energy: 50, social: 50, fun: 50, hygiene: 50, bladder: 50 } }));
       expect(result.success).not.toBe(false);
     });
 
     it("精力不足 → 失败", () => {
-      const result = workAction.handler({}, makeCtx({ needs: { hunger: 50, energy: 5, social: 50, happiness: 50, hygiene: 50 } }));
+      const result = workAction.handler({}, makeCtx({ needs: { hunger: 50, energy: 5, social: 50, fun: 50, hygiene: 50, bladder: 50 } }));
       expect(result.success).toBe(false);
       expect(result.description).toContain("太累了");
     });
@@ -112,13 +112,16 @@ describe("工具约束", () => {
 
 describe("灰色行为", () => {
   describe("argue", () => {
-    it("降低双方关系和快乐，提升社交", () => {
+    it("降低双方关系，发起者释放压力(fun+5)，对方心情变差(fun-15)，双方社交+5", () => {
       const result = argueAction.handler({ target: "bob", reason: "你太吵了" }, makeCtx());
       expect(result.success).not.toBe(false);
       const relEffect = result.effects.find(e => e.type === "relationship_change");
       expect(relEffect?.delta).toBe(-10);
-      const happyEffects = result.effects.filter(e => e.field === "happiness");
-      expect(happyEffects.every(e => e.delta! < 0)).toBe(true);
+      // 发起者 fun +5（释放压力），对方 fun -15
+      const selfFun = result.effects.find(e => e.field === "fun" && e.targetId === "alice");
+      expect(selfFun?.delta).toBe(5);
+      const targetFun = result.effects.find(e => e.field === "fun" && e.targetId === "bob");
+      expect(targetFun?.delta).toBe(-15);
       const socialEffects = result.effects.filter(e => e.field === "social");
       expect(socialEffects.every(e => e.delta! > 0)).toBe(true);
     });
@@ -152,7 +155,7 @@ describe("灰色行为", () => {
       const amount = (result as any)._begAmount;
       expect(amount).toBeGreaterThanOrEqual(5);
       expect(amount).toBeLessThanOrEqual(15);
-      expect(result.effects.some(e => e.field === "happiness" && e.delta! < 0)).toBe(true);
+      expect(result.effects.some(e => e.field === "fun" && e.delta! < 0)).toBe(true);
     });
   });
 });

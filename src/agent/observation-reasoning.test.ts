@@ -7,7 +7,7 @@ function makeState(overrides?: Partial<CharacterState>): CharacterState {
     id: "tomori",
     name: "高松灯",
     locationId: "cafe",
-    needs: { hunger: 60, energy: 60, social: 40, happiness: 60, hygiene: 60 },
+    needs: { hunger: 60, energy: 60, social: 40, fun: 60, hygiene: 60, bladder: 60 },
     gold: 100,
     moodlets: [], inbox: [],
     ...overrides,

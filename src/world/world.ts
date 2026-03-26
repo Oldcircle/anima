@@ -5,22 +5,7 @@
 import type { Location, Weather, WorldState, CharacterState, CharacterNeeds, InboxMessage, CharacterIntent } from "./types.js";
 import type { LifeState } from "../character/types.js";
 import { tickToGameTime, type GameTime } from "../core/tick-engine.js";
-
-const DEFAULT_NEEDS: CharacterNeeds = {
-  hunger: 80,
-  energy: 100,
-  social: 60,
-  happiness: 70,
-  hygiene: 90,
-};
-
-/** 每 tick 的需求衰减 */
-const NEED_DECAY: Partial<CharacterNeeds> = {
-  hunger: -2,
-  energy: -0.5,
-  social: -1,
-  hygiene: -0.5,
-};
+import { getDefaultNeeds, getDecayRates } from "./need-definitions.js";
 
 export class World {
   private _state: WorldState;
@@ -70,12 +55,18 @@ export class World {
 
   // --- 角色 ---
 
-  addCharacter(id: string, name: string, locationId: string, needs?: Partial<CharacterNeeds>, life?: LifeState): void {
+  addCharacter(id: string, name: string, locationId: string, needs?: Record<string, number>, life?: LifeState): void {
+    const merged: CharacterNeeds = { ...getDefaultNeeds() };
+    if (needs) {
+      for (const [k, v] of Object.entries(needs)) {
+        if (v !== undefined) merged[k] = v;
+      }
+    }
     const state: CharacterState = {
       id,
       name,
       locationId,
-      needs: { ...DEFAULT_NEEDS, ...needs },
+      needs: merged,
       gold: 100,
       life,
       moodlets: [],
@@ -121,20 +112,23 @@ export class World {
     return true;
   }
 
-  /** 每 tick 衰减所有角色的需求值 */
+  /** 每 tick 衰减所有角色的需求值（数据驱动，遍历定义列表） */
   decayNeeds(): void {
+    const decayRates = getDecayRates();
     for (const character of this._characters.values()) {
-      for (const [key, delta] of Object.entries(NEED_DECAY)) {
-        const need = key as keyof CharacterNeeds;
-        character.needs[need] = Math.max(0, Math.min(100, character.needs[need] + (delta as number)));
+      for (const [needId, delta] of Object.entries(decayRates)) {
+        if (character.needs[needId] !== undefined) {
+          character.needs[needId] = Math.max(0, Math.min(100, character.needs[needId] + delta));
+        }
       }
     }
   }
 
   /** 修改角色需求值 */
-  modifyNeed(characterId: string, need: keyof CharacterNeeds, delta: number): void {
+  modifyNeed(characterId: string, need: string, delta: number): void {
     const character = this._characters.get(characterId);
     if (!character) return;
+    if (character.needs[need] === undefined) return;
     character.needs[need] = Math.max(0, Math.min(100, character.needs[need] + delta));
   }
 

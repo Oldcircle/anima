@@ -31,8 +31,8 @@ export const inviteOutAction: ActionDefinition = {
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "social", delta: 8 },
         { type: "need_change", targetId: target, field: "social", delta: 8 },
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 10 },
-        { type: "need_change", targetId: target, field: "happiness", delta: 10 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 10 },
+        { type: "need_change", targetId: target, field: "fun", delta: 10 },
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 3 },
         { type: "inbox_message", targetId: target, fromName: ctx.characterId, message: `要不要一起${args.activity}？` },
       ],
@@ -65,7 +65,7 @@ export const shareSecretAction: ActionDefinition = {
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "social", delta: 12 },
         { type: "need_change", targetId: target, field: "social", delta: 10 },
-        { type: "need_change", targetId: ctx.characterId, field: "happiness", delta: 5 },
+        { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 5 },
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 5 },
         { type: "inbox_message", targetId: target, fromName: ctx.characterId, message: args.secret as string },
       ],

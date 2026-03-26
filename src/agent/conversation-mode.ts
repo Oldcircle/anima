@@ -170,7 +170,7 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
   const feelings: string[] = [];
   if (state.needs.hunger < 30) feelings.push("肚子有点饿");
   if (state.needs.energy < 30) feelings.push("有些疲惫");
-  if (state.needs.happiness < 30) feelings.push("心情不太好");
+  if (state.needs.fun !== undefined && state.needs.fun < 30) feelings.push("觉得没什么意思");
   if (state.needs.social > 85) feelings.push("今天聊了不少，有点想安静");
   const feelStr = feelings.length > 0 ? feelings.join("，") + "。" : "";
 
