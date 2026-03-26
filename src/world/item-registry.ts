@@ -86,6 +86,18 @@ export function getItemDef(id: string): ItemDef | undefined {
   return ITEM_MAP.get(id);
 }
 
+/**
+ * 根据 ID 或中文名解析物品定义。
+ * LLM 可能传 "bread_red_bean" 也可能传 "红豆面包"，都要能识别。
+ */
+export function resolveItem(idOrName: string): ItemDef | undefined {
+  // 先精确匹配 ID
+  const byId = ITEM_MAP.get(idOrName);
+  if (byId) return byId;
+  // 回退：按中文名查找
+  return ALL_ITEMS.find(i => i.name === idOrName);
+}
+
 /** 获取所有物品定义 */
 export function getAllItemDefs(): ItemDef[] {
   return ALL_ITEMS;

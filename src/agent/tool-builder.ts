@@ -17,7 +17,7 @@ import type { CharacterState, Location, LocationTool } from "../world/types.js";
 import type { CharacterCard } from "../character/types.js";
 import { getWorkIncome } from "../world/economy.js";
 import { inviteOutAction, shareSecretAction } from "../actions/relationship-actions.js";
-import { getItemDef, hasItem } from "../world/item-registry.js";
+import { getItemDef, hasItem, resolveItem } from "../world/item-registry.js";
 import type { ShopItem } from "../world/item-types.js";
 
 export interface ToolBuildContext {
@@ -476,10 +476,12 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
       },
     },
     handler: (args, actx): ActionResult => {
-      const itemId = args.item as string;
-      const shopItem = shop.find(s => s.id === itemId);
+      const rawItem = args.item as string;
+      // 支持 ID 和中文名：LLM 可能传 "notebook" 或 "笔记本"
+      const resolved = resolveItem(rawItem);
+      const shopItem = shop.find(s => s.id === rawItem || s.name === rawItem || (resolved && s.id === resolved.id));
       if (!shopItem) {
-        return { description: `这里没有卖${itemId}`, effects: [], success: false };
+        return { description: `这里没有卖${rawItem}`, effects: [], success: false };
       }
       if (actx.gold < shopItem.price) {
         return { description: `钱不够买${shopItem.name}`, effects: [], success: false };
@@ -533,11 +535,13 @@ function buildEatTool(
       },
     },
     handler: (args, actx): ActionResult => {
-      const itemId = args.item as string;
-      const def = getItemDef(itemId);
+      const rawItem = args.item as string;
+      // 支持 ID 和中文名
+      const def = resolveItem(rawItem);
       if (!def) {
-        return { description: `不知道${itemId}是什么`, effects: [], success: false };
+        return { description: `不知道${rawItem}是什么`, effects: [], success: false };
       }
+      const itemId = def.id; // 统一使用标准 ID
       const effects = def.effects
         ? Object.entries(def.effects).map(([field, delta]) => ({
             type: "need_change" as const,
@@ -629,16 +633,17 @@ function buildGiveTool(ctx: ToolBuildContext): ActionDefinition {
     },
     handler: (args, actx): ActionResult => {
       const target = args.target as string;
-      const itemId = args.item as string;
-      const def = getItemDef(itemId);
+      const rawItem = args.item as string;
+      const def = resolveItem(rawItem);
+      const itemId = def?.id ?? rawItem;
       if (!actx.nearbyCharacters.includes(target)) {
         return { description: `${target}不在这里`, effects: [], success: false };
       }
       if (!hasItem(ctx.state.inventory ?? [], itemId)) {
-        return { description: `你没有${def?.name ?? itemId}`, effects: [], success: false };
+        return { description: `你没有${def?.name ?? rawItem}`, effects: [], success: false };
       }
       return {
-        description: `把${def?.name ?? itemId}给了${target}`,
+        description: `把${def?.name ?? rawItem}给了${target}`,
         effects: [
           { type: "need_change", targetId: actx.characterId, field: "social", delta: 5 },
           { type: "need_change", targetId: target, field: "social", delta: 10 },
