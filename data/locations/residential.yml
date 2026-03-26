@@ -11,15 +11,6 @@ _residential_tools: &home_tools
     description: "洗澡梳洗"
     effects: { hygiene: 100 }
     duration: 2
-  - name: cook
-    description: "自己做饭吃（5金币）"
-    effects: { hunger: 60, fun: 5, energy: -8, hygiene: -5 }
-    cost: 5
-    duration: 3
-  - name: rest
-    description: "在沙发上躺一会儿，放松一下"
-    effects: { energy: 5, fun: -3 }
-    duration: 2
   - name: use_toilet
     description: "上厕所"
     effects: { bladder: 100 }

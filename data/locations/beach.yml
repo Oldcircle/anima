@@ -12,10 +12,6 @@ tools:
     description: "在沙滩上捡贝壳或小石头"
     effects: { fun: 5 }
     duration: 2
-  - name: fish
-    description: "在岸边钓鱼，需要耐心"
-    effects: { fun: 12, energy: -5 }
-    duration: 8
   - name: walk
     description: "沿着海边散步，吹吹海风"
     effects: { fun: 8, energy: -3 }

@@ -22,6 +22,8 @@ export function saveGame(sim: Simulation, dbPath: string): void {
       currentAction: c.currentAction,
       life: c.life,
       moodlets: c.moodlets,
+      inventory: c.inventory,
+      recentActions: c.recentActions,
     }));
 
     const relationships = sim.relationships.getAll();
@@ -114,6 +116,13 @@ export function loadGame(sim: Simulation, dbPath: string): boolean {
         // 恢复 moodlets
         if (sc.moodlets) {
           char.moodlets = sc.moodlets;
+        }
+        // 恢复物品和行为记录
+        if (sc.inventory) {
+          char.inventory = sc.inventory;
+        }
+        if (sc.recentActions) {
+          char.recentActions = sc.recentActions;
         }
       }
     }

@@ -11,21 +11,14 @@ worker_tools:
     description: "整理书架、归还上架"
     effects: { energy: -3, fun: -1 }
     duration: 1
+    income: 1
   - name: help_reader
     description: "帮人找书、推荐书目"
     effects: { energy: -2, social: 3, fun: 1 }
     duration: 1
+    income: 2
 
-tools:
-  - name: read
-    description: "找一本书安静地看"
-    effects: { fun: 10, energy: -3, social: -3 }
-    duration: 4
-  - name: work
-    description: "在图书馆工作：整理书架、办理借阅"
-    effects: { energy: -15, hunger: -10, fun: -10, bladder: -10 }
-    duration: 8
-    condition: "isWorkplace"
+tools: []
 
 career_track:
   - level: 1

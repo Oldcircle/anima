@@ -319,6 +319,12 @@ async function executeAction(
   if (typeof toolCost === "number") {
     state.gold = Math.max(0, state.gold - toolCost);
   }
+  // 员工工具收入（worker_tools 中带 income 的）
+  const workerIncome = (result as any)?._workerIncome;
+  if (typeof workerIncome === "number") {
+    state.gold += workerIncome;
+  }
+  // 旧 work 兜底（向后兼容）
   if (toolCall.name === "work") {
     state.gold += state.life?.income ?? card.life?.income ?? getWorkIncome(card.occupation);
   } else if (toolCall.name === "steal") {
@@ -335,15 +341,20 @@ async function executeAction(
 
   // 物品效果
   const buyItem = (result as any)?._buyItem;
+  const eatImmediate = (result as any)?._eatImmediate;
   if (buyItem && typeof buyItem === "object") {
-    const { addToInventory } = await import("../world/item-registry.js");
     state.gold = Math.max(0, state.gold - buyItem.price);
-    addToInventory(state.inventory, buyItem.defId, 1, { obtainedTick: world.tick });
+    if (!eatImmediate) {
+      // 普通购买：物品入背包
+      const { addToInventory } = await import("../world/item-registry.js");
+      addToInventory(state.inventory, buyItem.defId, 1, { obtainedTick: world.tick });
+    }
+    // eatImmediate: 买了直接吃，不入背包（效果已在 effects 中）
   }
   const useItem = (result as any)?._useItem;
-  if (typeof useItem === "string") {
-    const { removeFromInventory } = await import("../world/item-registry.js");
-    const { getItemDef } = await import("../world/item-registry.js");
+  if (typeof useItem === "string" && !eatImmediate) {
+    // 从背包消耗（eatImmediate 时不需要，因为没入过背包）
+    const { removeFromInventory, getItemDef } = await import("../world/item-registry.js");
     const def = getItemDef(useItem);
     if (def?.type === "consumable" || (def?.type === "gift" && def.effects)) {
       removeFromInventory(state.inventory, useItem, 1);

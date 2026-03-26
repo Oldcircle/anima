@@ -59,41 +59,64 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     }
   }
 
-  // 2c. 商店工具（地点有 shop 时浮现 buy；员工不看到 buy）
-  if (ctx.location.shop && ctx.location.shop.length > 0 && ctx.location.id !== workplace) {
+  // 2c. 商店工具（地点有 shop 时浮现 buy）
+  if (ctx.location.shop && ctx.location.shop.length > 0) {
     const buyTool = buildBuyTool(ctx.location.shop, ctx);
     if (buyTool) tools.push(buyTool);
   }
 
-  // 2d. 背包物品工具
-  if (ctx.state.inventory && ctx.state.inventory.length > 0) {
-    // use: 背包有 consumable 时浮现
-    const consumables = ctx.state.inventory.filter(i => {
+  // 2d. eat：背包有食物/饮品时浮现 + 当前地点商店的食物（直接买了吃）
+  {
+    const bagFood = (ctx.state.inventory ?? []).filter(i => {
       const def = getItemDef(i.defId);
-      return def && (def.type === "consumable" || (def.type === "gift" && def.effects));
+      return def && def.effects && (def.type === "consumable" || (def.type === "gift" && def.effects));
     });
-    if (consumables.length > 0) {
-      tools.push(buildUseTool(consumables, ctx));
+    const shopFood = (ctx.location.shop ?? []).filter(s => {
+      const def = getItemDef(s.id);
+      return def && def.effects && def.type === "consumable" && ctx.gold >= s.price;
+    });
+    if (bagFood.length > 0 || shopFood.length > 0) {
+      tools.push(buildEatTool(bagFood, shopFood, ctx));
     }
+  }
 
-    // give: 背包非空 + 附近有人
-    if (ctx.nearbyCharacters.length > 0) {
-      tools.push(buildGiveTool(ctx));
-    }
+  // 2e. give：背包非空 + 附近有人
+  if ((ctx.state.inventory ?? []).length > 0 && ctx.nearbyCharacters.length > 0) {
+    tools.push(buildGiveTool(ctx));
+  }
 
-    // 物品启用的工具（notebook→journal, guitar→practice_music 等）
-    for (const item of ctx.state.inventory) {
-      const def = getItemDef(item.defId);
-      if (def?.enables) {
-        for (const toolId of def.enables) {
-          // 检查地点工具里是否已有同名工具（避免重复）
-          if (!tools.some(t => t.tool.name === toolId)) {
-            const enabled = buildItemEnabledTool(toolId, def.name, ctx);
-            if (enabled) tools.push(enabled);
-          }
+  // 2f. 物品启用的工具（notebook→journal, guitar→practice_music 等）
+  for (const item of (ctx.state.inventory ?? [])) {
+    const def = getItemDef(item.defId);
+    if (def?.enables) {
+      for (const toolId of def.enables) {
+        if (!tools.some(t => t.tool.name === toolId)) {
+          const enabled = buildItemEnabledTool(toolId, def.name, ctx);
+          if (enabled) tools.push(enabled);
         }
       }
     }
+  }
+
+  // 2g. cook：在家 + 有食材时浮现
+  if (ctx.location.type === "residential" && hasItem(ctx.state.inventory ?? [], "ingredients")) {
+    tools.push(buildCookTool(ctx));
+  }
+
+  // 2h. read：在图书馆时无条件可用（图书馆有书）
+  if (ctx.location.id === "library") {
+    tools.push({
+      tool: { name: "read", description: "从书架上拿本书看。安静但久坐会累。", parameters: { type: "object", properties: { thought: { type: "string", description: "你在想什么" } } } },
+      handler: (_args, actx): ActionResult => ({
+        description: "在图书馆看书",
+        effects: [
+          { type: "need_change", targetId: actx.characterId, field: "fun", delta: 20 },
+          { type: "need_change", targetId: actx.characterId, field: "energy", delta: -5 },
+          { type: "need_change", targetId: actx.characterId, field: "social", delta: -3 },
+        ],
+        duration: 4,
+      }),
+    });
   }
 
   // 3. 社交工具（附近有人时）
@@ -410,9 +433,12 @@ function describeLocationTool(lt: LocationTool, ctx: ToolBuildContext): string {
     }
   }
 
-  // 工作工具加上自然语言的代价提示
+  // 工作/员工工具加上收入提示
   if (lt.name === "work") {
     desc += "。能赚钱，但又累又无聊";
+  }
+  if (lt.income) {
+    desc += "。能赚一点钱";
   }
 
   // 特定工具的常识性代价
@@ -467,24 +493,41 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
   };
 }
 
-function buildUseTool(consumables: import("../world/item-types.js").ItemInstance[], ctx: ToolBuildContext): ActionDefinition {
-  const itemList = consumables.map(i => {
-    const def = getItemDef(i.defId);
-    const name = def?.name ?? i.defId;
-    const qty = i.quantity > 1 ? ` ×${i.quantity}` : "";
-    const from = i.giftedBy ? `（${i.giftedBy}给的）` : "";
-    return `${i.defId}(${name}${qty}${from})`;
-  }).join("、");
+/**
+ * eat 工具：整合背包食物 + 当前地点商店食物。
+ * 背包里的直接吃（免费），商店的买了直接吃（花钱）。
+ */
+function buildEatTool(
+  bagFood: import("../world/item-types.js").ItemInstance[],
+  shopFood: import("../world/item-types.js").ShopItem[],
+  ctx: ToolBuildContext,
+): ActionDefinition {
+  const parts: string[] = [];
+
+  if (bagFood.length > 0) {
+    const bagList = bagFood.map(i => {
+      const def = getItemDef(i.defId);
+      const name = def?.name ?? i.defId;
+      const from = i.giftedBy ? `（${i.giftedBy}给的）` : "";
+      return `${i.defId}(${name}${from}，免费)`;
+    }).join("、");
+    parts.push(`你身上有：${bagList}`);
+  }
+
+  if (shopFood.length > 0) {
+    const shopList = shopFood.map(s => `${s.id}(${s.name}，${s.price}金币)`).join("、");
+    parts.push(`店里有：${shopList}`);
+  }
 
   return {
     tool: {
-      name: "use",
-      description: `吃/喝/使用你身上的东西。你有：${itemList}`,
+      name: "eat",
+      description: `吃点东西。${parts.join("。")}`,
       parameters: {
         type: "object",
         properties: {
           thought: { type: "string", description: "你在想什么" },
-          item: { type: "string", description: `要使用的物品` },
+          item: { type: "string", description: "要吃/喝什么" },
         },
         required: ["item"],
       },
@@ -493,7 +536,7 @@ function buildUseTool(consumables: import("../world/item-types.js").ItemInstance
       const itemId = args.item as string;
       const def = getItemDef(itemId);
       if (!def) {
-        return { description: `不知道怎么用${itemId}`, effects: [], success: false };
+        return { description: `不知道${itemId}是什么`, effects: [], success: false };
       }
       const effects = def.effects
         ? Object.entries(def.effects).map(([field, delta]) => ({
@@ -503,12 +546,58 @@ function buildUseTool(consumables: import("../world/item-types.js").ItemInstance
             delta,
           }))
         : [];
-      return {
-        description: `使用了${def.name}`,
-        effects,
-        _useItem: itemId,
-      } as ActionResult & { _useItem: string };
+
+      // 判断来源：背包还是商店
+      const inBag = (ctx.state.inventory ?? []).some(i => i.defId === itemId);
+      const shopItem = (ctx.location.shop ?? []).find(s => s.id === itemId);
+
+      if (inBag) {
+        return {
+          description: `吃了${def.name}`,
+          effects,
+          duration: 2,
+          _useItem: itemId,
+        } as ActionResult & { _useItem: string };
+      } else if (shopItem) {
+        return {
+          description: `买了${def.name}吃`,
+          effects,
+          duration: 2,
+          _buyItem: { defId: itemId, price: shopItem.price },
+          _useItem: itemId, // 买了立刻吃，不入背包
+          _eatImmediate: true,
+        } as ActionResult & { _buyItem: { defId: string; price: number }; _useItem: string; _eatImmediate: boolean };
+      } else {
+        return { description: `这里没有${def.name}`, effects: [], success: false };
+      }
     },
+  };
+}
+
+/** cook 工具：消耗食材，产出家常饭 */
+function buildCookTool(ctx: ToolBuildContext): ActionDefinition {
+  return {
+    tool: {
+      name: "cook",
+      description: "用食材做饭。便宜但费事，还会弄脏厨房。",
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么" },
+        },
+      },
+    },
+    handler: (_args, actx): ActionResult => ({
+      description: "在家做了一顿饭",
+      effects: [
+        { type: "need_change", targetId: actx.characterId, field: "hunger", delta: 60 },
+        { type: "need_change", targetId: actx.characterId, field: "fun", delta: 5 },
+        { type: "need_change", targetId: actx.characterId, field: "energy", delta: -8 },
+        { type: "need_change", targetId: actx.characterId, field: "hygiene", delta: -5 },
+      ],
+      duration: 3,
+      _useItem: "ingredients",
+    } as ActionResult & { _useItem: string }),
   };
 }
 
@@ -639,12 +728,13 @@ function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefin
         field,
         delta,
       }));
-      const result: ActionResult & { _cost?: number } = {
+      const result: ActionResult & { _cost?: number; _workerIncome?: number } = {
         description: lt.description.replace(/（.*?）/, ""),
         effects,
         duration: lt.duration ?? 1,
       };
       if (lt.cost) result._cost = lt.cost;
+      if (lt.income) result._workerIncome = lt.income;
       return result;
     },
   };

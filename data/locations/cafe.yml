@@ -18,31 +18,18 @@ worker_tools:
     description: "做咖啡"
     effects: { energy: -2, fun: 1 }
     duration: 1
+    income: 2
   - name: serve_customer
     description: "送餐、收碟子"
     effects: { energy: -3, social: 2 }
     duration: 1
+    income: 3
   - name: clean_table
     description: "擦桌子"
     effects: { energy: -2, fun: -3, hygiene: -2 }
     duration: 1
 
 tools:
-  - name: eat
-    description: "在咖啡馆吃点东西（15金币）"
-    effects: { hunger: 45, fun: 3, bladder: -5 }
-    cost: 15
-    duration: 2
-  - name: drink
-    description: "点一杯咖啡或饮料（8金币）"
-    effects: { energy: 12, fun: 5, bladder: -15 }
-    cost: 8
-    duration: 2
-  - name: work
-    description: "在咖啡馆工作：冲咖啡、招呼客人、清理桌子"
-    effects: { energy: -15, hunger: -10, fun: -10, bladder: -10 }
-    duration: 8
-    condition: "isWorkplace"
   - name: use_toilet
     description: "上厕所"
     effects: { bladder: 100 }

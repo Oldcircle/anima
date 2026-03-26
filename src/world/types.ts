@@ -19,6 +19,8 @@ export interface LocationTool {
   duration?: number;
   /** 条件：如 "energy < 80", "hygiene < 80", "isWorkplace" */
   condition?: string;
+  /** 员工工具收入（每次执行获得的金币） */
+  income?: number;
 }
 
 /** 职业阶梯等级 */

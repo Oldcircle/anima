@@ -20,22 +20,14 @@ worker_tools:
     description: "烤面包"
     effects: { energy: -2 }
     duration: 3
+    income: 2
   - name: serve_customer
     description: "招呼客人、卖面包"
     effects: { energy: -2, social: 3 }
     duration: 1
+    income: 3
 
-tools:
-  - name: eat
-    description: "在面包店吃东西（8金币）"
-    effects: { hunger: 30 }
-    cost: 8
-    duration: 2
-  - name: work
-    description: "在面包店工作：揉面、烤面包、招呼客人"
-    effects: { energy: -15, hunger: -10, fun: -10, bladder: -10 }
-    duration: 8
-    condition: "isWorkplace"
+tools: []
 
 career_track:
   - level: 1

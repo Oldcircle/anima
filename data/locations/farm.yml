@@ -4,11 +4,6 @@ type: nature
 summary: 干农活、采摘、散步
 
 tools:
-  - name: work
-    description: "在农田干活：除草、浇水、翻地"
-    effects: { energy: -20, hunger: -10 }
-    duration: 8
-    condition: "isWorkplace"
   - name: explore
     description: "在田间散步，看看庄稼长势"
     effects: { fun: 5, energy: -3 }

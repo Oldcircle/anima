@@ -11,16 +11,6 @@ shop:
   - { id: juice, name: 果汁, price: 6 }
 
 tools:
-  - name: drink
-    description: "喝一杯酒（12金币）"
-    effects: { fun: 20, social: 8, energy: -5, bladder: -25 }
-    cost: 12
-    duration: 2
-  - name: eat
-    description: "吃点下酒菜（10金币）"
-    effects: { hunger: 30, fun: 5 }
-    cost: 10
-    duration: 2
   - name: use_toilet
     description: "上厕所"
     effects: { bladder: 100 }
