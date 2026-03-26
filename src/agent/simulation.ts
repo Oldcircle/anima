@@ -323,6 +323,10 @@ export class Simulation {
               recentMemories,
               actions: this._actions,
               workplaceName: wpName,
+              colleagueNames: this.relationships.getRelationshipsOf(id)
+                .filter((r) => r.relationship.bond === "colleague")
+                .map((r) => this.world.getCharacter(r.otherId)?.name)
+                .filter((n): n is string => !!n),
             });
             r = await runAgentTick({
               config, world: this.world, eventBus: this.eventBus, gameTime,

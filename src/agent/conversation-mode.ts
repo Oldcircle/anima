@@ -257,8 +257,9 @@ export function buildConversationRequest(params: {
   recentMemories?: string;
   actions: ActionDefinition[];
   workplaceName?: string;
+  colleagueNames?: string[];
 }): LLMRequest {
-  const systemPrompt = buildSystemPrompt(params.card, params.workplaceName);
+  const systemPrompt = buildSystemPrompt(params.card, params.workplaceName, params.colleagueNames);
   const userPrompt = buildConversationPrompt({
     card: params.card,
     state: params.state,

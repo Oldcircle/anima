@@ -66,7 +66,7 @@ function formatLifeContext(life: LifeState, workplaceName?: string): string {
   return parts.join("\n");
 }
 
-export function buildSystemPrompt(card: CharacterCard, workplaceName?: string): string {
+export function buildSystemPrompt(card: CharacterCard, workplaceName?: string, colleagueNames?: string[]): string {
   const parts: string[] = [];
 
   const life = card.life;
@@ -77,7 +77,11 @@ export function buildSystemPrompt(card: CharacterCard, workplaceName?: string): 
 
   // 生活状态认知
   if (life) {
-    parts.push(`\n## 你的生活\n${formatLifeContext(life, workplaceName)}`);
+    let lifeText = formatLifeContext(life, workplaceName);
+    if (colleagueNames && colleagueNames.length > 0) {
+      lifeText += `\n你的同事：${colleagueNames.join("、")}。你们在同一个地方工作。`;
+    }
+    parts.push(`\n## 你的生活\n${lifeText}`);
   }
 
   // 外貌
@@ -325,7 +329,8 @@ export function buildUserPrompt(params: {
       for (const c of nearbyCharacters) {
         const impText = params.impressions!.formatForPrompt(card.id, c.id);
         if (impText) {
-          parts.push(`**${c.name}**(ID:${c.id})\n${impText}`);
+          const bondNote = c.relationship?.bond ? describeBond(c.relationship.bond) : "";
+          parts.push(`**${c.name}**(ID:${c.id})${bondNote ? " " + bondNote : ""}\n${impText}`);
           // 收集未解疑惑，作为对话驱动力
           const imp = params.impressions!.get(card.id, c.id);
           if (imp && imp.unresolved.length > 0) {

@@ -108,7 +108,17 @@ export async function runAgentTick(params: {
   // 构建 prompt
   const workplaceId = state.life?.workplace ?? card.life?.workplace;
   const workplaceName = workplaceId ? world.getLocation(workplaceId)?.name : undefined;
-  const systemPrompt = buildSystemPrompt(card, workplaceName);
+  // 查找同事名字（bond=colleague 的关系）
+  const colleagueNames: string[] = [];
+  if (params.relationships) {
+    for (const { otherId, relationship: rel } of params.relationships.getRelationshipsOf(card.id)) {
+      if (rel.bond === "colleague") {
+        const other = world.getCharacter(otherId);
+        if (other) colleagueNames.push(other.name);
+      }
+    }
+  }
+  const systemPrompt = buildSystemPrompt(card, workplaceName, colleagueNames);
   const userPrompt = buildUserPrompt({
     card,
     state,
