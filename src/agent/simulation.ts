@@ -25,6 +25,7 @@ import { updateImpressionsBidirectional } from "./impression-updater.js";
 import { shouldObserve, generateObservation, type ObservationResult } from "./observation-reasoning.js";
 import { tickMoodlets, generateNeedMoodlets, addMoodlet } from "../world/moodlets.js";
 import { checkPromotion, applyPromotion, type PromotionResult } from "../world/career.js";
+import { detectBehaviorPatterns } from "../world/behavior-chains.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -182,6 +183,11 @@ export class Simulation {
     for (const c of this.world.getAllCharacters()) {
       tickMoodlets(c, gameTime.tick);
       generateNeedMoodlets(c, gameTime.tick);
+      // 行为链检测 → 后果涟漪
+      const chainMoodlets = detectBehaviorPatterns(c, gameTime.tick);
+      for (const m of chainMoodlets) {
+        addMoodlet(c, m.emotion, m.intensity, m.reason, m.expiresAtTick - gameTime.tick, m.source, gameTime.tick);
+      }
     }
 
     // 1.5 随机事件
