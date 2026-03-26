@@ -364,6 +364,25 @@ export function buildUserPrompt(params: {
   const prefsHint = formatPreferencesHint(card);
   if (prefsHint) parts.push(`\n${prefsHint}`);
 
+  // "你刚刚"提醒——防止重复行为
+  if (state.recentActions && state.recentActions.length > 0) {
+    const last = state.recentActions[state.recentActions.length - 1]!;
+    const lastAction = last.actionId;
+    // 统计最近连续相同行为次数
+    let streak = 0;
+    for (let i = state.recentActions.length - 1; i >= 0; i--) {
+      if (state.recentActions[i]!.actionId === lastAction) streak++;
+      else break;
+    }
+    let hint = `你上一个行动是：${lastAction}。`;
+    if (streak >= 3) {
+      hint += `你已经连续做了${streak}次类似的事了，想想是不是该换个事做。`;
+    } else if (streak >= 2) {
+      hint += `你刚才也做了这个。`;
+    }
+    parts.push(`\n## 你刚刚\n${hint}`);
+  }
+
   if (params.recentMemories) {
     parts.push(`\n## 你的记忆（最近经历）\n${params.recentMemories}`);
   }

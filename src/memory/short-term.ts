@@ -5,6 +5,14 @@
  * 在 prompt 构建时注入，让角色有连续性。
  */
 
+import { tickToGameTime } from "../core/tick-engine.js";
+
+/** tick → "HH:MM" */
+function _tickTime(tick: number): string {
+  const gt = tickToGameTime(tick);
+  return `${String(gt.hour).padStart(2, "0")}:${String(gt.minute).padStart(2, "0")}`;
+}
+
 export interface MemoryEntry {
   tick: number;
   type: "event" | "conversation" | "thought" | "observation";
@@ -48,15 +56,14 @@ export class ShortTermMemory {
     return entries.filter((e) => e.tick >= dayStartTick && e.tick <= dayEndTick);
   }
 
-  /** 格式化为 prompt 文本（含对话来回状态标注） */
-  formatForPrompt(characterId: string, count = 8): string {
+  /** 格式化为 prompt 文本（含时间戳、连续压缩、对话标注） */
+  formatForPrompt(characterId: string, count = 10): string {
     const entries = this.getRecent(characterId, count);
     if (entries.length === 0) return "";
 
-    // 第一遍：从最新到最旧倒序扫描，统计每个对话对象的连续未回复 talk 次数
-    // 通过 relatedCharacterId 匹配（统一用角色 ID，避免 ID/名字不一致问题）
+    // 第一遍：对话未回复检测
     const unrepliedCount = new Map<string, number>();
-    const frozen = new Set<string>(); // 已遇到回复，停止计数
+    const frozen = new Set<string>();
     for (let i = entries.length - 1; i >= 0; i--) {
       const e = entries[i]!;
       if (!e.relatedCharacterId) continue;
@@ -69,25 +76,66 @@ export class ShortTermMemory {
       }
     }
 
-    // 第二遍：渲染，在最新一条未回复 talk 上追加标注
-    const annotated = new Set<string>();
+    // 第二遍：正序渲染，压缩连续相同行为，加时间戳
     const lines: string[] = [];
+    let prevContent = "";
+    let repeatCount = 0;
+    let repeatStartTick = 0;
 
-    for (let i = entries.length - 1; i >= 0; i--) {
+    const flushRepeat = () => {
+      if (repeatCount > 1) {
+        const startTime = _tickTime(repeatStartTick);
+        const endTime = _tickTime(entries[lines.length + repeatCount - 1]?.tick ?? repeatStartTick);
+        lines.push(`📌 [${startTime}-${endTime}] ${prevContent}（连续${repeatCount}次，考虑换个事做）`);
+      }
+      repeatCount = 0;
+    };
+
+    const annotated = new Set<string>();
+
+    for (let i = 0; i < entries.length; i++) {
       const e = entries[i]!;
+      const time = _tickTime(e.tick);
       const prefix = e.type === "conversation" ? "💬" : e.type === "thought" ? "💭" : "📌";
-      let line = `${prefix} ${e.content}`;
 
+      // 连续相同行为压缩（只压缩 event 类型）
+      if (e.type === "event" && e.content === prevContent) {
+        if (repeatCount === 0) repeatStartTick = entries[i - 1]?.tick ?? e.tick;
+        repeatCount++;
+        continue;
+      }
+
+      // 输出之前的重复
+      if (repeatCount > 1) {
+        const startTime = _tickTime(repeatStartTick);
+        lines.push(`📌 [${startTime}-${time}] ${prevContent}（连续${repeatCount}次，考虑换个事做）`);
+        repeatCount = 0;
+      } else if (repeatCount === 1) {
+        repeatCount = 0;
+      }
+
+      let line = `${prefix} [${time}] ${e.content}`;
+
+      // 对话未回复标注
       if (e.type === "event" && e.relatedCharacterId && e.content.match(/^对.+?说：/)) {
         const cid = e.relatedCharacterId;
-        const count = unrepliedCount.get(cid) ?? 0;
-        if (count >= 2 && !annotated.has(cid)) {
-          line += `（你已经连续${count}次找对方说话，但对方没有回应你）`;
+        const cnt = unrepliedCount.get(cid) ?? 0;
+        if (cnt >= 2 && !annotated.has(cid)) {
+          line += `（你已经连续${cnt}次找对方说话，但对方没有回应你）`;
           annotated.add(cid);
         }
       }
 
-      lines.unshift(line);
+      lines.push(line);
+      prevContent = e.type === "event" ? e.content : "";
+      if (e.type === "event" && prevContent) repeatCount = 1;
+    }
+
+    // 最后一组重复
+    if (repeatCount > 1) {
+      const startTime = _tickTime(repeatStartTick);
+      const endTime = _tickTime(entries[entries.length - 1]?.tick ?? repeatStartTick);
+      lines.push(`📌 [${startTime}-${endTime}] ${prevContent}（连续${repeatCount}次，考虑换个事做）`);
     }
 
     return lines.join("\n");

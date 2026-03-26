@@ -18,6 +18,7 @@ import { getWorkIncome, getConsumptionCost } from "../world/economy.js";
 import { getTodayFestival } from "../world/festivals.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
 import { buildToolList, type ToolBuildContext } from "./tool-builder.js";
+import { narrateAction } from "../memory/memory-narrator.js";
 import { v4 as uuid } from "uuid";
 
 export interface AgentConfig {
@@ -198,13 +199,22 @@ export async function runAgentTick(params: {
     }
   }
 
-  // 存入短期记忆：行为结果
+  // 存入短期记忆：行为结果（自然语言回忆，不是系统日志）
   if (params.memory && result.result) {
     const isFailed = result.result.success === false;
+    const location = world.getLocation(state.locationId);
+    const narrated = narrateAction({
+      toolName: toolCall.name,
+      args: toolCall.arguments,
+      description: result.result.description,
+      locationName: location?.name,
+      characterName: state.name,
+      success: result.result.success,
+    });
     params.memory.add(card.id, {
       tick: gameTime.tick,
       type: "event",
-      content: isFailed ? `[失败] ${result.result.description}` : result.result.description,
+      content: narrated,
       importance: isFailed ? 8 : toolCall.name === "talk" ? 7 : 4,
       relatedCharacterId: toolCall.name === "talk" ? toolCall.arguments.target as string : undefined,
     });
