@@ -111,10 +111,12 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
           characterId: r.characterId,
           insights: r.insights,
           mood: r.mood,
+          wish: r.wish,
+          concern: r.concern,
         })),
         weather: simulation.world.weather,
         relationships: simulation.relationships.getAll().map((r) => ({
-          a: r.characterA, b: r.characterB, level: r.level, type: r.type,
+          a: r.characterA, b: r.characterB, level: r.level, type: r.type, bond: r.bond,
         })),
         // 角色名映射（ID→名字）
         nameMap: Object.fromEntries(
@@ -256,5 +258,20 @@ function getCharactersState(sim: Simulation) {
     gold: c.gold,
     currentAction: c.currentAction,
     inboxCount: c.inbox.length,
+    life: c.life ? {
+      occupation: c.life.occupation,
+      workplace: c.life.workplace,
+      age: c.life.age,
+      income: c.life.income,
+      skills: c.life.skills,
+      aspiration: c.life.aspiration,
+      currentGoal: c.life.currentGoal,
+      currentConcern: c.life.currentConcern,
+    } : undefined,
+    moodlets: c.moodlets.length > 0 ? c.moodlets.map((m) => ({
+      emotion: m.emotion,
+      intensity: m.intensity,
+      reason: m.reason,
+    })) : undefined,
   }));
 }

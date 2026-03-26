@@ -103,6 +103,34 @@
     .go-title { font-size: 11px; color: #484f58; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
     .go-char { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; cursor: pointer; border-bottom: 1px solid #21262d; }
     .go-char:hover { color: #f0f6fc; }
+
+    /* Moodlet 标签 */
+    .moodlet-tag { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; margin: 1px 2px; }
+    .moodlet-happy { background: #3fb95022; color: #3fb950; }
+    .moodlet-sad { background: #58a6ff22; color: #58a6ff; }
+    .moodlet-angry { background: #f8514922; color: #f85149; }
+    .moodlet-embarrassed { background: #d2a8ff22; color: #d2a8ff; }
+    .moodlet-anxious { background: #d2992222; color: #d29922; }
+    .moodlet-confident { background: #3fb95022; color: #56d364; }
+    .moodlet-lonely { background: #58a6ff22; color: #79c0ff; }
+    .moodlet-grateful { background: #a371f722; color: #a371f7; }
+
+    /* Bond 标签 */
+    .bond-tag { display: inline-block; padding: 1px 5px; border-radius: 4px; font-size: 9px; background: #a371f722; color: #a371f7; margin-left: 4px; }
+
+    /* 技能条 */
+    .skill-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+    .skill-row .sk-name { width: 50px; font-size: 11px; color: #8b949e; }
+    .skill-row .sk-bar { flex: 1; height: 4px; background: #21262d; border-radius: 2px; overflow: hidden; }
+    .skill-row .sk-fill { height: 100%; border-radius: 2px; background: #58a6ff; }
+    .skill-row .sk-val { width: 28px; text-align: right; font-size: 10px; color: #484f58; }
+
+    /* Life 信息 */
+    .life-info { font-size: 12px; color: #8b949e; line-height: 1.8; }
+    .life-info .li-label { color: #484f58; }
+    .life-info .li-aspiration { color: #d29922; font-style: italic; }
+    .life-info .li-goal { color: #3fb950; }
+    .life-info .li-concern { color: #f85149; }
   </style>
 </head>
 <body>
@@ -199,6 +227,10 @@
       renderDetail();
     }
 
+    const EMOTION_LABEL = { happy:'开心', sad:'难过', angry:'生气', embarrassed:'尴尬', anxious:'焦虑', confident:'自信', lonely:'孤独', grateful:'感激' };
+    const BOND_LABEL = { colleague:'同事', roommate:'室友', partner:'恋人', ex:'前任', mentor:'师徒', rival:'宿敌' };
+    const SKILL_NAMES = { baking:'烘焙', social:'社交', barista:'咖啡', piano:'钢琴', etiquette:'礼仪', botany:'植物', guitar:'吉他', organizing:'整理', observation:'观察', writing:'写作' };
+
     function renderSidebar() {
       const el = document.getElementById('sidebar');
       el.innerHTML = S.characters.map(c => {
@@ -209,10 +241,16 @@
           return `<div class="mini-bar"><div class="fill" style="width:${v}%;background:${needColor(v)}"></div></div>`;
         }).join('');
         const action = c.currentAction ? `${c.currentAction.name}` : '';
+        const occ = c.life?.occupation || '';
+        const moodTags = (c.moodlets || []).slice(0, 2).map(m =>
+          `<span class="moodlet-tag moodlet-${m.emotion}">${EMOTION_LABEL[m.emotion] || m.emotion}</span>`
+        ).join('');
         return `<div class="char-card ${sel}" onclick="selectChar('${c.id}')">
           <div class="cc-name">${c.name}</div>
           <div class="cc-meta"><span class="cc-loc">${loc?.name || c.locationId}</span> &middot; &#128176;${c.gold ?? 0} ${action ? '&middot; ' + action : ''}</div>
+          ${occ ? `<div class="cc-meta" style="color:#58a6ff">${occ}</div>` : ''}
           <div class="mini-bars">${bars}</div>
+          ${moodTags ? `<div style="margin-top:3px">${moodTags}</div>` : ''}
         </div>`;
       }).join('');
     }
@@ -270,9 +308,12 @@
         for (const ref of tick.reflections) {
           if (!ref.insights?.length) continue;
           const name = N(ref.characterId);
+          let reflectHtml = ref.insights.map(i => '- ' + escHtml(i)).join('\n');
+          if (ref.wish) reflectHtml += `\n<span style="color:#3fb950">&#127775; 愿望: ${escHtml(ref.wish)}</span>`;
+          if (ref.concern) reflectHtml += `\n<span style="color:#f85149">&#9888; 担忧: ${escHtml(ref.concern)}</span>`;
           entries.push(`<div class="tick-entry is-reflect">
-            <span class="te-actor">${name}</span> <span class="te-action">&#128218; &#21453;&#24605; (${ref.mood})</span>
-            <div class="te-thought">${ref.insights.map(i => '&#8226; ' + escHtml(i)).join('\n')}</div>
+            <span class="te-actor">${name}</span> <span class="te-action">&#128218; 反思 (${ref.mood})</span>
+            <div class="te-thought">${reflectHtml}</div>
           </div>`);
         }
 
@@ -298,9 +339,10 @@
           html += `<div class="d-section"><div class="go-title">&#20851;&#31995;&#32593;&#32476;</div>`;
           for (const r of relationships) {
             const pct = Math.max(0, (r.level + 100) / 2);
+            const bondTag = r.bond ? `<span class="bond-tag">${BOND_LABEL[r.bond] || r.bond}</span>` : '';
             html += `<div class="rel-row">
               <span class="r-name" onclick="selectChar('${r.a}')">${N(r.a)}</span>
-              <span class="r-type">${r.type} (${r.level})</span>
+              <span class="r-type">${r.type} (${r.level})${bondTag}</span>
               <span class="r-name" onclick="selectChar('${r.b}')">${N(r.b)}</span>
               <div class="r-bar"><div class="r-fill" style="width:${pct}%;background:${relColor(r.level)}"></div></div>
             </div>`;
@@ -347,14 +389,50 @@
       const loc = S.locations?.find(l => l.id === ch.locationId);
       const card = charCards?.[ch.id];
       const charRels = relationships.filter(r => r.a === ch.id || r.b === ch.id);
+      const life = ch.life;
 
       let html = `<div class="profile-header">
         <div class="p-name">${ch.name}</div>
+        <div class="p-meta">${life ? `${life.age} 岁 &middot; ${life.occupation}` : ''}</div>
         <div class="p-meta">${loc?.name || ch.locationId} &middot; &#128176;${ch.gold ?? 0}${ch.currentAction ? ' &middot; ' + ch.currentAction.name : ''}</div>
       </div>`;
 
+      // 生活状态
+      if (life) {
+        html += '<div class="d-section"><div class="d-section-title">生活状态</div><div class="life-info">';
+        const wpLoc = S.locations?.find(l => l.id === life.workplace);
+        html += `<div><span class="li-label">工作地点: </span>${wpLoc?.name || life.workplace} &middot; 收入 ${life.income}/次</div>`;
+        if (life.aspiration) html += `<div><span class="li-label">抱负: </span><span class="li-aspiration">${escHtml(life.aspiration)}</span></div>`;
+        if (life.currentGoal) html += `<div><span class="li-label">目标: </span><span class="li-goal">${escHtml(life.currentGoal)}</span></div>`;
+        if (life.currentConcern) html += `<div><span class="li-label">担忧: </span><span class="li-concern">${escHtml(life.currentConcern)}</span></div>`;
+        html += '</div></div>';
+
+        // 技能
+        const skills = Object.entries(life.skills || {});
+        if (skills.length > 0) {
+          html += '<div class="d-section"><div class="d-section-title">技能</div>';
+          for (const [sk, val] of skills) {
+            const pct = Math.min(100, (val / 10) * 100);
+            const name = SKILL_NAMES[sk] || sk;
+            html += `<div class="skill-row"><span class="sk-name">${name}</span><div class="sk-bar"><div class="sk-fill" style="width:${pct}%"></div></div><span class="sk-val">${val.toFixed(1)}</span></div>`;
+          }
+          html += '</div>';
+        }
+      }
+
+      // 情绪
+      const moodlets = ch.moodlets || [];
+      if (moodlets.length > 0) {
+        html += '<div class="d-section"><div class="d-section-title">当前情绪</div>';
+        for (const m of moodlets) {
+          const stars = '&#9733;'.repeat(m.intensity);
+          html += `<div style="margin:3px 0"><span class="moodlet-tag moodlet-${m.emotion}">${EMOTION_LABEL[m.emotion] || m.emotion} ${stars}</span> <span style="font-size:11px;color:#484f58">${escHtml(m.reason)}</span></div>`;
+        }
+        html += '</div>';
+      }
+
       // 需求
-      html += '<div class="d-section"><div class="d-section-title">&#38656;&#27714;</div>';
+      html += '<div class="d-section"><div class="d-section-title">需求</div>';
       for (const [k, label] of Object.entries(NEED_LABEL)) {
         const v = ch.needs?.[k] ?? 0;
         html += `<div class="need-row"><span class="n-label">${label}</span><div class="n-bar"><div class="n-fill" style="width:${v}%;background:${needColor(v)}"></div></div><span class="n-val">${Math.round(v)}</span></div>`;
@@ -363,30 +441,24 @@
 
       // 关系
       if (charRels.length > 0) {
-        html += '<div class="d-section"><div class="d-section-title">&#20851;&#31995;</div>';
+        html += '<div class="d-section"><div class="d-section-title">关系</div>';
         for (const r of charRels) {
           const other = r.a === ch.id ? r.b : r.a;
           const pct = Math.max(0, (r.level + 100) / 2);
-          html += `<div class="rel-row" onclick="selectChar('${other}')"><span class="r-name">${N(other)}</span><span class="r-type">${r.type} (${r.level})</span><div class="r-bar"><div class="r-fill" style="width:${pct}%;background:${relColor(r.level)}"></div></div></div>`;
+          const bondTag = r.bond ? `<span class="bond-tag">${BOND_LABEL[r.bond] || r.bond}</span>` : '';
+          html += `<div class="rel-row" onclick="selectChar('${other}')"><span class="r-name">${N(other)}${bondTag}</span><span class="r-type">${r.type} (${r.level})</span><div class="r-bar"><div class="r-fill" style="width:${pct}%;background:${relColor(r.level)}"></div></div></div>`;
         }
         html += '</div>';
       }
 
       // 角色卡信息
       if (card) {
-        if (card.appearance) html += `<div class="d-section"><div class="d-section-title">&#22806;&#35980;</div><div class="profile-text">${escHtml(card.appearance)}</div></div>`;
-        if (card.personality?.coreTraits) html += `<div class="d-section"><div class="d-section-title">&#24615;&#26684;</div><div class="profile-text">${escHtml(card.personality.coreTraits)}</div></div>`;
-        if (card.personality?.psychology) html += `<div class="d-section"><div class="d-section-title">&#20869;&#24515;</div><div class="profile-text">${escHtml(card.personality.psychology)}</div></div>`;
-        if (card.personality?.speech) {
-          let speech = card.personality.speech.style || '';
-          if (card.personality.speech.habits?.length) speech += '\n&#21475;&#30316;: ' + card.personality.speech.habits.join('&#12289;');
-          if (card.personality.speech.examples?.length) speech += '\n&#20363;&#21477;:\n' + card.personality.speech.examples.map(e => '&#12300;' + e + '&#12301;').join('\n');
-          html += `<div class="d-section"><div class="d-section-title">&#35828;&#35805;&#26041;&#24335;</div><div class="profile-text">${escHtml(speech)}</div></div>`;
-        }
-        if (card.personality?.interests?.length) html += `<div class="d-section"><div class="d-section-title">&#20852;&#36259;</div><div class="profile-text">${escHtml(card.personality.interests.join('&#12289;'))}</div></div>`;
+        if (card.appearance) html += `<div class="d-section"><div class="d-section-title">外貌</div><div class="profile-text">${escHtml(card.appearance)}</div></div>`;
+        if (card.personality?.coreTraits) html += `<div class="d-section"><div class="d-section-title">性格</div><div class="profile-text">${escHtml(card.personality.coreTraits)}</div></div>`;
+        if (card.personality?.psychology) html += `<div class="d-section"><div class="d-section-title">内心</div><div class="profile-text">${escHtml(card.personality.psychology)}</div></div>`;
         if (card.backstory?.length) {
-          const bs = card.backstory.map(b => `&#8226; ${b.event} &#8594; ${b.impact}`).join('\n');
-          html += `<div class="d-section"><div class="d-section-title">&#36807;&#21435;</div><div class="profile-text">${escHtml(bs)}</div></div>`;
+          const bs = card.backstory.map(b => `- ${b.event} -> ${b.impact}`).join('\n');
+          html += `<div class="d-section"><div class="d-section-title">过去</div><div class="profile-text">${escHtml(bs)}</div></div>`;
         }
       }
 
