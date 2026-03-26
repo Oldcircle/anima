@@ -145,6 +145,15 @@ export function getItemCount(inventory: ItemInstance[], defId: string): number {
   return inventory.filter(i => i.defId === defId).reduce((sum, i) => sum + i.quantity, 0);
 }
 
+const TYPE_HINT: Record<string, string> = {
+  consumable: "可以吃/喝",
+  tool: "工具",
+  gift: "可以送人",
+  material: "材料",
+  keepsake: "纪念品",
+  quest: "",
+};
+
 /**
  * 格式化背包内容为自然语言（用于 prompt 注入）
  */
@@ -158,6 +167,10 @@ export function formatInventory(inventory: ItemInstance[]): string {
 
     let desc = def.name;
     if (item.quantity > 1) desc += ` ×${item.quantity}`;
+    // 类型提示
+    const hint = TYPE_HINT[def.type];
+    if (hint) desc += `（${hint}）`;
+    // 来源和记忆
     if (item.giftedBy) desc += `（${item.giftedBy}送的）`;
     if (item.memoryTag) desc += `（${item.memoryTag}）`;
     if (item.customDesc) desc += `（${item.customDesc}）`;

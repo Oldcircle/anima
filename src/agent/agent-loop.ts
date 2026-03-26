@@ -364,10 +364,14 @@ async function executeAction(
   const useItem = (result as any)?._useItem;
   if (typeof useItem === "string" && !eatImmediate) {
     // 从背包消耗（eatImmediate 时不需要，因为没入过背包）
-    const { removeFromInventory, getItemDef } = await import("../world/item-registry.js");
+    const { removeFromInventory, getItemDef, hasItem: checkHas } = await import("../world/item-registry.js");
     const def = getItemDef(useItem);
-    if (def?.type === "consumable" || (def?.type === "gift" && def.effects)) {
-      removeFromInventory(state.inventory, useItem, 1);
+    if (def?.type === "consumable" || def?.type === "material" || (def?.type === "gift" && def.effects)) {
+      if (checkHas(state.inventory, useItem)) {
+        removeFromInventory(state.inventory, useItem, 1);
+      } else {
+        console.warn(`[${card.id}] 想使用 ${useItem} 但背包里没有`);
+      }
     }
   }
   const giveItem = (result as any)?._giveItem;

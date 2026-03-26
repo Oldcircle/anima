@@ -587,17 +587,22 @@ function buildCookTool(ctx: ToolBuildContext): ActionDefinition {
         },
       },
     },
-    handler: (_args, actx): ActionResult => ({
-      description: "在家做了一顿饭",
-      effects: [
-        { type: "need_change", targetId: actx.characterId, field: "hunger", delta: 60 },
-        { type: "need_change", targetId: actx.characterId, field: "fun", delta: 5 },
-        { type: "need_change", targetId: actx.characterId, field: "energy", delta: -8 },
-        { type: "need_change", targetId: actx.characterId, field: "hygiene", delta: -5 },
-      ],
-      duration: 3,
-      _useItem: "ingredients",
-    } as ActionResult & { _useItem: string }),
+    handler: (_args, actx): ActionResult => {
+      if (!hasItem(ctx.state.inventory ?? [], "ingredients")) {
+        return { description: "想做饭但发现没有食材了", effects: [], success: false };
+      }
+      return {
+        description: "在家做了一顿饭",
+        effects: [
+          { type: "need_change", targetId: actx.characterId, field: "hunger", delta: 60 },
+          { type: "need_change", targetId: actx.characterId, field: "fun", delta: 5 },
+          { type: "need_change", targetId: actx.characterId, field: "energy", delta: -8 },
+          { type: "need_change", targetId: actx.characterId, field: "hygiene", delta: -5 },
+        ],
+        duration: 3,
+        _useItem: "ingredients",
+      } as ActionResult & { _useItem: string };
+    },
   };
 }
 
@@ -628,6 +633,9 @@ function buildGiveTool(ctx: ToolBuildContext): ActionDefinition {
       const def = getItemDef(itemId);
       if (!actx.nearbyCharacters.includes(target)) {
         return { description: `${target}不在这里`, effects: [], success: false };
+      }
+      if (!hasItem(ctx.state.inventory ?? [], itemId)) {
+        return { description: `你没有${def?.name ?? itemId}`, effects: [], success: false };
       }
       return {
         description: `把${def?.name ?? itemId}给了${target}`,
