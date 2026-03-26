@@ -459,18 +459,18 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
   const itemList = affordable.map(s => {
     const def = getItemDef(s.id);
     const desc = def?.description ? `——${def.description}` : "";
-    return `${s.id}(${s.name}，${s.price}金币${desc})`;
+    return `${s.name}（${s.price}金币${desc}）`;
   }).join("、");
 
   return {
     tool: {
       name: "buy",
-      description: `买东西。店里有：${itemList}`,
+      description: `买东西带走。店里有：${itemList}`,
       parameters: {
         type: "object",
         properties: {
           thought: { type: "string", description: "你在想什么" },
-          item: { type: "string", description: `要买的物品：${affordable.map(s => s.id).join("、")}` },
+          item: { type: "string", description: `要买的物品：${affordable.map(s => s.name).join("、")}` },
         },
         required: ["item"],
       },
@@ -511,13 +511,13 @@ function buildEatTool(
       const def = getItemDef(i.defId);
       const name = def?.name ?? i.defId;
       const from = i.giftedBy ? `（${i.giftedBy}给的）` : "";
-      return `${i.defId}(${name}${from}，免费)`;
+      return `${name}${from}（免费）`;
     }).join("、");
     parts.push(`你身上有：${bagList}`);
   }
 
   if (shopFood.length > 0) {
-    const shopList = shopFood.map(s => `${s.id}(${s.name}，${s.price}金币)`).join("、");
+    const shopList = shopFood.map(s => `${s.name}（${s.price}金币）`).join("、");
     parts.push(`店里有：${shopList}`);
   }
 
