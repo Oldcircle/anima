@@ -19,6 +19,8 @@ export interface ToolBuildContext {
   nearbyCharacters: Array<{ id: string; name: string }>;
   allLocations: Location[];
   gold: number;
+  /** 当前游戏时间（小时） */
+  hour?: number;
   /** 关系管理器（用于条件浮现关系工具） */
   relationships?: import("../world/relationships.js").RelationshipManager;
 }
@@ -316,7 +318,12 @@ function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefin
       if (match) {
         const field = match[1] as keyof typeof ctx.state.needs;
         const threshold = parseInt(match[2]!, 10);
-        if (ctx.state.needs[field] !== undefined && ctx.state.needs[field] >= threshold) {
+        // 深夜（22:00-05:00）时，sleep 工具无视精力条件（生物钟）
+        const isNight = ctx.hour !== undefined && (ctx.hour >= 22 || ctx.hour < 5);
+        const isSleepTool = lt.name === "sleep";
+        if (isSleepTool && isNight) {
+          // 深夜总是可以睡觉
+        } else if (ctx.state.needs[field] !== undefined && ctx.state.needs[field] >= threshold) {
           return null; // 条件不满足，不显示
         }
       }

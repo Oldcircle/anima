@@ -102,6 +102,7 @@ export async function runAgentTick(params: {
     nearbyCharacters: nearbyCharacters.map((c) => ({ id: c.id, name: c.name })),
     allLocations: world.getAllLocations(),
     gold: state.gold,
+    hour: gameTime.hour,
     relationships: params.relationships,
   });
 

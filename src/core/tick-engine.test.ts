@@ -49,7 +49,7 @@ describe("tickToGameTime", () => {
 describe("formatGameTime", () => {
   it("格式化为可读字符串", () => {
     const gt = tickToGameTime(48);
-    expect(formatGameTime(gt)).toBe("Y1 spring D1 12:00");
+    expect(formatGameTime(gt)).toBe("Y1 spring D1 中午 12:00");
   });
 });
 

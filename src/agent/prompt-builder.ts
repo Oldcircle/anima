@@ -167,7 +167,7 @@ export function buildSystemPrompt(card: CharacterCard, workplaceName?: string, c
  * 将需求数值转化为自然语言身体感受。
  * 满的不提，偏低用身体感受，极低用紧急措辞。
  */
-function formatBodyFeelings(needs: CharacterNeeds, gold: number): string {
+function formatBodyFeelings(needs: CharacterNeeds, gold: number, hour?: number): string {
   const feelings: string[] = [];
 
   // 饥饿
@@ -201,6 +201,15 @@ function formatBodyFeelings(needs: CharacterNeeds, gold: number): string {
   // 极端组合
   if (gold === 0 && needs.hunger < 20) {
     feelings.push("又穷又饿，处境很危险。");
+  }
+
+  // 深夜生物钟
+  if (hour !== undefined) {
+    if (hour >= 0 && hour < 5) {
+      feelings.push("已经是深夜了，正常人都已经睡了。你也该回家休息了。");
+    } else if (hour >= 22) {
+      feelings.push("夜深了，有点困了，差不多该回家了。");
+    }
   }
 
   if (feelings.length === 0) return "身体状态不错，精神也好。";
@@ -303,7 +312,7 @@ export function buildUserPrompt(params: {
   if (params.festivalHint) parts.push(`\n🎉 **${params.festivalHint}**`);
 
   // 身体感受（替代数值面板和约束警告）
-  const bodyFeelings = formatBodyFeelings(state.needs, state.gold);
+  const bodyFeelings = formatBodyFeelings(state.needs, state.gold, gameTime.hour);
   parts.push(`\n## 你的身体感受\n${bodyFeelings}`);
 
   // 情绪状态（Moodlet 系统）

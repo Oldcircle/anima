@@ -64,10 +64,23 @@ export function tickToGameTime(tick: number): GameTime {
   };
 }
 
+function timeOfDayLabel(hour: number): string {
+  if (hour >= 0 && hour < 5) return "深夜";
+  if (hour >= 5 && hour < 7) return "清晨";
+  if (hour >= 7 && hour < 9) return "早上";
+  if (hour >= 9 && hour < 12) return "上午";
+  if (hour >= 12 && hour < 14) return "中午";
+  if (hour >= 14 && hour < 17) return "下午";
+  if (hour >= 17 && hour < 19) return "傍晚";
+  if (hour >= 19 && hour < 22) return "晚上";
+  return "深夜";
+}
+
 export function formatGameTime(gt: GameTime): string {
   const h = String(gt.hour).padStart(2, "0");
   const m = String(gt.minute).padStart(2, "0");
-  return `Y${gt.year} ${gt.season} D${gt.seasonDay} ${h}:${m}`;
+  const label = timeOfDayLabel(gt.hour);
+  return `Y${gt.year} ${gt.season} D${gt.seasonDay} ${label} ${h}:${m}`;
 }
 
 export class TickEngine {
