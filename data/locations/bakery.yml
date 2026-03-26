@@ -6,6 +6,25 @@ openHours:
   open: 7
   close: 17
 
+shop:
+  - { id: bread_plain, name: 白面包, price: 5 }
+  - { id: bread_red_bean, name: 红豆面包, price: 8 }
+  - { id: croissant, name: 可颂, price: 10 }
+
+worker_tools:
+  - name: knead_dough
+    description: "揉面团"
+    effects: { energy: -3, fun: -1 }
+    duration: 2
+  - name: bake
+    description: "烤面包"
+    effects: { energy: -2 }
+    duration: 3
+  - name: serve_customer
+    description: "招呼客人、卖面包"
+    effects: { energy: -2, social: 3 }
+    duration: 1
+
 tools:
   - name: eat
     description: "在面包店吃东西（8金币）"

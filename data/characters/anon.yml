@@ -3,6 +3,8 @@ name: "千早爱音"
 age: 20
 occupation: "咖啡馆店员"
 home: "home_anon"
+starting_items:
+  - umbrella
 
 appearance: |
   身高160cm，元气满满的女孩。粉色及腰长直发，灰色眼瞳，近视但坚持戴隐形眼镜。

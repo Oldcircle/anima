@@ -6,6 +6,16 @@ openHours:
   open: 9
   close: 18
 
+worker_tools:
+  - name: shelve_books
+    description: "整理书架、归还上架"
+    effects: { energy: -3, fun: -1 }
+    duration: 1
+  - name: help_reader
+    description: "帮人找书、推荐书目"
+    effects: { energy: -2, social: 3, fun: 1 }
+    duration: 1
+
 tools:
   - name: read
     description: "找一本书安静地看"

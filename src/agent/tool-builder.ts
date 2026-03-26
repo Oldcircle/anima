@@ -17,6 +17,8 @@ import type { CharacterState, Location, LocationTool } from "../world/types.js";
 import type { CharacterCard } from "../character/types.js";
 import { getWorkIncome } from "../world/economy.js";
 import { inviteOutAction, shareSecretAction } from "../actions/relationship-actions.js";
+import { getItemDef, hasItem } from "../world/item-registry.js";
+import type { ShopItem } from "../world/item-types.js";
 
 export interface ToolBuildContext {
   state: CharacterState;
@@ -45,6 +47,52 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     for (const lt of ctx.location.tools) {
       const action = buildLocationTool(lt, ctx);
       if (action) tools.push(action);
+    }
+  }
+
+  // 2b. 员工工具（在自己工作地点时，替代普通地点工具）
+  const workplace = ctx.state.life?.workplace ?? ctx.card.life?.workplace;
+  if (workplace && ctx.location.id === workplace && ctx.location.workerTools) {
+    for (const wt of ctx.location.workerTools) {
+      const action = buildLocationTool(wt, ctx);
+      if (action) tools.push(action);
+    }
+  }
+
+  // 2c. 商店工具（地点有 shop 时浮现 buy；员工不看到 buy）
+  if (ctx.location.shop && ctx.location.shop.length > 0 && ctx.location.id !== workplace) {
+    const buyTool = buildBuyTool(ctx.location.shop, ctx);
+    if (buyTool) tools.push(buyTool);
+  }
+
+  // 2d. 背包物品工具
+  if (ctx.state.inventory && ctx.state.inventory.length > 0) {
+    // use: 背包有 consumable 时浮现
+    const consumables = ctx.state.inventory.filter(i => {
+      const def = getItemDef(i.defId);
+      return def && (def.type === "consumable" || (def.type === "gift" && def.effects));
+    });
+    if (consumables.length > 0) {
+      tools.push(buildUseTool(consumables, ctx));
+    }
+
+    // give: 背包非空 + 附近有人
+    if (ctx.nearbyCharacters.length > 0) {
+      tools.push(buildGiveTool(ctx));
+    }
+
+    // 物品启用的工具（notebook→journal, guitar→practice_music 等）
+    for (const item of ctx.state.inventory) {
+      const def = getItemDef(item.defId);
+      if (def?.enables) {
+        for (const toolId of def.enables) {
+          // 检查地点工具里是否已有同名工具（避免重复）
+          if (!tools.some(t => t.tool.name === toolId)) {
+            const enabled = buildItemEnabledTool(toolId, def.name, ctx);
+            if (enabled) tools.push(enabled);
+          }
+        }
+      }
     }
   }
 
@@ -374,6 +422,174 @@ function describeLocationTool(lt: LocationTool, ctx: ToolBuildContext): string {
 
   return desc;
 }
+
+// ── 物品工具 ──
+
+function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition | null {
+  // 只列出买得起的物品
+  const affordable = shop.filter(s => ctx.gold >= s.price);
+  if (affordable.length === 0) return null;
+
+  const itemList = affordable.map(s => {
+    const def = getItemDef(s.id);
+    const desc = def?.description ? `——${def.description}` : "";
+    return `${s.id}(${s.name}，${s.price}金币${desc})`;
+  }).join("、");
+
+  return {
+    tool: {
+      name: "buy",
+      description: `买东西。店里有：${itemList}`,
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么" },
+          item: { type: "string", description: `要买的物品：${affordable.map(s => s.id).join("、")}` },
+        },
+        required: ["item"],
+      },
+    },
+    handler: (args, actx): ActionResult => {
+      const itemId = args.item as string;
+      const shopItem = shop.find(s => s.id === itemId);
+      if (!shopItem) {
+        return { description: `这里没有卖${itemId}`, effects: [], success: false };
+      }
+      if (actx.gold < shopItem.price) {
+        return { description: `钱不够买${shopItem.name}`, effects: [], success: false };
+      }
+      return {
+        description: `买了${shopItem.name}`,
+        effects: [],
+        _buyItem: { defId: shopItem.id, price: shopItem.price },
+      } as ActionResult & { _buyItem: { defId: string; price: number } };
+    },
+  };
+}
+
+function buildUseTool(consumables: import("../world/item-types.js").ItemInstance[], ctx: ToolBuildContext): ActionDefinition {
+  const itemList = consumables.map(i => {
+    const def = getItemDef(i.defId);
+    const name = def?.name ?? i.defId;
+    const qty = i.quantity > 1 ? ` ×${i.quantity}` : "";
+    const from = i.giftedBy ? `（${i.giftedBy}给的）` : "";
+    return `${i.defId}(${name}${qty}${from})`;
+  }).join("、");
+
+  return {
+    tool: {
+      name: "use",
+      description: `吃/喝/使用你身上的东西。你有：${itemList}`,
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么" },
+          item: { type: "string", description: `要使用的物品` },
+        },
+        required: ["item"],
+      },
+    },
+    handler: (args, actx): ActionResult => {
+      const itemId = args.item as string;
+      const def = getItemDef(itemId);
+      if (!def) {
+        return { description: `不知道怎么用${itemId}`, effects: [], success: false };
+      }
+      const effects = def.effects
+        ? Object.entries(def.effects).map(([field, delta]) => ({
+            type: "need_change" as const,
+            targetId: actx.characterId,
+            field,
+            delta,
+          }))
+        : [];
+      return {
+        description: `使用了${def.name}`,
+        effects,
+        _useItem: itemId,
+      } as ActionResult & { _useItem: string };
+    },
+  };
+}
+
+function buildGiveTool(ctx: ToolBuildContext): ActionDefinition {
+  const itemList = ctx.state.inventory.map(i => {
+    const def = getItemDef(i.defId);
+    return def?.name ?? i.defId;
+  }).join("、");
+  const who = nearbyNames(ctx);
+
+  return {
+    tool: {
+      name: "give",
+      description: `把东西给别人。你有：${itemList}。在场：${who}`,
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么，为什么想送" },
+          target: { type: "string", description: `给谁：${who}` },
+          item: { type: "string", description: "给什么" },
+        },
+        required: ["target", "item"],
+      },
+    },
+    handler: (args, actx): ActionResult => {
+      const target = args.target as string;
+      const itemId = args.item as string;
+      const def = getItemDef(itemId);
+      if (!actx.nearbyCharacters.includes(target)) {
+        return { description: `${target}不在这里`, effects: [], success: false };
+      }
+      return {
+        description: `把${def?.name ?? itemId}给了${target}`,
+        effects: [
+          { type: "need_change", targetId: actx.characterId, field: "social", delta: 5 },
+          { type: "need_change", targetId: target, field: "social", delta: 10 },
+        ],
+        _giveItem: { defId: itemId, targetId: target },
+      } as ActionResult & { _giveItem: { defId: string; targetId: string } };
+    },
+  };
+}
+
+/** 物品启用的工具（如 notebook → journal） */
+function buildItemEnabledTool(toolId: string, itemName: string, ctx: ToolBuildContext): ActionDefinition | null {
+  const toolDefs: Record<string, { description: string; effects: Record<string, number>; duration: number }> = {
+    journal: { description: `拿出${itemName}写点东西`, effects: { fun: 8, social: -2 }, duration: 2 },
+    practice_music: { description: `弹弹吉他`, effects: { fun: 10, energy: -8 }, duration: 4 },
+    fish: { description: `拿出鱼竿钓鱼。需要耐心`, effects: { fun: 12, energy: -5 }, duration: 6 },
+    draw: { description: `画点东西`, effects: { fun: 10, energy: -5 }, duration: 3 },
+    photograph: { description: `拍几张照片`, effects: { fun: 8, energy: -2 }, duration: 1 },
+  };
+
+  const def = toolDefs[toolId];
+  if (!def) return null;
+
+  return {
+    tool: {
+      name: toolId,
+      description: def.description,
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么" },
+        },
+      },
+    },
+    handler: (_args, actx): ActionResult => ({
+      description: def.description,
+      effects: Object.entries(def.effects).map(([field, delta]) => ({
+        type: "need_change" as const,
+        targetId: actx.characterId,
+        field,
+        delta,
+      })),
+      duration: def.duration,
+    }),
+  };
+}
+
+// ── 地点工具（从 YAML 读取，自然语言描述） ──
 
 function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefinition | null {
   // 检查条件

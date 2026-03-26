@@ -6,6 +6,10 @@ openHours:
   open: 17
   close: 2
 
+shop:
+  - { id: beer, name: 啤酒, price: 10 }
+  - { id: juice, name: 果汁, price: 6 }
+
 tools:
   - name: drink
     description: "喝一杯酒（12金币）"

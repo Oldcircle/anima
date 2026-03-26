@@ -66,6 +66,9 @@ export interface CharacterCard {
   /** 生活状态初始值（从 YAML life 段加载） */
   life?: LifeState;
 
+  /** 角色初始携带的物品 ID 列表 */
+  startingItems?: string[];
+
   relationships: Record<string, {
     level: number;
     type: string;

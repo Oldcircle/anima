@@ -15,6 +15,7 @@ import { formatMoodlets } from "../world/moodlets.js";
 import { getAtmosphereText } from "../world/location-loader.js";
 import type { ImpressionStore } from "../memory/impressions.js";
 import { formatBodyFeelings } from "../world/need-definitions.js";
+import { formatInventory as _formatInventory } from "../world/item-registry.js";
 
 /**
  * 格式化技能认知：将技能数值转为自然语言描述
@@ -352,6 +353,12 @@ export function buildUserPrompt(params: {
     if (lifeHints.length > 0) {
       parts.push(`\n## 你心里挂着的事\n${lifeHints.join("\n")}`);
     }
+  }
+
+  // 随身物品
+  if (state.inventory && state.inventory.length > 0) {
+    const invText = _formatInventory(state.inventory);
+    if (invText) parts.push(`\n${invText}`);
   }
 
   const prefsHint = formatPreferencesHint(card);

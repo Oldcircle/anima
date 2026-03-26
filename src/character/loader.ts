@@ -53,6 +53,7 @@ export function loadCharacterFromYAML(filePath: string): CharacterCard {
     backstory: data.backstory,
     preferences: data.preferences,
     life,
+    startingItems: data.starting_items,
     relationships: data.relationships ?? {},
   };
 }

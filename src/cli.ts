@@ -17,6 +17,7 @@ import { loadLocationsFromDir } from "./world/location-loader.js";
 import { saveGame, loadGame } from "./persistence/save-load.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { addToInventory } from "./world/item-registry.js";
 
 // --- 配置 ---
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
@@ -46,6 +47,14 @@ console.log(`📋 加载了 ${characters.length} 个角色: ${characters.map((c)
 const world = new World(LOCATIONS, 24); // 从 06:00 开始 (tick 24)
 for (const card of characters) {
   world.addCharacter(card.id, card.name, card.home, undefined, card.life);
+  if (card.startingItems) {
+    const state = world.getCharacter(card.id);
+    if (state) {
+      for (const itemId of card.startingItems) {
+        addToInventory(state.inventory, itemId);
+      }
+    }
+  }
 }
 
 const eventBus = new EventBus();

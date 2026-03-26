@@ -3,6 +3,8 @@ name: "长崎素世"
 age: 20
 occupation: "图书馆管理员"
 home: "home_soyo"
+starting_items:
+  - notebook
 
 appearance: |
   身高162cm，体型高挑，身材丰满。棕色及腰长卷发，蓝色垂眼。

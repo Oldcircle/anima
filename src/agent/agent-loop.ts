@@ -333,6 +333,45 @@ async function executeAction(
     }
   }
 
+  // 物品效果
+  const buyItem = (result as any)?._buyItem;
+  if (buyItem && typeof buyItem === "object") {
+    const { addToInventory } = await import("../world/item-registry.js");
+    state.gold = Math.max(0, state.gold - buyItem.price);
+    addToInventory(state.inventory, buyItem.defId, 1, { obtainedTick: world.tick });
+  }
+  const useItem = (result as any)?._useItem;
+  if (typeof useItem === "string") {
+    const { removeFromInventory } = await import("../world/item-registry.js");
+    const { getItemDef } = await import("../world/item-registry.js");
+    const def = getItemDef(useItem);
+    if (def?.type === "consumable" || (def?.type === "gift" && def.effects)) {
+      removeFromInventory(state.inventory, useItem, 1);
+    }
+  }
+  const giveItem = (result as any)?._giveItem;
+  if (giveItem && typeof giveItem === "object") {
+    const { removeFromInventory, addToInventory } = await import("../world/item-registry.js");
+    const removed = removeFromInventory(state.inventory, giveItem.defId, 1);
+    if (removed) {
+      const target = world.getCharacter(giveItem.targetId);
+      if (target) {
+        addToInventory(target.inventory, giveItem.defId, 1, {
+          giftedBy: state.name,
+          obtainedTick: world.tick,
+        });
+      }
+    }
+  }
+
+  // 行为链追踪
+  if (!state.recentActions) state.recentActions = [];
+  state.recentActions.push({ actionId: toolCall.name, tick: world.tick });
+  // 只保留最近 16 tick
+  if (state.recentActions.length > 16) {
+    state.recentActions = state.recentActions.slice(-16);
+  }
+
   // 设置多 tick 行为
   if (result.duration && result.duration > 1) {
     state.currentAction = { name: toolCall.name, remainingTicks: result.duration - 1 };

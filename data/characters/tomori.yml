@@ -3,6 +3,8 @@ name: "高松灯"
 age: 19
 occupation: "面包店学徒"
 home: "home_tomori"
+starting_items:
+  - notebook
 
 appearance: |
   身高155cm，娇小，体力差得出奇。灰色不对称短发，粉色眼瞳。

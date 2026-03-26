@@ -6,6 +6,16 @@ openHours:
   open: 8
   close: 20
 
+shop:
+  - { id: notebook, name: 笔记本, price: 10 }
+  - { id: fishing_rod, name: 鱼竿, price: 25 }
+  - { id: art_supplies, name: 画具, price: 15 }
+  - { id: umbrella, name: 雨伞, price: 10 }
+  - { id: ingredients, name: 食材, price: 5 }
+  - { id: bento, name: 便当, price: 10 }
+  - { id: onigiri, name: 饭团, price: 5 }
+  - { id: water_bottle, name: 矿泉水, price: 3 }
+
 tools:
   - name: buy_supplies
     description: "买些日用品（5金币）"
