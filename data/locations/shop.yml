@@ -9,7 +9,7 @@ openHours:
 tools:
   - name: buy_supplies
     description: "买些日用品（5金币）"
-    effects: { hygiene: 10, happiness: 3 }
+    effects: { hygiene: 10, fun: 3 }
     cost: 5
     duration: 1
 

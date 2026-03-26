@@ -6,11 +6,11 @@ summary: 散步、采集、安静独处
 tools:
   - name: explore
     description: "在森林里探索，看看有什么发现"
-    effects: { happiness: 8, energy: -5 }
+    effects: { fun: 8, energy: -5 }
     duration: 4
   - name: collect_herbs
     description: "采集野花或草药"
-    effects: { happiness: 5 }
+    effects: { fun: 5 }
     duration: 2
 
 atmosphere:

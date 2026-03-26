@@ -9,11 +9,11 @@ openHours:
 tools:
   - name: read
     description: "找一本书安静地看"
-    effects: { happiness: 10, energy: -3 }
+    effects: { fun: 10, energy: -3, social: -3 }
     duration: 4
   - name: work
     description: "在图书馆工作：整理书架、办理借阅"
-    effects: { energy: -15, hunger: -10 }
+    effects: { energy: -15, hunger: -10, fun: -10, bladder: -10 }
     duration: 8
     condition: "isWorkplace"
 

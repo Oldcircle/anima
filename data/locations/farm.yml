@@ -11,7 +11,7 @@ tools:
     condition: "isWorkplace"
   - name: explore
     description: "在田间散步，看看庄稼长势"
-    effects: { happiness: 5, energy: -3 }
+    effects: { fun: 5, energy: -3 }
     duration: 2
 
 atmosphere:

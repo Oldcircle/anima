@@ -6,23 +6,23 @@ summary: 游泳、散步、捡贝壳、钓鱼
 tools:
   - name: swim
     description: "下海游泳，消暑放松"
-    effects: { energy: -10, happiness: 15, hygiene: -10 }
+    effects: { fun: 25, energy: -10, hygiene: -15 }
     duration: 4
   - name: collect_shells
     description: "在沙滩上捡贝壳或小石头"
-    effects: { happiness: 5 }
+    effects: { fun: 5 }
     duration: 2
   - name: fish
     description: "在岸边钓鱼，需要耐心"
-    effects: { energy: -5, happiness: 10, hunger: -5 }
+    effects: { fun: 12, energy: -5 }
     duration: 8
   - name: walk
     description: "沿着海边散步，吹吹海风"
-    effects: { happiness: 8, energy: -3 }
+    effects: { fun: 8, energy: -3 }
     duration: 2
   - name: stargaze
     description: "躺在沙滩上看星星"
-    effects: { happiness: 15, energy: -2 }
+    effects: { fun: 15, energy: -2 }
     duration: 4
 
 atmosphere:

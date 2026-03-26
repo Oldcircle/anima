@@ -323,7 +323,9 @@ export class SimReporter {
       };
       const charActions = this.charActionCounts.get(ch.id);
       const actionCount = charActions ? [...charActions.values()].reduce((s, v) => s + v, 0) : 0;
-      console.log(`    ${c.cyan(ch.name)} @ ${ch.locationId} 💰${ch.gold} | ${needBar(n.hunger, "饿")} ${needBar(n.energy, "力")} ${needBar(n.social, "社")} ${needBar(n.happiness, "乐")} ${needBar(n.hygiene, "净")} | ${actionCount}次`);
+      const needLabels: Record<string, string> = { hunger: "饿", energy: "力", social: "社", hygiene: "净", fun: "乐", bladder: "厕" };
+      const needStr = Object.entries(needLabels).map(([k, label]) => needBar(n[k] ?? 100, label)).join(" ");
+      console.log(`    ${c.cyan(ch.name)} @ ${ch.locationId} 💰${ch.gold} | ${needStr} | ${actionCount}次`);
     }
 
     // 警告
@@ -454,11 +456,12 @@ export class SimReporter {
     // 最终角色状态
     md.push("## 最终角色状态");
     md.push("");
-    md.push("| 角色 | 位置 | 饥饿 | 精力 | 社交 | 快乐 | 卫生 | 金币 |");
-    md.push("|------|------|------|------|------|------|------|------|");
+    md.push("| 角色 | 位置 | 饥饿 | 精力 | 社交 | 娱乐 | 卫生 | 生理 | 金币 |");
+    md.push("|------|------|------|------|------|------|------|------|------|");
     for (const ch of chars) {
       const n = ch.needs;
-      md.push(`| ${ch.name} | ${ch.locationId} | ${n.hunger.toFixed(0)} | ${n.energy.toFixed(0)} | ${n.social.toFixed(0)} | ${n.happiness.toFixed(0)} | ${n.hygiene.toFixed(0)} | ${ch.gold} |`);
+      const v = (k: string) => (n[k] ?? 100).toFixed(0);
+      md.push(`| ${ch.name} | ${ch.locationId} | ${v("hunger")} | ${v("energy")} | ${v("social")} | ${v("fun")} | ${v("hygiene")} | ${v("bladder")} | ${ch.gold} |`);
     }
     md.push("");
 
