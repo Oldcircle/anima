@@ -193,11 +193,11 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
     .filter((l) => l.type !== "residential" || l.id === myHome);
   const otherLocations = allowedLocations
     .map((l) => {
-      const parts: string[] = [l.name];
-      if (l.summary) parts[0] += `——${l.summary}`;
-      if (l.id === workplace) parts[0] += "（你的工作地点）";
-      if (l.id === myHome) parts[0] = `家——能休息、做饭、洗澡`;
-      return `${l.id}: ${parts[0]}`;
+      if (l.id === myHome) return `家——能休息、做饭、洗澡`;
+      let desc = l.name;
+      if (l.summary) desc += `——${l.summary}`;
+      if (l.id === workplace) desc += "（你的工作地点）";
+      return desc;
     })
     .join("。");
 
@@ -220,26 +220,31 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
       },
     },
     handler: (args, actx): ActionResult => {
-      const targetId = args.location as string;
-      if (targetId === ctx.state.locationId) {
+      const rawLoc = args.location as string;
+      // 支持 ID 和中文名：LLM 可能传 "cafe" 或 "咖啡馆" 或 "家"
+      const resolveLocation = (input: string) => {
+        if (input === "家" || input === "回家") return ctx.allLocations.find(l => l.id === myHome);
+        return ctx.allLocations.find(l => l.id === input || l.name === input);
+      };
+      const target = resolveLocation(rawLoc);
+      if (target && target.id === ctx.state.locationId) {
         return {
           description: `你已经在${ctx.location.name}了，不用再特地过去`,
           effects: [],
           success: false,
         };
       }
-      const target = allowedLocations.find((l) => l.id === targetId);
-      if (!target) {
+      if (!target || !allowedLocations.some(l => l.id === target.id)) {
         return {
-          description: `想去${targetId}，但你知道镇上并没有这个地方`,
+          description: `想去${rawLoc}，但你知道镇上并没有这个地方`,
           effects: [],
           success: false,
         };
       }
       return {
-        description: `前往${targetId}`,
+        description: `前往${target.name}`,
         effects: [
-          { type: "location_change", targetId: actx.characterId, value: targetId },
+          { type: "location_change", targetId: actx.characterId, value: target.id },
           { type: "need_change", targetId: actx.characterId, field: "energy", delta: -3 },
           { type: "need_change", targetId: actx.characterId, field: "bladder", delta: -3 },
         ],
