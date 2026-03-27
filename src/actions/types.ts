@@ -11,6 +11,8 @@ export interface ActionResult {
   duration?: number;
   /** 行为是否成功执行（默认 true）。false 表示前置条件不满足 */
   success?: boolean;
+  /** 别人能直接看见的行为痕迹 */
+  observableState?: string;
 }
 
 export interface ActionEffect {

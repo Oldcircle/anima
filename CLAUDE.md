@@ -16,6 +16,7 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **Tool-based Agent**：每个角色的行为空间由工具定义（talk/eat/work/go_to 等），LLM 自主选择
 - **零预设关系**：角色卡不包含任何跨角色引用，所有关系从零涌现
 - **五层活人感**：环境感知 + 印象系统 + 内心独白分级 + 对话模式 + 观察推理
+- **当前攻坚方向**：生活惯性（currentIntent）+ 可观察生活痕迹（observableState）
 - **思考持久化**：LLM 每次决策的内心独白存入记忆，念头能跨 tick 延续
 - **时间系统**：Tick 驱动（1 tick = 游戏 15 分钟），支持加速/暂停
 
@@ -60,7 +61,7 @@ anima/
 ```bash
 pnpm dev              # 启动模拟 + Web 服务 (http://localhost:3001)
 pnpm build            # TypeScript 编译
-pnpm test             # 单元测试（~149 tests，几秒完成）
+pnpm test             # 单元测试（~242 tests，几秒完成）
 pnpm test:watch       # 开发时 watch 模式
 pnpm test:live        # Live 测试（需要 DEEPSEEK_API_KEY）
 pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
@@ -69,7 +70,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 ## 测试说明
 
 ### 单元测试（pnpm test）
-- 149 个测试，18 个文件，不需要 API key
+- 242 个测试，26 个文件，不需要 API key
 - 覆盖：时间系统、世界状态、需求衰减、关系、记忆、印象、对话追踪、观察推理、prompt 构建、约束检查、数据库
 
 ### Live 测试（pnpm test:live）
@@ -105,6 +106,12 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 - [PLAN.md](./PLAN.md) — 实现分期计划
 - [DESIGN.md](./DESIGN.md) — 详细架构设计（需求系统、行为系统、五层活人感）
 - [STATUS.md](./STATUS.md) — 当前开发状态与 Live 验证结果
+
+## 当前迭代焦点
+
+- 角色不该每个 tick 都像“重新做人”；未完成的念头要能自然延续
+- 角色的行为不该只留在日志里；要在场景中留下能被别人看见和误读的痕迹
+- 优先实现：`currentIntent` 真正接入决策循环、`observableState` 成为观察/印象系统的输入
 
 ## 环境配置
 

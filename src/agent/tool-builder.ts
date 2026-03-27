@@ -25,6 +25,7 @@ export interface ToolBuildContext {
   card: CharacterCard;
   location: Location;
   nearbyCharacters: Array<{ id: string; name: string }>;
+  talkCooldownTargets?: string[];
   allLocations: Location[];
   gold: number;
   /** 当前游戏时间（小时） */
@@ -38,6 +39,8 @@ export interface ToolBuildContext {
  */
 export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
   const tools: ActionDefinition[] = [];
+  const talkCooldownTargets = new Set(ctx.talkCooldownTargets ?? []);
+  const talkableCharacters = ctx.nearbyCharacters.filter((c) => !talkCooldownTargets.has(c.id));
 
   // 1. 通用工具：go_to（永远可用）
   tools.push(buildGoToTool(ctx));
@@ -120,13 +123,14 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
           { type: "need_change", targetId: actx.characterId, field: "social", delta: -3 },
         ],
         duration: 4,
+        observableState: "抱着一本书看得有些入神，几乎没注意周围。",
       }),
     });
   }
 
   // 3. 社交工具（附近有人时）
   if (ctx.nearbyCharacters.length > 0) {
-    tools.push(buildTalkTool(ctx));
+    tools.push(buildTalkTool(ctx, talkableCharacters));
     tools.push(buildComfortTool(ctx));
 
     // argue 只在负面情绪或 fun 极低时浮现
@@ -145,11 +149,11 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     let hasSecret = false;
     for (const nearby of ctx.nearbyCharacters) {
       const rel = ctx.relationships.get(ctx.card.id, nearby.id);
-      if (!hasInvite && rel.level >= 30) {
+      if (!hasInvite && rel.level >= 40) {
         tools.push(inviteOutAction);
         hasInvite = true;
       }
-      if (!hasSecret && rel.level >= 60) {
+      if (!hasSecret && rel.level >= 70) {
         tools.push(shareSecretAction);
         hasSecret = true;
       }
@@ -182,9 +186,10 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
 function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
   const myHome = ctx.card.home;
   const workplace = ctx.state.life?.workplace ?? ctx.card.life?.workplace;
-  const otherLocations = ctx.allLocations
+  const allowedLocations = ctx.allLocations
     .filter((l) => l.id !== ctx.state.locationId)
-    .filter((l) => l.type !== "residential" || l.id === myHome)
+    .filter((l) => l.type !== "residential" || l.id === myHome);
+  const otherLocations = allowedLocations
     .map((l) => {
       const parts: string[] = [l.name];
       if (l.summary) parts[0] += `——${l.summary}`;
@@ -210,15 +215,34 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
         required: ["location"],
       },
     },
-    handler: (args, actx): ActionResult => ({
-      description: `前往${args.location}`,
-      effects: [
-        { type: "location_change", targetId: actx.characterId, value: args.location as string },
-        { type: "need_change", targetId: actx.characterId, field: "energy", delta: -3 },
-        { type: "need_change", targetId: actx.characterId, field: "bladder", delta: -3 },
-      ],
-      duration: 1,
-    }),
+    handler: (args, actx): ActionResult => {
+      const targetId = args.location as string;
+      if (targetId === ctx.state.locationId) {
+        return {
+          description: `你已经在${ctx.location.name}了，不用再特地过去`,
+          effects: [],
+          success: false,
+        };
+      }
+      const target = allowedLocations.find((l) => l.id === targetId);
+      if (!target) {
+        return {
+          description: `想去${targetId}，但你知道镇上并没有这个地方`,
+          effects: [],
+          success: false,
+        };
+      }
+      return {
+        description: `前往${targetId}`,
+        effects: [
+          { type: "location_change", targetId: actx.characterId, value: targetId },
+          { type: "need_change", targetId: actx.characterId, field: "energy", delta: -3 },
+          { type: "need_change", targetId: actx.characterId, field: "bladder", delta: -3 },
+        ],
+        duration: 1,
+        observableState: `刚走进${target.name}，像是在找个能待下来的位置。`,
+      };
+    },
   };
 }
 
@@ -230,12 +254,60 @@ function nearbyNames(ctx: ToolBuildContext): string {
     .join("、");
 }
 
-function buildTalkTool(ctx: ToolBuildContext): ActionDefinition {
-  const who = nearbyNames(ctx);
+function nearbyDisplayName(ctx: ToolBuildContext, id: string): string {
+  return ctx.nearbyCharacters.find((c) => c.id === id)?.name ?? id;
+}
+
+function truncateVisibleText(text: string, maxChars = 18): string {
+  return text.length <= maxChars ? text : text.slice(0, maxChars) + "…";
+}
+
+function describeLocationObservableState(lt: LocationTool, ctx: ToolBuildContext): string | undefined {
+  switch (lt.name) {
+    case "sleep": return "已经睡着了，呼吸慢慢平稳下来。";
+    case "wash": return "暂时不在，大概是在洗漱。";
+    case "use_toilet": return "刚起身离开了一会儿，像是去洗手间了。";
+    case "nap": return "靠着一旁短暂打了个盹。";
+    case "walk":
+      return ctx.location.id === "beach"
+        ? "沿着海边慢慢走着，像在想事情。"
+        : "在附近慢慢散步，没有急着去哪里。";
+    case "sit": return "找了个地方坐下，安静地发着呆。";
+    case "rest": return "安静地坐在一边休息，不太想被打扰。";
+    case "swim": return "在海水里来回游着，动作舒展开来。";
+    case "stargaze": return "抬头望着天，像是把注意力都放远了。";
+    case "collect_shells": return "弯着腰在沙地上认真挑拣贝壳。";
+    case "explore": return "在四周慢慢逛着，时不时停下来看看。";
+    case "collect_herbs": return "蹲下来翻看草叶，像在找能用的植物。";
+    case "buy_supplies": return "手里抱着刚买的一袋东西。";
+    case "arrange_flowers": return "低头修剪花枝，动作很轻。";
+    case "serve_customer":
+      return ctx.location.id === "bakery"
+        ? "在柜台边招呼客人、递面包。"
+        : "在店里招呼客人、收拾桌面。";
+    case "make_coffee": return "在吧台后做咖啡，手边飘着热气。";
+    case "clean_table": return "弯着腰擦桌子，把杯盘一点点收好。";
+    case "knead_dough": return "手上沾着面粉，专心揉着面团。";
+    case "bake": return "守在烤箱边，不时朝里面看一眼。";
+    case "shelve_books": return "抱着一摞书，在书架间来回整理。";
+    case "help_reader": return "压低声音给人指路，语气很耐心。";
+    case "read": return "抱着一本书看得有些入神。";
+    default: return undefined;
+  }
+}
+
+function buildTalkTool(ctx: ToolBuildContext, talkableCharacters: Array<{ id: string; name: string }>): ActionDefinition {
+  const listedCharacters = talkableCharacters.length > 0 ? talkableCharacters : ctx.nearbyCharacters;
+  const who = listedCharacters
+    .map((c) => `${c.name}(${c.id})`)
+    .join("、");
+  const coolingDown = talkableCharacters.length === 0;
   return {
     tool: {
       name: "talk",
-      description: `跟在场的人说话。聊天挺好但也挺累的。在场：${who}。`,
+      description: coolingDown
+        ? `跟在场的人说话。你们刚聊过，先缓一缓比较自然，现在不太适合立刻继续搭话。在场：${who}。`
+        : `跟在场的人说话。聊天挺好但也挺累的。在场：${who}。`,
       parameters: {
         type: "object",
         properties: {
@@ -260,7 +332,14 @@ function buildTalkTool(ctx: ToolBuildContext): ActionDefinition {
       const target = args.target as string;
       const message = args.message as string;
       const manner = args.manner as string | undefined;
-      if (!actx.nearbyCharacters.includes(target)) {
+      if (coolingDown && ctx.nearbyCharacters.some((c) => c.id === target)) {
+        return {
+          description: `刚和${nearbyDisplayName(ctx, target)}聊过，先缓一缓比较自然`,
+          effects: [],
+          success: false,
+        };
+      }
+      if (!talkableCharacters.some((c) => c.id === target)) {
         return { description: `想和${target}说话，但对方不在这里`, effects: [], success: false };
       }
       const mannerText = manner ? `${manner}，` : "";
@@ -273,6 +352,7 @@ function buildTalkTool(ctx: ToolBuildContext): ActionDefinition {
           { type: "need_change", targetId: target, field: "social", delta: 3 },
           { type: "inbox_message", targetId: target, fromName: actx.characterId, message },
         ],
+        observableState: `${manner ? `${manner}，` : ""}正和${nearbyDisplayName(ctx, target)}说话${message ? `，像是提到「${truncateVisibleText(message, 14)}」` : ""}。`,
       };
     },
   };
@@ -309,6 +389,7 @@ function buildComfortTool(ctx: ToolBuildContext): ActionDefinition {
           { type: "need_change", targetId: actx.characterId, field: "fun", delta: -5 },
         ],
         duration: 2,
+        observableState: `正压低声音安慰${nearbyDisplayName(ctx, target)}，语气放得很轻。`,
       };
     },
   };
@@ -346,6 +427,7 @@ function buildArgueTool(ctx: ToolBuildContext): ActionDefinition {
           { type: "relationship_change", targetId: target, delta: -15 },
         ],
         duration: 2,
+        observableState: `和${nearbyDisplayName(ctx, target)}之间的气氛一下绷紧了。`,
       };
     },
   };
@@ -374,6 +456,7 @@ function buildBegTool(): ActionDefinition {
           { type: "need_change", targetId: actx.characterId, field: "social", delta: -8 },
         ],
         duration: 1,
+        observableState: "站在路边小声向陌生人开口，神情有些难堪。",
         _begAmount: amount,
       } as ActionResult & { _begAmount: number };
     },
@@ -406,6 +489,7 @@ function buildStealTool(): ActionDefinition {
         description: `悄悄拿走了 ${amount} 金币的东西`,
         effects: [],
         duration: 1,
+        observableState: "动作有些心虚，像是刚做了不想让人知道的事。",
         _stolenAmount: amount,
       } as ActionResult & { _stolenAmount: number };
     },
@@ -489,6 +573,7 @@ function buildPrepareTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefini
           { type: "need_change", targetId: actx.characterId, field: "energy", delta: -2 },
         ],
         duration: 1,
+        observableState: `正在做一份${shopItem.name}，动作熟练得像条件反射。`,
         _buyItem: { defId: shopItem.id, price: 0 }, // 员工免费
       } as ActionResult & { _buyItem: { defId: string; price: number } };
     },
@@ -533,6 +618,7 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
       return {
         description: `买了${shopItem.name}`,
         effects: [],
+        observableState: `手里拿着刚买的${shopItem.name}，还没决定是自己留着还是带走。`,
         _buyItem: { defId: shopItem.id, price: shopItem.price },
       } as ActionResult & { _buyItem: { defId: string; price: number } };
     },
@@ -604,6 +690,7 @@ function buildEatTool(
           description: `吃了${def.name}`,
           effects,
           duration: 2,
+          observableState: `正慢慢吃着${def.name}${ctx.nearbyCharacters.length > 0 ? "，像是顺便留意着周围的人" : ""}。`,
           _useItem: itemId,
         } as ActionResult & { _useItem: string };
       } else if (shopItem) {
@@ -611,6 +698,7 @@ function buildEatTool(
           description: `买了${def.name}吃`,
           effects,
           duration: 2,
+          observableState: `手边是刚买的${def.name}，正坐下来慢慢吃。`,
           _buyItem: { defId: itemId, price: shopItem.price },
           _useItem: itemId, // 买了立刻吃，不入背包
           _eatImmediate: true,
@@ -648,6 +736,7 @@ function buildCookTool(ctx: ToolBuildContext): ActionDefinition {
           { type: "need_change", targetId: actx.characterId, field: "hygiene", delta: -5 },
         ],
         duration: 3,
+        observableState: "在厨房里忙着做饭，锅里咕嘟咕嘟冒着热气。",
         _useItem: "ingredients",
       } as ActionResult & { _useItem: string };
     },
@@ -692,6 +781,7 @@ function buildGiveTool(ctx: ToolBuildContext): ActionDefinition {
           { type: "need_change", targetId: actx.characterId, field: "social", delta: 5 },
           { type: "need_change", targetId: target, field: "social", delta: 10 },
         ],
+        observableState: `正把${def?.name ?? rawItem}递给${nearbyDisplayName(ctx, target)}。`,
         _giveItem: { defId: itemId, targetId: target },
       } as ActionResult & { _giveItem: { defId: string; targetId: string } };
     },
@@ -731,6 +821,13 @@ function buildItemEnabledTool(toolId: string, itemName: string, ctx: ToolBuildCo
         delta,
       })),
       duration: def.duration,
+      observableState: ({
+        journal: `低头在${itemName}上写着什么，神情很专注。`,
+        practice_music: "抱着吉他慢慢试音，像在确认每个音准。",
+        fish: "握着鱼竿盯着水面，耐心地等着动静。",
+        draw: "低头画着什么，时不时退远一点看一眼。",
+        photograph: "举着相机到处找角度，像想把这一刻留住。",
+      } as Record<string, string>)[toolId],
     }),
   };
 }
@@ -789,6 +886,7 @@ function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefin
         description: lt.description.replace(/（.*?）/, ""),
         effects,
         duration: lt.duration ?? 1,
+        observableState: describeLocationObservableState(lt, ctx),
       };
       if (lt.cost) result._cost = lt.cost;
       if (lt.income) result._workerIncome = lt.income;

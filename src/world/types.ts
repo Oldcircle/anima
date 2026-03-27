@@ -97,6 +97,15 @@ export interface CharacterIntent {
   expiresAt: number;
 }
 
+export interface CharacterObservableState {
+  actionName: string;
+  summary: string;
+  source: "action";
+  targetId?: string;
+  createdTick: number;
+  expiresAt: number;
+}
+
 export interface CharacterState {
   id: string;
   name: string;
@@ -111,6 +120,8 @@ export interface CharacterState {
   currentAction?: { name: string; remainingTicks: number };
   /** 当前还挂在心上的短期意图/未完事务，会自然过期 */
   currentIntent?: CharacterIntent;
+  /** 当前留在外界可被旁人观察到的生活痕迹 */
+  observableState?: CharacterObservableState;
   /** 消息信箱：其他角色发来的消息 */
   inbox: InboxMessage[];
   /** 随身物品 */

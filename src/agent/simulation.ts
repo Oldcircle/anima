@@ -138,6 +138,17 @@ export class Simulation {
     return tracked;
   }
 
+  private _getTalkCooldownTargets(characterId: string, tick: number): string[] {
+    const state = this.world.getCharacter(characterId);
+    if (!state) return [];
+    return this.world.getCharactersAtLocation(state.locationId)
+      .filter((id) => id !== characterId)
+      .filter((otherId) => {
+        const cooldownTick = this._conversationCooldown.get([characterId, otherId].sort().join(":"));
+        return cooldownTick !== undefined && (tick - cooldownTick) < 2;
+      });
+  }
+
   private recordWitnessObservations(event: WorldEvent): void {
     if (!isSociallyObservableEvent(event.type)) return;
 
@@ -233,7 +244,16 @@ export class Simulation {
       const state = this.world.getCharacter(id);
       if (!state) continue;
 
-      promises.push(runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory, impressions: this.impressions }));
+      promises.push(runAgentTick({
+        config,
+        world: this.world,
+        eventBus: this.eventBus,
+        gameTime,
+        talkCooldownTargets: this._getTalkCooldownTargets(id, gameTime.tick),
+        relationships: this.relationships,
+        memory: this.memory,
+        impressions: this.impressions,
+      }));
     }
 
     const agentResults = await Promise.all(promises);
@@ -245,7 +265,7 @@ export class Simulation {
         const targetId = this._resolveCharacterId(r.action.args.target as string);
         // RelationshipManager 是对称关系，同一条 talk 只应推动一次，
         // 否则会因为“你对我说话 / 我对你说话”被重复加分，亲密度涨得过快。
-        this.relationships.modify(r.characterId, targetId, 2, gameTime.tick, r.result?.description ?? "聊天");
+        this.relationships.modify(r.characterId, targetId, 1, gameTime.tick, r.result?.description ?? "聊天");
         const charState = this.world.getCharacter(r.characterId);
         this.conversations.recordTalk(
           r.characterId,
@@ -271,6 +291,16 @@ export class Simulation {
     const MAX_REACTION_ROUNDS = 3;
     const pairExchangeCount = new Map<string, number>();
     const pairKey = (a: string, b: string) => [a, b].sort().join(":");
+    for (const r of results) {
+      if (r.action?.name !== "talk" || !r.action.args.target || r.result?.success === false) continue;
+      const targetId = this._resolveCharacterId(r.action.args.target as string);
+      const pk = pairKey(r.characterId, targetId);
+      const newCount = (pairExchangeCount.get(pk) ?? 0) + 1;
+      pairExchangeCount.set(pk, newCount);
+      if (newCount >= 2) {
+        this._conversationCooldown.set(pk, gameTime.tick);
+      }
+    }
     for (let round = 0; round < MAX_REACTION_ROUNDS; round++) {
       const reactors: Array<{ id: string; config: AgentConfig }> = [];
       for (const [id, config] of this._configs) {
@@ -335,15 +365,39 @@ export class Simulation {
                 .filter((n): n is string => !!n),
             });
             r = await runAgentTick({
-              config, world: this.world, eventBus: this.eventBus, gameTime,
-              relationships: this.relationships, memory: this.memory,
-              impressions: this.impressions, conversationRequest,
+              config,
+              world: this.world,
+              eventBus: this.eventBus,
+              gameTime,
+              talkCooldownTargets: this._getTalkCooldownTargets(id, gameTime.tick),
+              relationships: this.relationships,
+              memory: this.memory,
+              impressions: this.impressions,
+              conversationRequest,
             });
           } else {
-            r = await runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory, impressions: this.impressions });
+            r = await runAgentTick({
+              config,
+              world: this.world,
+              eventBus: this.eventBus,
+              gameTime,
+              talkCooldownTargets: this._getTalkCooldownTargets(id, gameTime.tick),
+              relationships: this.relationships,
+              memory: this.memory,
+              impressions: this.impressions,
+            });
           }
         } else {
-          r = await runAgentTick({ config, world: this.world, eventBus: this.eventBus, gameTime, relationships: this.relationships, memory: this.memory, impressions: this.impressions });
+          r = await runAgentTick({
+            config,
+            world: this.world,
+            eventBus: this.eventBus,
+            gameTime,
+            talkCooldownTargets: this._getTalkCooldownTargets(id, gameTime.tick),
+            relationships: this.relationships,
+            memory: this.memory,
+            impressions: this.impressions,
+          });
         }
 
         reactionResults.push(r);
@@ -353,7 +407,7 @@ export class Simulation {
         if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
           hasNewTalk = true;
           const targetId = this._resolveCharacterId(r.action.args.target as string);
-          this.relationships.modify(r.characterId, targetId, 2, gameTime.tick, r.result?.description ?? "回复");
+          this.relationships.modify(r.characterId, targetId, 1, gameTime.tick, r.result?.description ?? "回复");
           const charState = this.world.getCharacter(r.characterId);
           this.conversations.recordTalk(
             r.characterId,
@@ -438,7 +492,8 @@ export class Simulation {
         .map((c) => ({
           id: c.id,
           name: c.name,
-          action: c.currentAction ? describeObservableAction(c.name, c.currentAction.name) : "",
+          action: this.world.getObservableState(c.id, gameTime.tick)?.summary
+            ?? (c.currentAction ? describeObservableAction(c.name, c.currentAction.name) : ""),
           stayDuration: undefined as number | undefined,
         }))
         .filter((c) => c.action.length > 0);

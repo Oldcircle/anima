@@ -6,7 +6,7 @@
  */
 
 import type { CharacterCard, LifeState } from "../character/types.js";
-import type { CharacterState, CharacterNeeds, Weather, InboxMessage, LocationAtmosphere } from "../world/types.js";
+import type { CharacterState, CharacterNeeds, Weather, InboxMessage, LocationAtmosphere, CharacterIntent } from "../world/types.js";
 import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime } from "../core/tick-engine.js";
 import type { WorldEvent } from "../core/event-bus.js";
@@ -231,7 +231,7 @@ export function buildUserPrompt(params: {
     id: string;
     name: string;
     relationship?: { level: number; type: string; bond?: string };
-    /** 当前正在做什么（可观察状态） */
+    /** 当前可观察到的状态 */
     currentAction?: string;
   }>;
   recentEvents: WorldEvent[];
@@ -248,6 +248,8 @@ export function buildUserPrompt(params: {
   impressions?: ImpressionStore;
   /** 角色 ID → 显示名映射（用于回忆中的人名解析） */
   characterNames?: Map<string, string>;
+  /** 当前还挂在心上的短期意图 */
+  currentIntent?: CharacterIntent;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
@@ -348,11 +350,16 @@ export function buildUserPrompt(params: {
   const life = state.life ?? card.life;
   if (life) {
     const lifeHints: string[] = [];
+    if (params.currentIntent) {
+      lifeHints.push(`你现在还挂着的事：${params.currentIntent.summary}`);
+    }
     if (life.currentGoal) lifeHints.push(`你最近想做的事：${life.currentGoal}`);
     if (life.currentConcern) lifeHints.push(`你有点担心的事：${life.currentConcern}`);
     if (lifeHints.length > 0) {
       parts.push(`\n## 你心里挂着的事\n${lifeHints.join("\n")}`);
     }
+  } else if (params.currentIntent) {
+    parts.push(`\n## 你心里挂着的事\n你现在还挂着的事：${params.currentIntent.summary}`);
   }
 
   // 随身物品

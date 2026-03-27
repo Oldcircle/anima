@@ -2,7 +2,16 @@
  * World — 世界状态管理
  */
 
-import type { Location, Weather, WorldState, CharacterState, CharacterNeeds, InboxMessage, CharacterIntent } from "./types.js";
+import type {
+  Location,
+  Weather,
+  WorldState,
+  CharacterState,
+  CharacterNeeds,
+  InboxMessage,
+  CharacterIntent,
+  CharacterObservableState,
+} from "./types.js";
 import type { LifeState } from "../character/types.js";
 import { tickToGameTime, type GameTime } from "../core/tick-engine.js";
 import { getDefaultNeeds, getDecayRates } from "./need-definitions.js";
@@ -156,6 +165,30 @@ export class World {
     const character = this._characters.get(characterId);
     if (!character) return;
     character.currentIntent = undefined;
+  }
+
+  /** 设置角色当前可观察状态 */
+  setObservableState(characterId: string, observableState?: CharacterObservableState): void {
+    const character = this._characters.get(characterId);
+    if (!character) return;
+    character.observableState = observableState;
+  }
+
+  /** 获取当前仍有效的可观察状态；过期会自动清除 */
+  getObservableState(characterId: string, tick = this._state.tick): CharacterObservableState | undefined {
+    const character = this._characters.get(characterId);
+    if (!character?.observableState) return undefined;
+    if (character.observableState.expiresAt < tick) {
+      character.observableState = undefined;
+      return undefined;
+    }
+    return character.observableState;
+  }
+
+  clearObservableState(characterId: string): void {
+    const character = this._characters.get(characterId);
+    if (!character) return;
+    character.observableState = undefined;
   }
 
   // --- 信箱 ---

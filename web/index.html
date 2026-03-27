@@ -44,6 +44,8 @@
     .tick-entry.is-reflect { border-left-color: #a371f7; }
     .te-actor { font-weight: 600; color: #58a6ff; font-size: 12px; }
     .te-action { color: #8b949e; font-size: 12px; }
+    .te-observe { color: #c9d1d9; font-size: 12px; margin-top: 2px; line-height: 1.45; }
+    .te-detail { color: #484f58; font-size: 11px; margin-top: 2px; line-height: 1.4; }
     .te-thought { color: #484f58; font-size: 11px; font-style: italic; margin-top: 2px; white-space: pre-wrap; }
     .te-dialogue { margin-top: 3px; padding: 4px 8px; background: #161b22; border-radius: 4px; border-left: 2px solid #3fb950; }
     .te-manner { color: #8b949e; font-size: 11px; }
@@ -167,6 +169,36 @@
     const WEATHER = { sunny: '&#9728;&#65039; 晴', cloudy: '&#9729;&#65039; 多云', rainy: '&#127783;&#65039; 雨', stormy: '&#9928;&#65039; 暴风雨', snowy: '&#10052;&#65039; 雪' };
     const NEED_LABEL = { hunger: '饱食', energy: '精力', social: '社交', fun: '娱乐', hygiene: '卫生', bladder: '生理' };
     const MEM_ICON = { event: '&#9733;', conversation: '&#128172;', thought: '&#128173;', observation: '&#128065;' };
+    const ACTION_TEXT = {
+      go_to: '像是在换个地方待着',
+      read: '抱着书看着',
+      prepare: '忙着准备手头的事',
+      serve_customer: '在招呼客人',
+      make_coffee: '在做咖啡',
+      clean_table: '在收拾桌面',
+      shelve_books: '在整理书架',
+      help_reader: '在给人指路',
+      knead_dough: '在揉面团',
+      bake: '在守着烤炉',
+      eat: '在吃东西',
+      buy: '像是刚买了点什么',
+      cook: '在做饭',
+      give: '像是在把东西递给别人',
+      use_toilet: '暂时离开了一会儿',
+      wash: '在洗漱收拾自己',
+      sleep: '已经睡着了',
+      nap: '在打盹',
+      rest: '在歇一会儿',
+      sit: '正坐着发会儿呆',
+      walk: '慢慢走着',
+      journal: '在写点什么',
+      practice_music: '在练习乐器',
+      comfort: '在安慰人',
+      argue: '和人之间气氛有点紧',
+      beg: '在向路人开口求助',
+      steal: '像是刚做了不想让人知道的事',
+      arrange_flowers: '在修剪花枝',
+    };
     const needColor = v => v > 60 ? '#3fb950' : v > 30 ? '#d29922' : '#f85149';
     const relColor = v => v > 50 ? '#3fb950' : v > 20 ? '#58a6ff' : v > 0 ? '#8b949e' : '#f85149';
     const N = id => S.nameMap[id] || id;
@@ -231,6 +263,26 @@
     const BOND_LABEL = { colleague:'同事', roommate:'室友', partner:'恋人', ex:'前任', mentor:'师徒', rival:'宿敌' };
     const SKILL_NAMES = { baking:'烘焙', social:'社交', barista:'咖啡', piano:'钢琴', etiquette:'礼仪', botany:'植物', guitar:'吉他', organizing:'整理', observation:'观察', writing:'写作' };
 
+    function normalizeDialogueText(message) {
+      const text = String(message || '').trim();
+      if (
+        (text.startsWith('「') && text.endsWith('」')) ||
+        (text.startsWith('“') && text.endsWith('”')) ||
+        (text.startsWith('"') && text.endsWith('"'))
+      ) {
+        return text.slice(1, -1).trim();
+      }
+      return text;
+    }
+
+    function fallbackActionSummary(actionName) {
+      return ACTION_TEXT[actionName] || actionName || '';
+    }
+
+    function activitySummary(ch) {
+      return ch.observableState?.summary || fallbackActionSummary(ch.currentAction?.name);
+    }
+
     function renderSidebar() {
       const el = document.getElementById('sidebar');
       el.innerHTML = S.characters.map(c => {
@@ -240,14 +292,14 @@
           const v = c.needs?.[k] ?? 0;
           return `<div class="mini-bar"><div class="fill" style="width:${v}%;background:${needColor(v)}"></div></div>`;
         }).join('');
-        const action = c.currentAction ? `${c.currentAction.name}` : '';
+        const action = activitySummary(c);
         const occ = c.life?.occupation || '';
         const moodTags = (c.moodlets || []).slice(0, 2).map(m =>
           `<span class="moodlet-tag moodlet-${m.emotion}">${EMOTION_LABEL[m.emotion] || m.emotion}</span>`
         ).join('');
         return `<div class="char-card ${sel}" onclick="selectChar('${c.id}')">
           <div class="cc-name">${c.name}</div>
-          <div class="cc-meta"><span class="cc-loc">${loc?.name || c.locationId}</span> &middot; &#128176;${c.gold ?? 0} ${action ? '&middot; ' + action : ''}</div>
+          <div class="cc-meta"><span class="cc-loc">${loc?.name || c.locationId}</span> &middot; &#128176;${c.gold ?? 0} ${action ? '&middot; ' + escHtml(action) : ''}</div>
           ${occ ? `<div class="cc-meta" style="color:#58a6ff">${occ}</div>` : ''}
           <div class="mini-bars">${bars}</div>
           ${moodTags ? `<div style="margin-top:3px">${moodTags}</div>` : ''}
@@ -290,14 +342,21 @@
           } else if (isTalk && evt.args) {
             const target = N(evt.args.target || '');
             const manner = evt.args.manner || '';
-            const message = evt.args.message || '';
+            const message = normalizeDialogueText(evt.args.message || '');
             inner += `<span class="te-action">&#8594; <span class="te-target">${target}</span></span>`;
             if (evt.thought) inner += `<div class="te-thought">${escHtml(evt.thought)}</div>`;
+            if (evt.observableState) inner += `<div class="te-detail">${escHtml(evt.observableState)}</div>`;
             inner += `<div class="te-dialogue">`;
             if (manner) inner += `<div class="te-manner">${escHtml(manner)}</div>`;
             inner += `<div class="te-message">${escHtml(message)}</div></div>`;
           } else {
-            inner += `<span class="te-action">${evt.action || 'idle'} &mdash; ${evt.description || ''}</span>`;
+            const summary = evt.observableState || evt.description || fallbackActionSummary(evt.action) || '停了一会儿';
+            inner += `<div class="te-observe">${escHtml(summary)}</div>`;
+            if (evt.observableState && evt.description && evt.observableState !== evt.description) {
+              inner += `<div class="te-detail">${escHtml(evt.description)}</div>`;
+            } else if (!evt.observableState && evt.action) {
+              inner += `<div class="te-detail">${escHtml(fallbackActionSummary(evt.action))}</div>`;
+            }
             if (evt.thought) inner += `<div class="te-thought">${escHtml(evt.thought)}</div>`;
           }
 
@@ -394,7 +453,7 @@
       let html = `<div class="profile-header">
         <div class="p-name">${ch.name}</div>
         <div class="p-meta">${life ? `${life.age} 岁 &middot; ${life.occupation}` : ''}</div>
-        <div class="p-meta">${loc?.name || ch.locationId} &middot; &#128176;${ch.gold ?? 0}${ch.currentAction ? ' &middot; ' + ch.currentAction.name : ''}</div>
+        <div class="p-meta">${loc?.name || ch.locationId} &middot; &#128176;${ch.gold ?? 0}${activitySummary(ch) ? ' &middot; ' + escHtml(activitySummary(ch)) : ''}</div>
       </div>`;
 
       // 生活状态

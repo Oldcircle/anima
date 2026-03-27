@@ -37,6 +37,7 @@ export const argueAction: ActionDefinition = {
         { type: "need_change", targetId: target, field: "social", delta: 5 },
       ],
       duration: 2,
+      observableState: `和${target}之间的气氛一下绷紧了。`,
     };
   },
 };
@@ -82,6 +83,7 @@ export const stealAction: ActionDefinition = {
       ],
       // gold 变化在 agent-loop 的经济效果中处理，这里通过 description 传递金额
       duration: 1,
+      observableState: "动作有些心虚，像是刚做了不想让人知道的事。",
       // 存一个标记让 agent-loop 知道偷了多少钱
       _stolenAmount: stolenAmount,
     } as ActionResult & { _stolenAmount: number };
@@ -105,6 +107,7 @@ export const begAction: ActionDefinition = {
         { type: "need_change", targetId: ctx.characterId, field: "fun", delta: -10 },
         { type: "need_change", targetId: ctx.characterId, field: "social", delta: -5 },
       ],
+      observableState: "站在路边小声向陌生人开口，神情有些难堪。",
       _begAmount: received,
     } as ActionResult & { _begAmount: number };
   },

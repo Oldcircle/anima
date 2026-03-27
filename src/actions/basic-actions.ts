@@ -41,6 +41,7 @@ export const eatAction: ActionDefinition = {
         { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 3 },
       ],
       duration: 2,
+      observableState: `正慢慢吃着${food}。`,
     };
   },
 };
@@ -68,6 +69,7 @@ export const sleepAction: ActionDefinition = {
         { type: "need_change", targetId: ctx.characterId, field: "bladder", delta: -25 },
       ],
       duration: 32,
+      observableState: "已经睡着了，呼吸慢慢平稳下来。",
     };
   },
 };
@@ -97,6 +99,7 @@ export const goToAction: ActionDefinition = {
         { type: "need_change", targetId: ctx.characterId, field: "bladder", delta: -3 },
       ],
       duration: 1,
+      observableState: `刚走进${location}，像是在找个能待下来的位置。`,
     };
   },
 };
@@ -151,6 +154,7 @@ export const talkAction: ActionDefinition = {
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 1 },
         { type: "inbox_message", targetId: target, fromName: ctx.characterId, message },
       ],
+      observableState: `${manner ? `${manner}，` : ""}正和${target}说话。`,
     };
   },
 };
@@ -188,6 +192,7 @@ export const workAction: ActionDefinition = {
       description: `在工作：${activity}`,
       effects,
       duration: 8,
+      observableState: `正埋头忙着${activity}。`,
     };
   },
 };
@@ -215,6 +220,7 @@ export const washAction: ActionDefinition = {
         { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 5 },
       ],
       duration: 2,
+      observableState: "暂时不在，大概是在洗漱。",
     };
   },
 };
@@ -234,6 +240,7 @@ export const useToiletAction: ActionDefinition = {
       { type: "need_change", targetId: ctx.characterId, field: "bladder", delta: 100 },
     ],
     duration: 1,
+    observableState: "刚起身离开了一会儿，像是去洗手间了。",
   }),
 };
 
@@ -257,6 +264,7 @@ export const napAction: ActionDefinition = {
         { type: "need_change", targetId: ctx.characterId, field: "fun", delta: -5 },
       ],
       duration: 4,
+      observableState: "靠着一旁短暂打了个盹。",
     };
   },
 };
@@ -292,6 +300,7 @@ export const cookAction: ActionDefinition = {
         { type: "need_change", targetId: ctx.characterId, field: "hygiene", delta: -5 },
       ],
       duration: 3,
+      observableState: "在厨房里忙着做饭，锅里咕嘟咕嘟冒着热气。",
     };
   },
 };

@@ -76,6 +76,32 @@ describe("Agent Loop", () => {
     expect(world.getCharacter("tomori")!.locationId).toBe("cafe");
   });
 
+  it("LLM 调用 go_to 到不存在的地点 → 明确失败且位置不变", async () => {
+    mockLLM.enqueueResponse("去厨房看看", [
+      { name: "go_to", arguments: { location: "kitchen" } },
+    ]);
+
+    const result = await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    expect(result.action?.name).toBe("go_to");
+    expect(result.result?.success).toBe(false);
+    expect(result.result?.description).toContain("并没有这个地方");
+    expect(world.getCharacter("tomori")!.locationId).toBe("home_tomori");
+  });
+
+  it("LLM 调用 go_to 去当前地点 → 明确提示已经在这里", async () => {
+    mockLLM.enqueueResponse("还是去家里吧", [
+      { name: "go_to", arguments: { location: "home_tomori" } },
+    ]);
+
+    const result = await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    expect(result.action?.name).toBe("go_to");
+    expect(result.result?.success).toBe(false);
+    expect(result.result?.description).toContain("已经在");
+    expect(world.getCharacter("tomori")!.locationId).toBe("home_tomori");
+  });
+
   it("多 tick 行为：sleep 持续多个 tick", async () => {
     // 先把精力降到 80 以下，否则 sleep 会被拒绝
     world.modifyNeed("tomori", "energy", -50);
@@ -137,6 +163,157 @@ describe("Agent Loop", () => {
     expect(anon.inbox[0]!.fromId).toBe("tomori");
     expect(anon.inbox[0]!.fromName).toBe("高松灯");
     expect(anon.inbox[0]!.content).toBe("你、你好……");
+  });
+
+  it("收到消息但没有回复时，会留下 reply 意图", async () => {
+    world.moveCharacter("tomori", "cafe");
+    world.sendMessage("tomori", {
+      fromId: "anon",
+      fromName: "千早爱音",
+      content: "等会要不要一起喝咖啡？",
+      tick: 48,
+    });
+
+    mockLLM.enqueueResponse("我先去洗个手", [
+      { name: "use_toilet", arguments: {} },
+    ]);
+
+    await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    expect(world.getCurrentIntent("tomori", 48)?.kind).toBe("reply");
+    expect(world.getCurrentIntent("tomori", 48)?.summary).toContain("你还没回应");
+  });
+
+  it("成功行动后会留下可观察状态", async () => {
+    const { addToInventory } = await import("../world/item-registry.js");
+    addToInventory(world.getCharacter("tomori")!.inventory, "ingredients");
+
+    mockLLM.enqueueResponse("在家做饭吧", [
+      { name: "cook", arguments: {} },
+    ]);
+
+    await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    expect(world.getObservableState("tomori", 48)?.summary).toContain("做饭");
+  });
+
+  it("talk 的可观察状态会保留动作语气和话题片段", async () => {
+    world.moveCharacter("tomori", "cafe");
+    mockLLM.enqueueResponse("和爱音说两句", [
+      { name: "talk", arguments: { target: "anon", message: "你今天看起来很累，要不要先坐一下？", manner: "轻轻拉了下袖口" } },
+    ]);
+
+    await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    const observable = world.getObservableState("tomori", 48);
+    expect(observable?.summary).toContain("轻轻拉了下袖口");
+    expect(observable?.summary).toContain("爱音");
+    expect(observable?.summary).toContain("你今天看起来");
+  });
+
+  it("会把附近角色的细节型可观察状态注入 prompt", async () => {
+    world.moveCharacter("tomori", "cafe");
+    world.setObservableState("anon", {
+      actionName: "rest",
+      source: "action",
+      summary: "安静地坐在窗边发呆，像是有心事。",
+      createdTick: 48,
+      expiresAt: 50,
+    });
+
+    mockLLM.enqueueResponse("先看看情况", [
+      { name: "talk", arguments: { target: "anon", message: "还好吗？" } },
+    ]);
+
+    await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    expect(mockLLM.calls).toHaveLength(1);
+    const req = mockLLM.calls[0]!.request;
+    expect(req.messages[0]!.content).toContain("安静地坐在窗边发呆");
+  });
+
+  it("give 会留下正在递东西的可观察状态", async () => {
+    const { addToInventory } = await import("../world/item-registry.js");
+    world.moveCharacter("tomori", "cafe");
+    addToInventory(world.getCharacter("tomori")!.inventory, "notebook");
+
+    mockLLM.enqueueResponse("把笔记本递过去", [
+      { name: "give", arguments: { target: "anon", item: "笔记本" } },
+    ]);
+
+    await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    expect(world.getObservableState("tomori", 48)?.summary).toContain("递给");
+    expect(world.getObservableState("tomori", 48)?.summary).toContain("爱音");
+  });
+
+  it("社交冷却期间会把 talk 工具改成“先缓一缓”的提示", async () => {
+    world.moveCharacter("tomori", "cafe");
+
+    mockLLM.enqueueResponse("先看看还有什么能做", [
+      { name: "go_to", arguments: { location: "plaza" } },
+    ]);
+
+    await runAgentTick({
+      config,
+      world,
+      eventBus,
+      gameTime: tickToGameTime(48),
+      talkCooldownTargets: ["anon"],
+    });
+
+    expect(mockLLM.calls).toHaveLength(1);
+    const talkTool = mockLLM.calls[0]!.request.tools!.find((tool) => tool.name === "talk");
+    expect(talkTool?.description).toContain("先缓一缓");
+  });
+
+  it("冷却期间收到对方消息时，会保留 reply 意图而不是立刻续聊", async () => {
+    world.moveCharacter("tomori", "cafe");
+    world.sendMessage("tomori", {
+      fromId: "anon",
+      fromName: "千早爱音",
+      content: "在吗？",
+      tick: 48,
+    });
+
+    mockLLM.enqueueResponse("先缓一下", [
+      { name: "go_to", arguments: { location: "plaza" } },
+    ]);
+
+    const result = await runAgentTick({
+      config,
+      world,
+      eventBus,
+      gameTime: tickToGameTime(48),
+      talkCooldownTargets: ["anon"],
+    });
+
+    expect(mockLLM.calls).toHaveLength(1);
+    const talkTool = mockLLM.calls[0]!.request.tools!.find((tool) => tool.name === "talk");
+    expect(talkTool?.description).toContain("先缓一缓");
+    expect(result.action?.name).toBe("go_to");
+    expect(world.getCurrentIntent("tomori", 48)?.kind).toBe("reply");
+  });
+
+  it("prompt 会注入当前短期意图", async () => {
+    world.setIntent("tomori", {
+      kind: "plan",
+      source: "movement",
+      summary: "刚到咖啡馆。先看看这里现在适合做什么。",
+      createdTick: 48,
+      expiresAt: 50,
+    });
+
+    mockLLM.enqueueResponse("去洗手间", [
+      { name: "go_to", arguments: { location: "cafe" } },
+    ]);
+
+    await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    expect(mockLLM.calls).toHaveLength(1);
+    const req = mockLLM.calls[0]!.request;
+    expect(req.messages[0]!.content).toContain("你心里挂着的事");
+    expect(req.messages[0]!.content).toContain("刚到咖啡馆");
   });
 
   it("LLM 收到正确的 prompt 结构", async () => {

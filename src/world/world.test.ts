@@ -115,4 +115,19 @@ describe("World", () => {
     expect(world.getCurrentIntent("tomori", 13)).toBeUndefined();
     expect(world.getCharacter("tomori")!.currentIntent).toBeUndefined();
   });
+
+  it("可观察状态会设置并在过期后自动清除", () => {
+    const world = createTestWorldWithCharacters();
+    world.setObservableState("tomori", {
+      actionName: "cook",
+      source: "action",
+      summary: "在厨房里忙着做饭，锅里冒着热气。",
+      createdTick: 20,
+      expiresAt: 22,
+    });
+
+    expect(world.getObservableState("tomori", 21)?.actionName).toBe("cook");
+    expect(world.getObservableState("tomori", 23)).toBeUndefined();
+    expect(world.getCharacter("tomori")!.observableState).toBeUndefined();
+  });
 });

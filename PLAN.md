@@ -104,6 +104,26 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 - [ ] 继续推进 P1：人物印象系统从“可注入”走向“稳定更新 + 更强主观性”
 - [ ] 继续推进 P2：观察与社会推理，从“看到”走向“解读”
 
+### 当前攻坚：生活惯性 + 世界痕迹
+
+核心判断：当前“不像活人”不是因为角色不会说话，而是因为角色缺少跨 tick 的生活惯性，行为也没有留下足够可被他人感知的痕迹。角色更像被身体需求推着走的状态机，而不是带着未完事务继续活下去的人。
+
+- [x] `currentIntent` 真正接入 agent 主循环
+  - 失败行为、被打断的行为、收到消息、主动计划都写入短期意图
+  - prompt 注入“你现在还挂着的事”
+  - 合适时清除/更新意图，避免永远执念
+- [x] `observableState` 成为行为执行后的一级产物
+  - `ActionResult` 增加 `observableState`
+  - `CharacterState` 记录当前可观察状态及其来源
+  - prompt-builder / observation-reasoning 不再只看粗粒度 action name
+- [x] 丰富更多行为的 `observableState` 细节（独处发呆、离席、分享食物、工作姿态）
+- [x] 前端时间线 / 角色面板优先展示 `observableState`，避免 UI 把生活片段重新压扁成工具名
+- [x] 同一对角色的每 tick 对话上限真正生效（主轮 `talk` 也计入反应轮配额）
+- [x] `go_to` 拒绝不存在的地点，避免模型幻觉地点混入世界状态
+- [x] 跨 tick 社交冷却接入主决策，让“先缓一缓”成为世界约束而不是 prompt 建议
+- [ ] 让 `observableState` 带入更多关系语气（熟人/陌生人/同事在场时的差异）
+- [ ] 用修补后的 half-day / unit tests 继续验证“行为像生活而不是像工具调用”
+
 ### P0-a：环境感知 + 内心独白分级
 
 - [ ] 地点 YAML 加 `atmosphere` 字段（morning/afternoon/evening/rainy 四段感官描写）

@@ -156,4 +156,29 @@ describe("prompt-builder", () => {
     expect(prompt).toContain("又穷又饿");
     expect(prompt).toContain("胃在抽痛");
   });
+
+  it("会把当前还挂着的短期意图注入 prompt", () => {
+    const state = createState();
+    const prompt = buildUserPrompt({
+      card: baseCard,
+      state,
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [],
+      recentEvents: [],
+      locationName: "咖啡馆",
+      locationType: "commercial",
+      allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
+      currentIntent: {
+        kind: "reply",
+        source: "message",
+        targetId: "anon",
+        summary: "爱音刚刚对你说了「等会要不要一起坐坐？」，你还没回应。",
+        createdTick: 48,
+        expiresAt: 52,
+      },
+    });
+
+    expect(prompt).toContain("你心里挂着的事");
+    expect(prompt).toContain("你还没回应");
+  });
 });

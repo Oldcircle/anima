@@ -42,6 +42,7 @@ export async function runAgentTick(params: {
   world: World;
   eventBus: EventBus;
   gameTime: GameTime;
+  talkCooldownTargets?: string[];
   relationships?: RelationshipManager;
   memory?: ShortTermMemory;
   impressions?: ImpressionStore;
@@ -71,8 +72,17 @@ export async function runAgentTick(params: {
       };
     }
     // 有人对我说话了 — 中断当前行为来回应
+    world.setIntent(card.id, {
+      kind: "recover",
+      source: "action",
+      summary: `刚才还在${describeInterruptedAction(state.currentAction.name)}，被人叫住了。`,
+      createdTick: gameTime.tick,
+      expiresAt: gameTime.tick + 4,
+    });
     state.currentAction = undefined;
   }
+
+  const currentIntent = world.getCurrentIntent(card.id, gameTime.tick);
 
   // 获取上下文
   const location = world.getLocation(state.locationId);
@@ -85,10 +95,9 @@ export async function runAgentTick(params: {
     .filter((c): c is CharacterState => c !== undefined)
     .map((c) => {
       const rel = params.relationships?.get(card.id, c.id);
-      // 可观察状态：描述这个角色当前在做什么
-      const currentAction = c.currentAction
-        ? describeObservableAction(c.name, c.currentAction.name)
-        : undefined;
+      const observable = world.getObservableState(c.id, gameTime.tick);
+      const currentAction = observable?.summary
+        ?? (c.currentAction ? describeObservableAction(c.name, c.currentAction.name) : undefined);
       return { id: c.id, name: c.name, relationship: rel ? { level: rel.level, type: rel.type, bond: rel.bond } : undefined, currentAction };
     });
 
@@ -101,6 +110,7 @@ export async function runAgentTick(params: {
     card,
     location: location ?? { id: state.locationId, name: state.locationId, type: "public", presentCharacters: [] },
     nearbyCharacters: nearbyCharacters.map((c) => ({ id: c.id, name: c.name })),
+    talkCooldownTargets: params.talkCooldownTargets,
     allLocations: world.getAllLocations(),
     gold: state.gold,
     hour: gameTime.hour,
@@ -137,6 +147,7 @@ export async function runAgentTick(params: {
     atmosphere: location?.atmosphere,
     impressions: params.impressions,
     characterNames: new Map(world.getAllCharacters().map((c) => [c.id, c.name])),
+    currentIntent,
   });
 
   // 对话模式：如果提供了 conversationRequest，使用它替代标准 prompt
@@ -157,6 +168,13 @@ export async function runAgentTick(params: {
     response = await provider.chat(request, modelId);
   } catch (err: any) {
     console.error(`[${card.id}] LLM 调用失败:`, err?.message ?? err);
+    persistInboxContext({ world, characterId: card.id, inboxMessages, memory: params.memory });
+    updateCurrentIntent({
+      world,
+      characterId: card.id,
+      gameTime,
+      inboxMessages,
+    });
     return { characterId: card.id, thought: "", skipped: true, skipReason: "LLM 调用失败" };
   }
 
@@ -170,6 +188,13 @@ export async function runAgentTick(params: {
   // 如果没有工具调用，也回退
   if (response.toolCalls.length === 0) {
     console.warn(`[${card.id}] LLM 未调用工具 | thought: ${thought.slice(0, 60)} | 可用工具: ${dynamicActions.map(a => a.tool.name).join(",")}`);
+    persistInboxContext({ world, characterId: card.id, inboxMessages, memory: params.memory });
+    updateCurrentIntent({
+      world,
+      characterId: card.id,
+      gameTime,
+      inboxMessages,
+    });
     return { characterId: card.id, thought, skipped: true, skipReason: "LLM 未调用工具" };
   }
 
@@ -183,21 +208,7 @@ export async function runAgentTick(params: {
   const result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought);
 
   // 收到的信箱消息存入记忆，并给读信者加社交
-  if (inboxMessages.length > 0) {
-    for (const msg of inboxMessages) {
-      if (params.memory) {
-        params.memory.add(card.id, {
-          tick: msg.tick,
-          type: "conversation",
-          content: `${msg.fromName}对你说：「${msg.content}」`,
-          importance: 7,
-          relatedCharacterId: msg.fromId,
-        });
-      }
-      // 收到消息本身也提升社交
-      world.modifyNeed(card.id, "social", 5);
-    }
-  }
+  persistInboxContext({ world, characterId: card.id, inboxMessages, memory: params.memory });
 
   // 存入短期记忆：行为结果（自然语言回忆，不是系统日志）
   if (params.memory && result.result) {
@@ -229,6 +240,14 @@ export async function runAgentTick(params: {
       importance: 3,
     });
   }
+
+  updateCurrentIntent({
+    world,
+    characterId: card.id,
+    gameTime,
+    inboxMessages,
+    result,
+  });
 
   return result;
 }
@@ -404,6 +423,27 @@ async function executeAction(
     state.currentAction = undefined;
   }
 
+  const observableSummary = result.observableState ?? deriveObservableState({
+    toolName: toolCall.name,
+    args: toolCall.arguments,
+    result,
+    world,
+    actorId: card.id,
+    tick: gameTime.tick,
+  });
+  if (observableSummary) {
+    world.setObservableState(card.id, {
+      actionName: toolCall.name,
+      source: "action",
+      summary: observableSummary,
+      targetId: typeof toolCall.arguments.target === "string" ? resolveCharacterId(world, toolCall.arguments.target) : undefined,
+      createdTick: gameTime.tick,
+      expiresAt: gameTime.tick + Math.max(result.duration ?? 1, 2),
+    });
+  } else if (!state.currentAction) {
+    world.clearObservableState(card.id);
+  }
+
   // 广播事件
   const event: WorldEvent = {
     id: uuid(),
@@ -430,6 +470,205 @@ async function executeAction(
     action: { name: toolCall.name, args: toolCall.arguments },
     result,
   };
+}
+
+function persistInboxContext(params: {
+  world: World;
+  characterId: string;
+  inboxMessages: { fromId: string; fromName: string; content: string; tick: number }[];
+  memory?: ShortTermMemory;
+}): void {
+  const { world, characterId, inboxMessages, memory } = params;
+  if (inboxMessages.length === 0) return;
+  for (const msg of inboxMessages) {
+    if (memory) {
+      memory.add(characterId, {
+        tick: msg.tick,
+        type: "conversation",
+        content: `${msg.fromName}对你说：「${msg.content}」`,
+        importance: 7,
+        relatedCharacterId: msg.fromId,
+      });
+    }
+    world.modifyNeed(characterId, "social", 5);
+  }
+}
+
+function updateCurrentIntent(params: {
+  world: World;
+  characterId: string;
+  gameTime: GameTime;
+  inboxMessages: { fromId: string; fromName: string; content: string; tick: number }[];
+  result?: AgentTickResult;
+}): void {
+  const { world, characterId, gameTime, inboxMessages, result } = params;
+
+  if (result?.result?.success === false && result.action) {
+    world.setIntent(characterId, {
+      kind: "recover",
+      source: "action",
+      targetId: typeof result.action.args.target === "string" ? result.action.args.target as string : undefined,
+      summary: `刚才想${result.result.description}，这件事还挂在心上。`,
+      createdTick: gameTime.tick,
+      expiresAt: gameTime.tick + 4,
+    });
+    return;
+  }
+
+  const latestMessage = inboxMessages[inboxMessages.length - 1];
+  const actionTarget = typeof result?.action?.args.target === "string"
+    ? result.action.args.target as string
+    : undefined;
+  const repliedToLatest = result?.action?.name === "talk"
+    && latestMessage
+    && actionTarget === latestMessage.fromId;
+
+  if (latestMessage && !repliedToLatest) {
+    world.setIntent(characterId, {
+      kind: "reply",
+      source: "message",
+      targetId: latestMessage.fromId,
+      summary: `${latestMessage.fromName}刚刚对你说了「${truncateLine(latestMessage.content, 24)}」，你还没回应。`,
+      createdTick: gameTime.tick,
+      expiresAt: gameTime.tick + 4,
+    });
+    return;
+  }
+
+  if (result?.action?.name === "talk" && result.result?.success !== false && actionTarget && repliedToLatest) {
+    const targetName = world.getCharacter(resolveCharacterId(world, actionTarget))?.name ?? actionTarget;
+    world.setIntent(characterId, {
+      kind: "follow_up",
+      source: "action",
+      targetId: resolveCharacterId(world, actionTarget),
+      summary: `刚和${targetName}搭上话，也许还能顺着聊下去。`,
+      createdTick: gameTime.tick,
+      expiresAt: gameTime.tick + 1,
+    });
+    return;
+  }
+
+  if (result?.action?.name === "go_to" && result.result?.success !== false) {
+    const rawLocation = result.action.args.location as string | undefined;
+    const locationName = rawLocation ? (world.getLocation(rawLocation)?.name ?? rawLocation) : "这里";
+    world.setIntent(characterId, {
+      kind: "plan",
+      source: "movement",
+      summary: `刚到${locationName}。先看看这里现在适合做什么。`,
+      createdTick: gameTime.tick,
+      expiresAt: gameTime.tick + 2,
+    });
+    return;
+  }
+
+  if (result?.action && result.result?.success !== false) {
+    const existing = world.getCurrentIntent(characterId, gameTime.tick);
+    if (existing && existing.targetId && actionTarget && existing.targetId === actionTarget) {
+      world.clearIntent(characterId);
+    }
+  }
+}
+
+function deriveObservableState(params: {
+  toolName: string;
+  args: Record<string, unknown>;
+  result: ActionResult;
+  world: World;
+  actorId: string;
+  tick: number;
+}): string | undefined {
+  const { toolName, args, result, world } = params;
+  const targetId = typeof args.target === "string" ? resolveCharacterId(world, args.target) : undefined;
+  const targetName = targetId ? (world.getCharacter(targetId)?.name ?? args.target as string) : undefined;
+  const item = typeof args.item === "string" ? args.item : undefined;
+  const message = typeof args.message === "string" ? args.message : undefined;
+  const manner = typeof args.manner === "string" ? args.manner : undefined;
+
+  switch (toolName) {
+    case "go_to": {
+      const rawLocation = typeof args.location === "string" ? args.location : undefined;
+      const locationName = rawLocation ? (world.getLocation(rawLocation)?.name ?? rawLocation) : "别处";
+      return `刚走进${locationName}，像是在找个能待下来的位置。`;
+    }
+    case "talk":
+      return `${manner ? `${manner}，` : ""}正和${targetName ?? "旁边的人"}说话。`;
+    case "eat":
+      return `正在慢慢吃${item ?? "手里的食物"}。`;
+    case "drink":
+      return `手里端着${item ?? "一杯饮料"}，慢慢喝着。`;
+    case "use_toilet":
+      return "刚从洗手间回来。";
+    case "cook":
+      return "在厨房里忙着做饭，锅里冒着热气。";
+    case "buy":
+      return `手里拿着刚买的${item ?? "东西"}。`;
+    case "give":
+      return `正把${item ?? "手里的东西"}递给${targetName ?? "对方"}。`;
+    case "prepare":
+      return `正在做${item ?? "店里的东西"}，动作很熟练。`;
+    case "journal":
+      return "低头写着什么，神情很专注。";
+    case "practice_music":
+      return "在安静地练习吉他。";
+    case "read":
+      return "抱着一本书看得有些入神。";
+    case "collect_shells":
+      return "蹲在地上认真挑拣贝壳。";
+    case "walk":
+    case "walk_beach":
+      return "沿着路慢慢走着，像在想事情。";
+    case "comfort":
+      return `正低声安慰${targetName ?? "旁边的人"}。`;
+    case "argue":
+      return `和${targetName ?? "旁边的人"}之间的气氛有点僵。`;
+    default:
+      return fallbackObservableState(toolName, result.description, message);
+  }
+}
+
+function fallbackObservableState(toolName: string, description: string, message?: string): string | undefined {
+  const generic: Record<string, string> = {
+    work: "在埋头工作。",
+    knead_dough: "在揉面团，动作很专注。",
+    bake: "守在烤箱边忙着看火。",
+    make_coffee: "在吧台后做咖啡。",
+    serve_customer: "在招呼客人、收拾桌面。",
+    clean_table: "正弯腰擦着桌子。",
+    arrange_flowers: "在修剪花枝、整理花束。",
+    shelve_books: "抱着一摞书在整理书架。",
+    help_reader: "正耐心给读者指路。",
+    rest: "安静地坐着休息。",
+  };
+  if (generic[toolName]) return generic[toolName];
+  if (toolName === "talk" && message) return `刚说了句：「${truncateLine(message, 18)}」`;
+  if (!description) return undefined;
+  return `刚才${description.replace(/^在/, "").replace(/^回家/, "")}`;
+}
+
+function resolveCharacterId(world: World, raw: string): string {
+  const charById = world.getCharacter(raw);
+  if (charById) return raw;
+  const lower = raw.toLowerCase();
+  const exact = world.getAllCharacters().find((c) => c.name.toLowerCase() === lower);
+  return exact?.id ?? raw;
+}
+
+function truncateLine(text: string, maxChars: number): string {
+  return text.length <= maxChars ? text : text.slice(0, maxChars) + "…";
+}
+
+function describeInterruptedAction(actionName: string): string {
+  const interrupted: Record<string, string> = {
+    sleep: "睡觉",
+    cook: "做饭",
+    read: "看书",
+    work: "忙工作",
+    knead_dough: "揉面团",
+    bake: "看着面包出炉",
+    make_coffee: "做咖啡",
+    rest: "发呆休息",
+  };
+  return interrupted[actionName] ?? `忙着${actionName}`;
 }
 
 /** 截断思考文本，在中文句号/！/？处断开 */
@@ -464,7 +703,16 @@ export function describeObservableAction(name: string, action: string): string {
     wash: "不在（在洗漱）",
     gossip: "在跟人聊八卦",
     talk: "在跟人说话",
+    rest: "安静地休息着",
+    cook: "在做饭",
+    use_toilet: "刚离开去洗手间了",
+    knead_dough: "在揉面团",
+    bake: "在看着烤箱",
+    make_coffee: "在做咖啡",
+    serve_customer: "在招呼客人",
+    clean_table: "在擦桌子",
+    give: "在把东西递给别人",
+    prepare: "在做店里的东西",
   };
   return descriptions[action] ?? `在${action}`;
 }
-

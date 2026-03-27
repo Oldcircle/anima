@@ -118,7 +118,7 @@ describe("Simulation", () => {
     await sim.runOneTick(tickToGameTime(48));
 
     const rel = sim.relationships.get("tomori", "anon");
-    expect(rel.level).toBe(2);
+    expect(rel.level).toBe(1);
   });
 
   it("信箱消息在下一个 tick 被消费并注入 prompt", async () => {
@@ -190,6 +190,57 @@ describe("Simulation", () => {
     // Anon 没有 talk 回去，反应轮应该在 1 轮后停止
     const anonTalks = summary.results.filter((r) => r.characterId === "anon" && r.action?.name === "talk");
     expect(anonTalks).toHaveLength(0);
+  });
+
+  it("同一对角色在同一 tick 内最多只交换两句", async () => {
+    world.moveCharacter("tomori", "cafe");
+    world.moveCharacter("anon", "cafe");
+
+    mockLLM.enqueueResponse("先打招呼", [
+      { name: "talk", arguments: { target: "anon", message: "早上好……" } },
+    ]);
+    mockLLM.enqueueResponse("也打招呼", [
+      { name: "talk", arguments: { target: "tomori", message: "早呀！" } },
+    ]);
+    mockLLM.setDefaultResponse("继续聊", [
+      { name: "talk", arguments: { target: "tomori", message: "再多说一句！" } },
+    ]);
+
+    const summary = await sim.runOneTick(tickToGameTime(48));
+    const talks = summary.results.filter((r) => r.action?.name === "talk");
+
+    expect(talks).toHaveLength(2);
+    expect(talks.map((r) => `${r.characterId}:${r.action?.args.target as string}`)).toEqual([
+      "tomori:anon",
+      "anon:tomori",
+    ]);
+  });
+
+  it("跨 tick 冷却会让继续搭话变成自然失败，而不是继续连聊", async () => {
+    world.moveCharacter("tomori", "cafe");
+    world.moveCharacter("anon", "cafe");
+
+    mockLLM.enqueueResponse("先打招呼", [
+      { name: "talk", arguments: { target: "anon", message: "早上好……" } },
+    ]);
+    mockLLM.enqueueResponse("也打招呼", [
+      { name: "talk", arguments: { target: "tomori", message: "早呀！" } },
+    ]);
+
+    await sim.runOneTick(tickToGameTime(48));
+
+    mockLLM.enqueueResponse("还是想继续说", [
+      { name: "talk", arguments: { target: "anon", message: "再聊一句……" } },
+    ]);
+    mockLLM.enqueueResponse("我也接着说", [
+      { name: "talk", arguments: { target: "tomori", message: "我也再说一句！" } },
+    ]);
+
+    const summary = await sim.runOneTick(tickToGameTime(49));
+    const talks = summary.results.filter((r) => r.action?.name === "talk");
+    expect(talks).toHaveLength(2);
+    expect(talks.every((r) => r.result?.success === false)).toBe(true);
+    expect(talks.every((r) => r.result?.description.includes("先缓一缓"))).toBe(true);
   });
 
   it("runTicks 运行多个 tick", async () => {

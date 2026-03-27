@@ -6,6 +6,109 @@
 
 **最后更新**：2026-03-26
 
+### 当前加开主线：活人感攻坚（生活惯性 + 世界痕迹）
+
+最新判断：项目现在“不像活人”不在于角色不会聊天，而在于两处断点：
+
+1. **缺少生活惯性**：`currentIntent` 类型已经存在，但还没真正驱动主循环。角色每个 tick 更像重新做人一次。
+2. **缺少可见痕迹**：行为更多停留在日志和工具名上，别的角色看见的是“在工作/在吃东西”，而不是“端着半凉的拿铁发呆”“低头把可颂推给别人”。
+
+本轮优先级上调：
+- `currentIntent` 接入 prompt 和行为执行链路
+- `observableState` 从设计稿落到代码，成为观察/印象系统的输入
+- 用测试和 half-day 验证“状态机感”是否下降
+
+### 本轮已完成：currentIntent + observableState 第一轮接线 ✅
+
+- [x] `currentIntent` 真正接入主循环
+  - 被打断的多 tick 行为会留下 `recover` 意图
+  - 收到消息但没回复会留下 `reply` 意图
+  - 成功对话会留下 `follow_up` 意图
+  - 刚到新地点会留下短暂 `plan` 意图
+  - prompt 新增“你现在还挂着的事”
+- [x] `observableState` 数据链路接通
+  - `ActionResult` / `CharacterState` 新增可观察状态字段
+  - agent-loop 在执行后为角色写入可观察状态
+  - prompt-builder / observation-reasoning 优先读取 `observableState`
+  - API / 前端角色列表与详情页改为展示可观察生活片段
+- [x] 测试补强
+  - `world.test.ts`：可观察状态过期清理
+  - `prompt-builder.test.ts`：短期意图注入 prompt
+  - `agent-loop.test.ts`：reply 意图、observableState 落地
+- [x] 验证：`pnpm build` 通过，`pnpm test` 通过（239 tests）
+- [ ] Live half-day 还未重跑：当前环境没有配置 API key，本轮先以单元测试和全量构建验证收口
+
+### 本轮已完成：observableState 第二轮细化 ✅
+
+- [x] 动态工具层补充更细粒度的可观察状态
+  - `talk` 会保留说话方式和话题片段
+  - `comfort` / `argue` / `give` / `buy` / `prepare` / `eat` / `cook` 都会留下更像生活现场的状态
+  - 地点工具覆盖 `rest` / `sit` / `walk` / `sleep` / `wash` / `use_toilet` / `knead_dough` / `make_coffee` / `shelve_books` 等高频行为
+- [x] 旧动作定义补齐 `observableState`
+  - `basic-actions.ts` / `social-actions.ts` / `leisure-actions.ts` / `relationship-actions.ts` / `gray-actions.ts`
+- [x] prompt 与观测链路继续受益
+  - 附近角色不再只像“在工作/在吃东西”，而更像“坐在窗边发呆”“正把东西递给别人”“低声安慰某人”
+- [x] 测试补强
+  - `agent-loop.test.ts` 新增：说话语气与话题片段、把附近角色细节状态注入 prompt、give 的可观察状态
+- [x] 验证：`pnpm build` 通过，`pnpm test` 通过（242 tests）
+
+### 本轮新增：前端回显 + 对话节奏上限修补 ✅
+
+- [x] 前端时间线不再只展示工具名
+  - `server.ts` 的 tick 事件新增 `observableState`
+  - `web/index.html` 时间线优先展示“别人能看到的生活片段”，把执行描述降为次级说明
+  - 角色侧栏 / 档案页在没有 `observableState` 时也会用更自然的动作文案兜底，而不是直接显示 `journal` / `prepare` 这类工具名
+- [x] 对话显示细节打磨
+  - 前端对话气泡会去掉模型偶尔自带的外层引号，避免出现 `「「...」」` 这种视觉破功
+- [x] 修复“同一对角色在同一 tick 里聊过头”的节奏 bug
+  - 之前 `pairExchangeCount` 只统计反应轮，正常决策阶段的 `talk` 没算进去
+  - 结果是代码注释写着“每对角色每 tick 最多交换 2 次”，实际仍可能出现 4 句往返
+  - 现在主轮成功 `talk` 也会计入配额，并在达到上限时写入冷却
+- [x] 测试补强
+  - `simulation.test.ts` 新增：同一对角色在同一 tick 内最多只交换两句
+- [x] 世界边界修补
+  - live 里出现过 `go_to kitchen` 这种模型幻觉地点
+  - 之前 `world.moveCharacter()` 虽然会拒绝非法地点，但上层仍把这次行为当成功，造成“世界没动、日志却说动了”
+  - 现在 `go_to` 工具会先校验目标地点，不存在就直接返回失败
+  - 如果模型对当前地点再次调用 `go_to`，现在会明确提示“你已经在这里了”，不再误报成“不存在的地点”
+- [x] 跨 tick 社交冷却接入主决策
+  - 之前冷却只挡反应轮，主轮里同一对人仍可能隔 tick 连续聊天
+  - 现在主轮会把处于冷却中的对象标记为“先缓一缓比较自然”
+  - 模型就算仍然硬选 `talk`，也会得到自然失败，而不是 “未知工具”
+- [x] 测试补强
+  - `agent-loop.test.ts` 新增：`go_to` 不存在地点时明确失败且角色位置不变
+  - `agent-loop.test.ts` 新增：`go_to` 当前地点时明确提示已在此处
+  - `agent-loop.test.ts` 新增：社交冷却下 `talk` 工具描述会显式提示“先缓一缓”
+  - `simulation.test.ts` 新增：跨 tick 冷却下继续搭话会变成自然失败，而不是继续连聊
+- [x] 验证
+  - `pnpm test src/agent/simulation.test.ts src/agent/agent-loop.test.ts src/agent/prompt-builder.test.ts` 通过（30 tests）
+  - `pnpm build` 通过
+  - 后续补跑：`pnpm test src/agent/agent-loop.test.ts src/agent/simulation.test.ts` 通过（24 tests）
+  - 再次补跑：`pnpm test src/agent/agent-loop.test.ts src/agent/simulation.test.ts` 通过（28 tests）
+
+### 本轮 Live 观察（2026-03-26，修补前侦察）
+
+这轮 half-day live 的作用主要是“找假感来源”，不是最终验收。观察到两类非常明确的问题：
+
+1. **工作现场已经比之前自然很多**
+   - 爱音 ↔ 祥子的清晨互动有了“同事打招呼后继续干活”的节奏，不再一上来就无限连聊
+   - 睦 ↔ 灯、素世 ↔ 灯也开始出现围绕买面包/店内停留而生长的情境对话，不只是凭空寒暄
+2. **仍有两个破功点**
+   - 前端时间线仍主要显示 `action + description`，没有把 `observableState` 当作一等信息，导致 UI 上的“活人感”被重新压扁
+   - 同一对角色在同一 tick 里仍可能出现 4 句往返；根因是主轮 `talk` 没被记入反应轮配额
+
+以上两点都已在本轮代码中修补；**但修补后的 full half-day live 还没重跑完**，下次继续时应优先复验。
+
+### 本轮 Live 复验（2026-03-26，2 角色 half-day）
+
+- [x] 复验命令：`pnpm exec vitest run --config vitest.live.config.ts src/agent/simulation.live.test.ts -t "2 角色跑半天（24 tick = 6 小时）"`
+- [x] 结论
+  - 非法地点不再直接穿透世界；live 中已经出现明确失败文案，而不是“日志说走了、世界却没动”
+  - 跨 tick 连续聊天开始出现“刚和对方聊过，先缓一缓比较自然”的自然失败，节奏比之前更有停顿
+  - 修补前会出现的 `talk` → “未知工具” 现象，在最后一轮 live 中已经消失
+- [ ] 仍需继续观察
+  - 两人世界里对话热度仍然偏高，只是现在会穿插停顿和别的行为；接下来可以继续考虑“社交饱和”或“场景目标优先级”来进一步降温
+
 ### Phase 9 概述
 
 物品系统 + 工作角色工具 + 行为链追踪。目标：让世界有物质基础，物品是生活痕迹、事件载体和关系的物化。
@@ -38,11 +141,17 @@
 
 ### 下次继续入口
 
-1. **角色不会休息**：worker_tools 加 energy 条件 / formatBodyFeelings 极低时更强烈措辞
-2. **SocialModifier**：一起吃饭效果不同（设计完成，未实现）
-3. **observableState**：行为产生可观察描述（设计完成，未实现）
-4. **合并分支到 main**
-5. **stress-sim SmartMockLLM 适配新工具**
+1. **优先复验一轮新的 half-day live**
+   - 确认“主轮 talk 也计入配额”后，同一对角色是否还会在一个 tick 里打出 4 句往返
+   - 确认前端时间线现在看到的是生活片段，而不只是工具调用
+   - 确认 `go_to` 当前地点时不再误报“不存在的地点”
+2. **角色不会休息**：worker_tools 加 energy 条件 / formatBodyFeelings 极低时更强烈措辞
+3. **SocialModifier**：一起吃饭效果不同（设计完成，未实现）
+4. **社交饱和 / 场景优先级**
+   - 让角色在已经聊得不错时，更容易转回吃饭、工作、休息，而不是继续围着同一个人打转
+5. **SocialModifier + observableState 联动**：让“一起吃饭/并肩工作/同桌发呆”不只是数值不同，也让可见状态发生变化
+6. **currentIntent 第二轮**：让意图与物品/地点/人物绑定得更深，不只围绕消息和移动
+7. **合并分支到 main**
 
 ### Phase 8A 进度：数据驱动需求系统 ✅
 

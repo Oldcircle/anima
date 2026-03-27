@@ -93,6 +93,7 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
             action: r.action?.name ?? null,
             args: r.action?.args ?? null,
             description: r.result?.description ?? null,
+            observableState: r.result?.observableState ?? null,
             thought: r.thought || null,
             skipped: r.skipped ?? false,
             skipReason: r.skipReason ?? null,
@@ -258,6 +259,11 @@ function getCharactersState(sim: Simulation) {
     needs: c.needs,
     gold: c.gold,
     currentAction: c.currentAction,
+    observableState: c.observableState ? {
+      actionName: c.observableState.actionName,
+      summary: c.observableState.summary,
+      targetId: c.observableState.targetId,
+    } : undefined,
     inboxCount: c.inbox.length,
     life: c.life ? {
       occupation: c.life.occupation,

@@ -30,6 +30,7 @@ export const gossipAction: ActionDefinition = {
         { type: "need_change", targetId: ctx.characterId, field: "fun", delta: 10 },
       ],
       duration: 2,
+      observableState: `正凑近${target}低声聊着什么，像是在说八卦。`,
     };
   },
 };
@@ -62,6 +63,7 @@ export const giveGiftAction: ActionDefinition = {
         { type: "need_change", targetId: target, field: "social", delta: 8 },
       ],
       duration: 1,
+      observableState: `正把${args.item}递给${target}。`,
     };
   },
 };
@@ -94,6 +96,7 @@ export const comfortAction: ActionDefinition = {
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 3 },
       ],
       duration: 2,
+      observableState: `正压低声音安慰${target}，语气放得很轻。`,
     };
   },
 };

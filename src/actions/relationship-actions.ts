@@ -37,6 +37,7 @@ export const inviteOutAction: ActionDefinition = {
         { type: "inbox_message", targetId: target, fromName: ctx.characterId, message: `要不要一起${args.activity}？` },
       ],
       duration: 1,
+      observableState: `像是在试探着邀请${target}一起${args.activity}。`,
     };
   },
 };
@@ -70,6 +71,7 @@ export const shareSecretAction: ActionDefinition = {
         { type: "inbox_message", targetId: target, fromName: ctx.characterId, message: args.secret as string },
       ],
       duration: 2,
+      observableState: `压低声音对${target}说了些平时不会轻易说出口的话。`,
     };
   },
 };

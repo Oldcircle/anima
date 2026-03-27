@@ -23,6 +23,7 @@ export const readAction: ActionDefinition = {
       { type: "need_change", targetId: ctx.characterId, field: "social", delta: -3 },
     ],
     duration: 4, // 1 小时
+    observableState: "抱着一本书看得有些入神。",
   }),
 };
 
@@ -44,6 +45,7 @@ export const exploreAction: ActionDefinition = {
       { type: "need_change", targetId: ctx.characterId, field: "energy", delta: -5 },
     ],
     duration: 4,
+    observableState: "在四周慢慢逛着，时不时停下来看看。",
   }),
 };
 
@@ -72,6 +74,7 @@ export const drinkAction: ActionDefinition = {
         { type: "need_change", targetId: ctx.characterId, field: "bladder", delta: -15 },
       ],
       duration: 2,
+      observableState: `手里端着${args.beverage ?? "一杯饮料"}，慢慢喝着。`,
     };
   },
 };
@@ -94,6 +97,7 @@ export const journalAction: ActionDefinition = {
       { type: "need_change", targetId: ctx.characterId, field: "social", delta: -2 },
     ],
     duration: 2,
+    observableState: "低头写着什么，神情很专注。",
   }),
 };
 
@@ -118,6 +122,7 @@ export const practiceAction: ActionDefinition = {
         { type: "skill_up", targetId: ctx.characterId, skill, delta: 0.1 },
       ],
       duration: 4,
+      observableState: `正反复练习${skill}，像是在跟自己较劲。`,
     };
   },
 };
