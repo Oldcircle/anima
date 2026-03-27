@@ -296,18 +296,15 @@ function describeLocationObservableState(lt: LocationTool, ctx: ToolBuildContext
   }
 }
 
-function buildTalkTool(ctx: ToolBuildContext, talkableCharacters: Array<{ id: string; name: string }>): ActionDefinition {
-  const listedCharacters = talkableCharacters.length > 0 ? talkableCharacters : ctx.nearbyCharacters;
-  const who = listedCharacters
+function buildTalkTool(ctx: ToolBuildContext, _talkableCharacters: Array<{ id: string; name: string }>): ActionDefinition {
+  // 不再硬拦截对话——让模型自己判断要不要继续聊
+  const who = ctx.nearbyCharacters
     .map((c) => `${c.name}(${c.id})`)
     .join("、");
-  const coolingDown = talkableCharacters.length === 0;
   return {
     tool: {
       name: "talk",
-      description: coolingDown
-        ? `跟在场的人说话。你们刚聊过，先缓一缓比较自然，现在不太适合立刻继续搭话。在场：${who}。`
-        : `跟在场的人说话。聊天挺好但也挺累的。在场：${who}。`,
+      description: `跟在场的人说话。聊天挺好但也挺累的。在场：${who}。`,
       parameters: {
         type: "object",
         properties: {
@@ -332,14 +329,7 @@ function buildTalkTool(ctx: ToolBuildContext, talkableCharacters: Array<{ id: st
       const target = args.target as string;
       const message = args.message as string;
       const manner = args.manner as string | undefined;
-      if (coolingDown && ctx.nearbyCharacters.some((c) => c.id === target)) {
-        return {
-          description: `刚和${nearbyDisplayName(ctx, target)}聊过，先缓一缓比较自然`,
-          effects: [],
-          success: false,
-        };
-      }
-      if (!talkableCharacters.some((c) => c.id === target)) {
+      if (!ctx.nearbyCharacters.some((c) => c.id === target)) {
         return { description: `想和${target}说话，但对方不在这里`, effects: [], success: false };
       }
       const mannerText = manner ? `${manner}，` : "";

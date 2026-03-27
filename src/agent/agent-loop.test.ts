@@ -247,37 +247,11 @@ describe("Agent Loop", () => {
     expect(world.getObservableState("tomori", 48)?.summary).toContain("爱音");
   });
 
-  it("社交冷却期间会把 talk 工具改成“先缓一缓”的提示", async () => {
+  it("talk cooldown no longer blocks — model decides", async () => {
     world.moveCharacter("tomori", "cafe");
 
-    mockLLM.enqueueResponse("先看看还有什么能做", [
-      { name: "go_to", arguments: { location: "plaza" } },
-    ]);
-
-    await runAgentTick({
-      config,
-      world,
-      eventBus,
-      gameTime: tickToGameTime(48),
-      talkCooldownTargets: ["anon"],
-    });
-
-    expect(mockLLM.calls).toHaveLength(1);
-    const talkTool = mockLLM.calls[0]!.request.tools!.find((tool) => tool.name === "talk");
-    expect(talkTool?.description).toContain("先缓一缓");
-  });
-
-  it("冷却期间收到对方消息时，会保留 reply 意图而不是立刻续聊", async () => {
-    world.moveCharacter("tomori", "cafe");
-    world.sendMessage("tomori", {
-      fromId: "anon",
-      fromName: "千早爱音",
-      content: "在吗？",
-      tick: 48,
-    });
-
-    mockLLM.enqueueResponse("先缓一下", [
-      { name: "go_to", arguments: { location: "plaza" } },
+    mockLLM.enqueueResponse("chat with anon", [
+      { name: "talk", arguments: { target: "anon", message: "hello" } },
     ]);
 
     const result = await runAgentTick({
@@ -288,11 +262,8 @@ describe("Agent Loop", () => {
       talkCooldownTargets: ["anon"],
     });
 
-    expect(mockLLM.calls).toHaveLength(1);
-    const talkTool = mockLLM.calls[0]!.request.tools!.find((tool) => tool.name === "talk");
-    expect(talkTool?.description).toContain("先缓一缓");
-    expect(result.action?.name).toBe("go_to");
-    expect(world.getCurrentIntent("tomori", 48)?.kind).toBe("reply");
+    expect(result.action?.name).toBe("talk");
+    expect(result.result?.success).not.toBe(false);
   });
 
   it("prompt 会注入当前短期意图", async () => {

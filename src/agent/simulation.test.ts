@@ -216,7 +216,7 @@ describe("Simulation", () => {
     ]);
   });
 
-  it("跨 tick 冷却会让继续搭话变成自然失败，而不是继续连聊", async () => {
+  it("跨 tick 对话不再被系统拦截——模型自己判断是否继续聊", async () => {
     world.moveCharacter("tomori", "cafe");
     world.moveCharacter("anon", "cafe");
 
@@ -238,9 +238,9 @@ describe("Simulation", () => {
 
     const summary = await sim.runOneTick(tickToGameTime(49));
     const talks = summary.results.filter((r) => r.action?.name === "talk");
+    // 对话不再被拦截，角色可以自然继续聊
     expect(talks).toHaveLength(2);
-    expect(talks.every((r) => r.result?.success === false)).toBe(true);
-    expect(talks.every((r) => r.result?.description.includes("先缓一缓"))).toBe(true);
+    expect(talks.every((r) => r.result?.success !== false)).toBe(true);
   });
 
   it("runTicks 运行多个 tick", async () => {
