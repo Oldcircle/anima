@@ -53,17 +53,19 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     }
   }
 
-  // 2b. 员工工具（在自己工作地点时，替代普通地点工具）
+  // 2b. 员工工具（在自己工作地点时）
+  // 体力太低（< 15）时不显示工作工具——做不动了
   const workplace = ctx.state.life?.workplace ?? ctx.card.life?.workplace;
-  if (workplace && ctx.location.id === workplace && ctx.location.workerTools) {
+  const canWork = (ctx.state.needs.energy ?? 100) >= 15;
+  if (workplace && ctx.location.id === workplace && ctx.location.workerTools && canWork) {
     for (const wt of ctx.location.workerTools) {
       const action = buildLocationTool(wt, ctx);
       if (action) tools.push(action);
     }
   }
 
-  // 2b2. 员工制作工具（在自己工作地点 + 有 shop 时，可以免费制作菜单上的东西）
-  if (workplace && ctx.location.id === workplace && ctx.location.shop && ctx.location.shop.length > 0) {
+  // 2b2. 员工制作工具（在自己工作地点 + 有 shop + 体力够时）
+  if (workplace && ctx.location.id === workplace && ctx.location.shop && ctx.location.shop.length > 0 && canWork) {
     tools.push(buildPrepareTool(ctx.location.shop, ctx));
   }
 
@@ -202,7 +204,9 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
   return {
     tool: {
       name: "go_to",
-      description: "去别的地方。走路要花一点力气。",
+      description: (ctx.state.needs.energy ?? 100) < 20
+        ? "去别的地方。你很累了，也许该回家休息了。"
+        : "去别的地方。走路要花一点力气。",
       parameters: {
         type: "object",
         properties: {
