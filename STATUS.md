@@ -4,7 +4,7 @@
 
 **分支**：`feature/item-system`
 
-**最后更新**：2026-03-26
+**最后更新**：2026-03-27
 
 ### 当前加开主线：活人感攻坚（生活惯性 + 世界痕迹）
 
@@ -197,12 +197,19 @@
 - **新工具被自然使用**：use_toilet、cook、nap 都出现在行为日志中
 - **argue 工具在 fun 低时自然浮现**（但未被选择——角色选择更合理的行为）
 
+### 本轮最新修复（2026-03-27）
+
+- [x] **社交冷却不再硬拦截 talk**：模型自己判断要不要继续聊，不被系统强制打断
+- [x] **员工精力耗尽隐藏工作工具**：energy < 15 时 worker_tools 不显示
+- [x] **go_to 疲惫提示**：energy < 20 时描述变成"你很累了，也许该回家休息了"
+- [x] **stress-sim 全面适配**：SmartMockLLM 支持 buy/eat/worker_tools，248→247 tests passing
+
 ### 下次继续入口
 
 1. **SocialModifier 实现**：行为效果根据同地点有人自动调整
-2. **observableState**：行为产生可观察描述，喂给 observation 系统
-3. **行为链追踪**：检测连续行为模式 → 触发 moodlet（过劳/孤僻/宿醉）
-4. **fun 平衡调整**：work 的 fun -10 可能过重，素世连续工作 fun 掉到 3
+2. **合并分支到 main**：feature/needs-tools-redesign + feature/item-system
+3. **Live 验证**：跑 halfday 确认员工休息、对话节奏等修复效果
+4. **前端玩家操作面板**：位置选择、行为按钮、对话输入
 
 ### 前置：Phase 7A-7D 全部完成 ✅
 
