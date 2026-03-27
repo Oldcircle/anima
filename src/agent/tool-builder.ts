@@ -221,10 +221,20 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
     },
     handler: (args, actx): ActionResult => {
       const rawLoc = args.location as string;
-      // 支持 ID 和中文名：LLM 可能传 "cafe" 或 "咖啡馆" 或 "家"
+      // 支持 ID、中文名、描述文本：LLM 可能传 "cafe"、"咖啡馆"、"海风面包坊——买面包、吃东西（你的工作地点）。"
       const resolveLocation = (input: string) => {
         if (input === "家" || input === "回家") return ctx.allLocations.find(l => l.id === myHome);
-        return ctx.allLocations.find(l => l.id === input || l.name === input);
+        // 1. 精确匹配 ID 或名字
+        const exact = ctx.allLocations.find(l => l.id === input || l.name === input);
+        if (exact) return exact;
+        // 2. LLM 可能把整段描述当作 location 传入，截取"——"前的名字重试
+        const nameOnly = input.split("——")[0]!.trim();
+        if (nameOnly !== input) {
+          const byName = ctx.allLocations.find(l => l.id === nameOnly || l.name === nameOnly);
+          if (byName) return byName;
+        }
+        // 3. 模糊匹配：输入包含地点名，或地点名包含输入
+        return ctx.allLocations.find(l => input.includes(l.name) || l.name.includes(input));
       };
       const target = resolveLocation(rawLoc);
       if (target && target.id === ctx.state.locationId) {
