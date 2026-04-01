@@ -47,13 +47,13 @@ const mariaCard: CharacterCard = {
 const sakikoState: CharacterState = {
   id: "sakiko", name: "丰川祥子", locationId: "cafe",
   needs: { hunger: 60, energy: 70, social: 35, fun: 50, hygiene: 80, bladder: 90 },
-  gold: 45, moodlets: [], inbox: [],
+  gold: 45, moodlets: [], inbox: [], inventory: [], recentActions: [],
 };
 
 const mariaState: CharacterState = {
   id: "mutsumi", name: "要乐奏", locationId: "cafe",
   needs: { hunger: 50, energy: 80, social: 60, fun: 70, hygiene: 90, bladder: 90 },
-  gold: 62, moodlets: [], inbox: [],
+  gold: 62, moodlets: [], inbox: [], inventory: [], recentActions: [],
 };
 
 const gameTime = { tick: 52, day: 0, hour: 13, minute: 0, season: "spring" as const, seasonDay: 1, year: 1 };
@@ -194,7 +194,9 @@ describe("buildConversationPrompt", () => {
       history, gameTime, locationName: "咖啡馆",
     });
 
-    expect(prompt).toContain("觉得没什么意思");
+    // formatBodyFeelings: social < 15 → "一个人待太久了"，fun < 30 → "好无聊"
+    expect(prompt).toContain("好无聊");
+    expect(prompt).toContain("你现在的状态");
   });
 
   it("includes talk target ID reminder", () => {

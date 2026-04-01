@@ -20,6 +20,9 @@ import { buildSystemPrompt } from "./prompt-builder.js";
 import { formatGameTime } from "../core/tick-engine.js";
 import { weatherDescription } from "../world/weather.js";
 import { getAtmosphereText } from "../world/location-loader.js";
+import { formatBodyFeelings } from "../world/need-definitions.js";
+import { formatMoodlets } from "../world/moodlets.js";
+import { formatInventory } from "../world/item-registry.js";
 
 // ── 对话追踪 ──
 
@@ -166,18 +169,27 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     parts.push(relDesc);
   }
 
-  // 3. 你当前的身体感受
-  const feelings: string[] = [];
-  if (state.needs.hunger < 30) feelings.push("肚子有点饿");
-  if (state.needs.energy < 30) feelings.push("有些疲惫");
-  if (state.needs.fun !== undefined && state.needs.fun < 30) feelings.push("觉得没什么意思");
-  if (state.needs.social > 85) feelings.push("今天聊了不少，有点想安静");
-  const feelStr = feelings.length > 0 ? feelings.join("，") + "。" : "";
+  // 3. 你当前的身体感受（用完整的感受化系统）
+  const bodyFeelings = formatBodyFeelings(state.needs, state.gold, gameTime.hour);
+  const moodletText = formatMoodlets(state);
 
-  if (feelStr || params.recentMemories) {
-    parts.push(`\n## 你现在的状态`);
-    if (feelStr) parts.push(feelStr);
-    if (params.recentMemories) parts.push(`最近的经历：\n${params.recentMemories}`);
+  parts.push(`\n## 你现在的状态`);
+  parts.push(bodyFeelings);
+  if (moodletText) parts.push(moodletText);
+  if (params.recentMemories) parts.push(`最近的经历：\n${params.recentMemories}`);
+
+  // 随身物品（对话中可能会给对方东西）
+  if (state.inventory && state.inventory.length > 0) {
+    const invText = formatInventory(state.inventory);
+    if (invText) parts.push(`\n${invText}`);
+  }
+
+  // 动态 backstory 注入（对话中可能触发相关回忆）
+  if (card.backstory && card.backstory.length > 0) {
+    const backstoryHint = selectConversationBackstory(card, partnerCard.name, locationName, state.needs);
+    if (backstoryHint) {
+      parts.push(`\n*你突然想起：${backstoryHint}*`);
+    }
   }
 
   // 4. 完整对话历史（含身体语言）
@@ -282,4 +294,40 @@ export function buildConversationRequest(params: {
     temperature: 1.0, // 对话模式温度更高，增加自然感
     maxTokens: 1024,  // 对话模式：思考精简 + 消息自然长度
   };
+}
+
+/**
+ * 在对话场景中选择可能被触发的 backstory。
+ * 对话对象的名字、地点、情绪状态都可能唤起回忆。
+ */
+function selectConversationBackstory(
+  card: CharacterCard,
+  partnerName: string,
+  locationName: string,
+  needs: Record<string, number>,
+): string | undefined {
+  if (!card.backstory || card.backstory.length === 0) return undefined;
+
+  const keywords: string[] = [locationName, partnerName];
+  if ((needs.social ?? 100) < 25) keywords.push("独", "一个人", "没有朋友");
+  if (locationName.includes("面包")) keywords.push("面包", "揉面");
+  if (locationName.includes("海") || locationName.includes("沙滩")) keywords.push("海", "海浪");
+
+  let bestScore = 0;
+  let bestEntry: { event: string; impact: string } | undefined;
+
+  for (const entry of card.backstory) {
+    const text = `${entry.event} ${entry.impact}`;
+    let score = 0;
+    for (const kw of keywords) {
+      if (text.includes(kw)) score++;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestEntry = entry;
+    }
+  }
+
+  if (bestScore < 1 || !bestEntry) return undefined;
+  return `${bestEntry.event}——${bestEntry.impact}`;
 }
