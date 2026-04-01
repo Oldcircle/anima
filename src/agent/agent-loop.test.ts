@@ -338,4 +338,21 @@ describe("Agent Loop", () => {
     const observable = world.getObservableState("tomori", 48);
     expect(observable?.summary).toContain("爱音");
   });
+
+  it("go_to 工具描述中包含各地点的在场人物", async () => {
+    // anon 在 cafe，tomori 在家
+    mockLLM.enqueueResponse("去咖啡馆找爱音", [
+      { name: "go_to", arguments: { location: "cafe" } },
+    ]);
+
+    await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    // 检查 LLM 收到的 go_to 工具参数里包含 "千早爱音"
+    expect(mockLLM.calls).toHaveLength(1);
+    const req = mockLLM.calls[0]!.request;
+    const goToTool = req.tools!.find((t: any) => t.name === "go_to");
+    expect(goToTool).toBeDefined();
+    const locationDesc = goToTool!.parameters?.properties?.location?.description ?? "";
+    expect(locationDesc).toContain("千早爱音");
+  });
 });

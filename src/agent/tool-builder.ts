@@ -32,6 +32,8 @@ export interface ToolBuildContext {
   hour?: number;
   /** 关系管理器（用于条件浮现关系工具） */
   relationships?: import("../world/relationships.js").RelationshipManager;
+  /** 角色 ID → 显示名映射（用于 go_to 地点人物描述） */
+  characterNames?: Map<string, string>;
 }
 
 /**
@@ -197,6 +199,14 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
       let desc = l.name;
       if (l.summary) desc += `——${l.summary}`;
       if (l.id === workplace) desc += "（你的工作地点）";
+      // 显示那里有谁（排除自己）
+      const peopleHere = l.presentCharacters
+        .filter((cid) => cid !== ctx.card.id)
+        .map((cid) => ctx.characterNames?.get(cid) ?? cid)
+        .filter((name) => name.length > 0);
+      if (peopleHere.length > 0) {
+        desc += `（${peopleHere.join("、")}在那里）`;
+      }
       return desc;
     })
     .join("。");

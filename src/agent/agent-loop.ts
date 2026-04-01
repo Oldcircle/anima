@@ -106,6 +106,7 @@ export async function runAgentTick(params: {
   const recentMemories = params.memory?.formatForPrompt(card.id, 12) ?? "";
 
   // 动态组装工具列表（情境工具系统）
+  const characterNames = new Map(world.getAllCharacters().map((c) => [c.id, c.name]));
   const dynamicActions = buildToolList({
     state,
     card,
@@ -116,6 +117,7 @@ export async function runAgentTick(params: {
     gold: state.gold,
     hour: gameTime.hour,
     relationships: params.relationships,
+    characterNames,
   });
 
   // 构建 prompt
