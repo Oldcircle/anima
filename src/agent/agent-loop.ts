@@ -102,7 +102,7 @@ export async function runAgentTick(params: {
     });
 
   const recentEvents = eventBus.query({ actorId: card.id, limit: 5 });
-  const recentMemories = params.memory?.formatForPrompt(card.id, 8) ?? "";
+  const recentMemories = params.memory?.formatForPrompt(card.id, 12) ?? "";
 
   // 动态组装工具列表（情境工具系统）
   const dynamicActions = buildToolList({
@@ -214,9 +214,15 @@ export async function runAgentTick(params: {
   if (params.memory && result.result) {
     const isFailed = result.result.success === false;
     const location = world.getLocation(state.locationId);
+    // 将 target ID 解析为显示名，让记忆里是"对丰川祥子说"而不是"对sakiko说"
+    const narrateArgs = { ...toolCall.arguments };
+    if (narrateArgs.target) {
+      const targetChar = world.getCharacter(narrateArgs.target as string);
+      if (targetChar) narrateArgs.target = targetChar.name;
+    }
     const narrated = narrateAction({
       toolName: toolCall.name,
-      args: toolCall.arguments,
+      args: narrateArgs,
       description: result.result.description,
       locationName: location?.name,
       characterName: state.name,
@@ -236,7 +242,7 @@ export async function runAgentTick(params: {
     params.memory.add(card.id, {
       tick: gameTime.tick,
       type: "thought",
-      content: truncateThought(thought, 150),
+      content: truncateThought(thought, 200),
       importance: 3,
     });
   }

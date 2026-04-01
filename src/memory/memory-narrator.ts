@@ -90,7 +90,7 @@ export function narrateAction(params: {
       const target = args.target as string | undefined;
       const message = args.message as string | undefined;
       if (target && message) {
-        const short = message.length > 30 ? message.slice(0, 30) + "…" : message;
+        const short = message.length > 60 ? message.slice(0, 60) + "…" : message;
         return `对${target}说：「${short}」`;
       }
       return `和${target ?? "别人"}聊了聊`;

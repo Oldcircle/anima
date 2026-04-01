@@ -340,7 +340,7 @@ export class Simulation {
           if (partnerConfig && partnerState) {
             const location = this.world.getLocation(state.locationId);
             const rel = this.relationships.get(id, partnerId);
-            const recentMemories = this.memory.formatForPrompt(id, 5);
+            const recentMemories = this.memory.formatForPrompt(id, 12);
             const impressionText = this.impressions.formatForPrompt(id, partnerId);
             const wpId = state.life?.workplace ?? config.card.life?.workplace;
             const wpName = wpId ? this.world.getLocation(wpId)?.name : undefined;
