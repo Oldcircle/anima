@@ -19,6 +19,7 @@ import { getTodayFestival } from "../world/festivals.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
 import { buildToolList, type ToolBuildContext } from "./tool-builder.js";
 import { narrateAction } from "../memory/memory-narrator.js";
+import { applySocialModifier } from "./social-modifier.js";
 import { v4 as uuid } from "uuid";
 
 export interface AgentConfig {
@@ -205,7 +206,7 @@ export async function runAgentTick(params: {
   if (!availableNames.includes(toolCall.name)) {
     console.log(`[${card.id}] ⚠️ 不存在的工具: ${toolCall.name}`);
   }
-  const result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought);
+  const result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought, params.relationships);
 
   // 收到的信箱消息存入记忆，并给读信者加社交
   persistInboxContext({ world, characterId: card.id, inboxMessages, memory: params.memory });
@@ -267,6 +268,7 @@ async function executeAction(
   eventBus: EventBus,
   gameTime: GameTime,
   thought: string,
+  relationships?: RelationshipManager,
 ): Promise<AgentTickResult> {
   const actionDef = actions.find((a) => a.tool.name === toolCall.name);
   if (!actionDef) {
@@ -414,6 +416,29 @@ async function executeAction(
     }
   }
 
+  // 社交修正：有认识的人在场时自动调整效果
+  let socialObservableOverride: string | undefined;
+  if (relationships) {
+    const nearbyIds = world.getCharactersAtLocation(state.locationId).filter((id) => id !== card.id);
+    const socialMod = applySocialModifier({
+      actionName: toolCall.name,
+      result,
+      actorId: card.id,
+      nearbyCharacterIds: nearbyIds,
+      relationships,
+      getCharacterName: (id) => world.getCharacter(id)?.name ?? id,
+    });
+    if (socialMod.applied) {
+      // 应用额外效果
+      for (const effect of socialMod.extraEffects) {
+        if (effect.type === "need_change" && effect.field && effect.delta !== undefined) {
+          world.modifyNeed(effect.targetId, effect.field as any, effect.delta);
+        }
+      }
+      socialObservableOverride = socialMod.observableState;
+    }
+  }
+
   // 行为链追踪
   if (!state.recentActions) state.recentActions = [];
   state.recentActions.push({ actionId: toolCall.name, tick: world.tick });
@@ -429,7 +454,7 @@ async function executeAction(
     state.currentAction = undefined;
   }
 
-  const observableSummary = result.observableState ?? deriveObservableState({
+  const observableSummary = socialObservableOverride ?? result.observableState ?? deriveObservableState({
     toolName: toolCall.name,
     args: toolCall.arguments,
     result,

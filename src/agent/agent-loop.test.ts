@@ -302,4 +302,40 @@ describe("Agent Loop", () => {
     expect(req.messages[0]!.content).toContain("你现在看到的");
     expect(req.tools!.length).toBeGreaterThanOrEqual(2); // 至少 go_to + hobby
   });
+
+  it("有认识的人在场吃饭 → 社交修正自动生效，社交需求额外增加", async () => {
+    const { RelationshipManager } = await import("../world/relationships.js");
+    const relationships = new RelationshipManager();
+    relationships.set("tomori", "anon", 25); // 认识的朋友
+
+    world.moveCharacter("tomori", "cafe");
+    // cafe 有 shop, eat 需要物品，用 addToInventory 给面包
+    const { addToInventory } = await import("../world/item-registry.js");
+    addToInventory(world.getCharacter("tomori")!.inventory, "sandwich");
+
+    const tomori = world.getCharacter("tomori")!;
+    const anon = world.getCharacter("anon")!;
+    const tomoriSocialBefore = tomori.needs.social;
+    const anonSocialBefore = anon.needs.social;
+
+    mockLLM.enqueueResponse("和爱音一起吃个三明治", [
+      { name: "eat", arguments: { item: "三明治" } },
+    ]);
+
+    const result = await runAgentTick({
+      config, world, eventBus,
+      gameTime: tickToGameTime(48),
+      relationships,
+    });
+
+    expect(result.action?.name).toBe("eat");
+    expect(result.result?.success).not.toBe(false);
+    // 社交修正：tomori 的 social 应该比 eat 本身的效果更多
+    expect(tomori.needs.social).toBeGreaterThan(tomoriSocialBefore);
+    // anon 也应该得到社交增益
+    expect(anon.needs.social).toBeGreaterThan(anonSocialBefore);
+    // observableState 应该提到和爱音一起
+    const observable = world.getObservableState("tomori", 48);
+    expect(observable?.summary).toContain("爱音");
+  });
 });
