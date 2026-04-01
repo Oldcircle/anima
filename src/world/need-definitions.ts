@@ -68,7 +68,8 @@ export const NEED_DEFINITIONS: NeedDefinition[] = [
       { below: 50, severity: "mild", text: "有点想找人说说话。" },
     ],
     highFeelings: [
-      { above: 85, text: "今天和人聊了不少，想安静待一会儿。" },
+      { above: 90, text: "今天已经聊了很多了，脑子有点转不动，很想一个人安静待着。" },
+      { above: 75, text: "今天和人聊了不少，想安静待一会儿。" },
     ],
   },
   {
@@ -91,6 +92,9 @@ export const NEED_DEFINITIONS: NeedDefinition[] = [
       { below: 15, severity: "urgent", text: "闷得发慌，再不找点乐子要疯了。" },
       { below: 30, severity: "moderate", text: "好无聊，什么都提不起劲。" },
       { below: 60, severity: "mild", text: "有点无聊，想找点事做。" },
+    ],
+    highFeelings: [
+      { above: 90, text: "心情很好，不用特地找乐子，做什么都觉得还行。" },
     ],
   },
   {
@@ -173,9 +177,23 @@ export function formatBodyFeelings(needs: Record<string, number>, gold: number, 
   if (gold === 0) feelings.push("口袋空空的，一个硬币都没有。");
   else if (gold < 10) feelings.push(`口袋里只剩 ${gold} 金币，得省着花。`);
 
-  // 极端组合
+  // 多维极端组合
   if (gold === 0 && (needs.hunger ?? 100) < 20) {
     feelings.push("又穷又饿，处境很危险。");
+  }
+  // 累 + 饿 → 身体在发警报
+  const isExhausted = (needs.energy ?? 100) < 20;
+  const isStarving = (needs.hunger ?? 100) < 20;
+  if (isExhausted && isStarving) {
+    feelings.push("又饿又困，身体快撑不住了，得先解决最紧急的。");
+  }
+  // 多项中度同时出现 → 暗示"别光聊天了"
+  const moderateCount = NEED_DEFINITIONS.filter(d => {
+    const v = needs[d.id];
+    return v !== undefined && v < 40 && d.id !== "social";
+  }).length;
+  if (moderateCount >= 3) {
+    feelings.push("好几件事都在拉警报，得先处理最难受的。");
   }
 
   // 深夜生物钟

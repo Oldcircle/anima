@@ -320,10 +320,16 @@ function buildTalkTool(ctx: ToolBuildContext, _talkableCharacters: Array<{ id: s
   const who = ctx.nearbyCharacters
     .map((c) => `${c.name}(${c.id})`)
     .join("、");
+  const socialValue = ctx.state.needs.social ?? 60;
+  const socialHint = socialValue > 90
+    ? "你已经聊了很多了，脑子有些转不动，也许先做点别的。"
+    : socialValue > 75
+      ? "今天聊了不少，继续聊也行，但也可以先忙自己的事。"
+      : "聊天挺好但也挺累的。";
   return {
     tool: {
       name: "talk",
-      description: `跟在场的人说话。聊天挺好但也挺累的。在场：${who}。`,
+      description: `跟在场的人说话。${socialHint}在场：${who}。`,
       parameters: {
         type: "object",
         properties: {

@@ -181,4 +181,39 @@ describe("prompt-builder", () => {
     expect(prompt).toContain("你心里挂着的事");
     expect(prompt).toContain("你还没回应");
   });
+
+  it("social 极高时 prompt 提示想安静", () => {
+    const state = createState();
+    state.needs.social = 92;
+    const prompt = buildUserPrompt({
+      card: baseCard,
+      state,
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [],
+      recentEvents: [],
+      locationName: "咖啡馆",
+      locationType: "commercial",
+      allLocationNames: [],
+    });
+
+    expect(prompt).toContain("聊了很多");
+  });
+
+  it("social 适中时不提示想安静", () => {
+    const state = createState();
+    state.needs.social = 60;
+    const prompt = buildUserPrompt({
+      card: baseCard,
+      state,
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [],
+      recentEvents: [],
+      locationName: "咖啡馆",
+      locationType: "commercial",
+      allLocationNames: [],
+    });
+
+    expect(prompt).not.toContain("聊了很多");
+    expect(prompt).not.toContain("想安静");
+  });
 });
