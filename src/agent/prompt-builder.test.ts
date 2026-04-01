@@ -199,6 +199,57 @@ describe("prompt-builder", () => {
     expect(prompt).toContain("聊了很多");
   });
 
+  it("在面包店时注入相关 backstory", () => {
+    const state = createState();
+    const cardWithBackstory = {
+      ...baseCard,
+      backstory: [
+        { event: "小时候把西瓜虫送给同学当礼物", impact: "从此认定自己是怪人" },
+        { event: "在面包店找到了学徒的工作", impact: "发现揉面团是少数能让自己安心的事情" },
+      ],
+    };
+
+    const prompt = buildUserPrompt({
+      card: cardWithBackstory,
+      state,
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [],
+      recentEvents: [],
+      locationName: "海风面包坊",
+      locationType: "commercial",
+      allLocationNames: [],
+    });
+
+    expect(prompt).toContain("面包店找到了");
+    expect(prompt).toContain("揉面团");
+    expect(prompt).toContain("你突然想起的");
+  });
+
+  it("独处且社交低时注入孤独相关 backstory", () => {
+    const state = createState();
+    state.needs.social = 20;
+    const cardWithBackstory = {
+      ...baseCard,
+      backstory: [
+        { event: "在学校一直是独来独往，没有朋友", impact: "养成了观察微小事物的习惯" },
+        { event: "在面包店找到了学徒的工作", impact: "发现揉面团让自己安心" },
+      ],
+    };
+
+    const prompt = buildUserPrompt({
+      card: cardWithBackstory,
+      state,
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [],
+      recentEvents: [],
+      locationName: "广场",
+      locationType: "public",
+      allLocationNames: [],
+    });
+
+    expect(prompt).toContain("没有朋友");
+  });
+
   it("social 适中时不提示想安静", () => {
     const state = createState();
     state.needs.social = 60;

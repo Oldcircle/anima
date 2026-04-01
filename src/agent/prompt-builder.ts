@@ -373,6 +373,19 @@ export function buildUserPrompt(params: {
     if (invText) parts.push(`\n${invText}`);
   }
 
+  // 动态 backstory 注入：根据当前场景触发相关回忆
+  const backstoryHint = selectRelevantBackstory(card, {
+    locationName,
+    locationType,
+    nearbyCharacters: nearbyCharacters.map(c => c.name),
+    hour: gameTime.hour,
+    needs: state.needs,
+    alone: nearbyCharacters.length === 0,
+  });
+  if (backstoryHint) {
+    parts.push(`\n## 你突然想起的\n${backstoryHint}`);
+  }
+
   const prefsHint = formatPreferencesHint(card);
   if (prefsHint) parts.push(`\n${prefsHint}`);
 
@@ -416,4 +429,61 @@ export function buildUserPrompt(params: {
   parts.push("注意：如果你已经在目标地点了，不需要再 go_to 那里，直接做想做的事。");
 
   return parts.join("\n");
+}
+
+/**
+ * 根据当前场景选择最相关的 backstory 条目。
+ * 每 tick 最多注入 1 条，避免信息过载。
+ * 只有在场景与某条 backstory 有关联时才触发。
+ */
+function selectRelevantBackstory(
+  card: CharacterCard,
+  context: {
+    locationName: string;
+    locationType: string;
+    nearbyCharacters: string[];
+    hour: number;
+    needs: Record<string, number>;
+    alone: boolean;
+  },
+): string | undefined {
+  if (!card.backstory || card.backstory.length === 0) return undefined;
+
+  // 关键词 → 场景匹配规则
+  const contextKeywords: string[] = [];
+
+  // 地点关联
+  contextKeywords.push(context.locationName);
+  if (context.locationType === "nature") contextKeywords.push("海", "沙滩", "自然", "森林");
+  if (context.locationName.includes("面包")) contextKeywords.push("面包", "揉面", "烘焙");
+  if (context.locationName.includes("咖啡")) contextKeywords.push("咖啡");
+  if (context.locationName.includes("图书")) contextKeywords.push("书", "阅读", "图书");
+  if (context.locationName.includes("花")) contextKeywords.push("花", "植物");
+
+  // 状态关联
+  if (context.alone) contextKeywords.push("独", "一个人", "孤", "没有朋友");
+  if ((context.needs.social ?? 100) < 25) contextKeywords.push("寂寞", "孤独", "想找人", "没有朋友");
+  if ((context.needs.fun ?? 100) < 20) contextKeywords.push("无聊", "闷");
+  if (context.hour >= 21 || context.hour < 5) contextKeywords.push("夜", "星星", "深夜", "晚上");
+
+  // 为每条 backstory 打分
+  let bestScore = 0;
+  let bestEntry: { event: string; impact: string } | undefined;
+
+  for (const entry of card.backstory) {
+    const text = `${entry.event} ${entry.impact}`;
+    let score = 0;
+    for (const kw of contextKeywords) {
+      if (text.includes(kw)) score++;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestEntry = entry;
+    }
+  }
+
+  // 至少需要 1 分才注入
+  if (bestScore < 1 || !bestEntry) return undefined;
+
+  return `${bestEntry.event}——${bestEntry.impact}`;
 }
