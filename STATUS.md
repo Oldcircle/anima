@@ -158,7 +158,14 @@
 - [x] **动态 backstory 注入**：
   - 根据地点/状态/时间触发相关过往回忆（每 tick 最多 1 条）
   - 关键词匹配评分选择最相关条目
-- [x] **260 tests passing, build clean**
+- [x] **对话模式 prompt 增强**：
+  - 完整的 formatBodyFeelings 替代简化检查
+  - Moodlet 注入、随身物品展示
+  - 对话场景 backstory 动态注入
+- [x] **go_to 地点人物信息**：
+  - location 描述中显示各地点在场人物（"千早爱音在那里"）
+  - 让移动决策有社交考量
+- [x] **261 tests passing, build clean**
 
 ### 下次继续入口
 
