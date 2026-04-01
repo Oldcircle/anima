@@ -131,7 +131,7 @@ WebSocket + HTTP API + Web UI（地图/面板/事件流/速度控制）
 - [ ] 附近角色从 `[stranger]` 改为可观察状态描述（当前行为 + 朝向）
 - [ ] 社交场景（附近有人/信箱有消息）maxTokens 512 → 1024，思考指令扩展
 - [ ] system prompt 加入社交引导（犹豫/改口/言不由衷/转移话题/沉默）
-- [ ] 动态 backstory 注入（根据当前位置/附近角色选择相关 backstory 条目）
+- [x] 动态 backstory 注入（根据当前位置/状态/时间选择相关 backstory 条目）
 - [ ] Live 一日验证
 
 ### P0-b：对话模式
@@ -396,9 +396,9 @@ Phase 7D (Moodlet) ← 依赖 7A-7C 的各种事件源
   - `craft`（leisure-actions）: fun +8, energy -8, 产物可用于 give_gift
   - `help_work`（social-actions）: social +8(双方), energy -10, fun -5
   - `observe`（social-actions）: 深度 observation 记忆, energy -2
-- [ ] 新增 `SocialModifier` 机制
-  - ActionDefinition 新增 `socialModifier` 字段
-  - agent-loop 执行时根据同地点有认识的人自动应用
+- [x] `SocialModifier` 机制（独立模块，17 个行为规则）
+  - agent-loop 执行后自动检测同地点认识人并应用修正
+  - observableState 联动：社交场景有专属描写
 - [ ] 新增 `observableState` 字段
   - ActionResult 新增 `observableState?: string`
   - 各 action handler 返回可观察描述
