@@ -293,6 +293,7 @@ export function buildConversationRequest(params: {
     tools: params.actions.map((a) => a.tool),
     temperature: 1.0, // 对话模式温度更高，增加自然感
     maxTokens: 1024,  // 对话模式：思考精简 + 消息自然长度
+    prefill: `好的，我已理解${params.card.name}这个角色。我将完全以这个角色的性格和说话方式来回应：\n`,
   };
 }
 

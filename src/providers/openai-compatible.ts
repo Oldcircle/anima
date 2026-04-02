@@ -32,6 +32,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
       ...request.messages,
     ];
 
+    // Prefill: 预填充助手回复开头，引导模型进入"已接受创作任务"状态
+    if (request.prefill) {
+      messages.push({ role: "assistant", content: request.prefill });
+    }
+
     const body: Record<string, unknown> = {
       model,
       messages,

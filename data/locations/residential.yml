@@ -72,3 +72,9 @@ homes:
     summary: 睡觉、洗澡、做饭
     atmosphere: *residential
     tools: *home_tools
+  - id: home_ryo
+    name: 梁的住处
+    type: residential
+    summary: 睡觉、洗澡
+    atmosphere: *residential
+    tools: *home_tools

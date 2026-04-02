@@ -43,6 +43,8 @@ export interface LLMRequest {
   tools?: ToolDefinition[];
   maxTokens?: number;
   temperature?: number;
+  /** 预填充助手回复开头（prefill），引导模型进入特定状态 */
+  prefill?: string;
 }
 
 /** LLM 响应 */
