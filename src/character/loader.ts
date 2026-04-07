@@ -31,6 +31,7 @@ export function loadCharacterFromYAML(filePath: string): CharacterCard {
   return {
     id: data.id,
     name: data.name,
+    gender: data.gender,
     age: data.age,
     occupation: data.occupation,
     home: data.home,
@@ -63,5 +64,12 @@ export function loadCharactersFromDir(dirPath: string): CharacterCard[] {
     (f) => f.endsWith(".yml") || f.endsWith(".yaml"),
   );
 
-  return files.map((f) => loadCharacterFromYAML(join(dirPath, f)));
+  return files
+    .map((f) => {
+      const raw = readFileSync(join(dirPath, f), "utf-8");
+      const data = parseYAML(raw);
+      if (data?.disabled === true) return null;
+      return loadCharacterFromYAML(join(dirPath, f));
+    })
+    .filter((c): c is CharacterCard => c !== null);
 }

@@ -28,6 +28,9 @@ export interface LifeState {
 export interface CharacterCard {
   id: string;
   name: string;
+  /** 性别。注入到 prompt，让其他角色不会认错。值为开放字符串以保留灵活性，
+   * 推荐 "female" / "male" / "other"，但也可以写 "女" / "男" / "非二元" 等。 */
+  gender?: string;
   /** @deprecated 使用 life.age */
   age: number;
   /** @deprecated 使用 life.occupation */

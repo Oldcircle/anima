@@ -62,9 +62,46 @@ export class World {
     return this._state.locations.get(locationId)?.presentCharacters ?? [];
   }
 
+  /** 新增或更新地点。已有地点会保留 presentCharacters。 */
+  upsertLocation(loc: Location): void {
+    const existing = this._state.locations.get(loc.id);
+    if (existing) {
+      this._state.locations.set(loc.id, {
+        ...loc,
+        presentCharacters: [...existing.presentCharacters],
+      });
+    } else {
+      this._state.locations.set(loc.id, { ...loc, presentCharacters: [...(loc.presentCharacters ?? [])] });
+    }
+  }
+
+  /**
+   * 删除地点。如果当前还有角色站在这里，会拒绝删除并返回 false。
+   * 调用方负责先疏散角色。
+   */
+  removeLocation(id: string): boolean {
+    const loc = this._state.locations.get(id);
+    if (!loc) return false;
+    if (loc.presentCharacters.length > 0) return false;
+    this._state.locations.delete(id);
+    return true;
+  }
+
+  /** 删除角色（连带从所在地点的 presentCharacters 移除）。 */
+  removeCharacter(id: string): boolean {
+    const c = this._characters.get(id);
+    if (!c) return false;
+    const loc = this._state.locations.get(c.locationId);
+    if (loc) {
+      loc.presentCharacters = loc.presentCharacters.filter((cid) => cid !== id);
+    }
+    this._characters.delete(id);
+    return true;
+  }
+
   // --- 角色 ---
 
-  addCharacter(id: string, name: string, locationId: string, needs?: Record<string, number>, life?: LifeState): void {
+  addCharacter(id: string, name: string, locationId: string, needs?: Record<string, number>, life?: LifeState, gender?: string): void {
     const merged: CharacterNeeds = { ...getDefaultNeeds() };
     if (needs) {
       for (const [k, v] of Object.entries(needs)) {
@@ -74,6 +111,7 @@ export class World {
     const state: CharacterState = {
       id,
       name,
+      gender,
       locationId,
       needs: merged,
       gold: 100,

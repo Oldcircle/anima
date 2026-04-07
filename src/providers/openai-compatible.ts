@@ -24,6 +24,23 @@ export class OpenAICompatibleProvider implements LLMProvider {
     this._defaultModel = config.defaultModel ?? "deepseek-chat";
   }
 
+  /** 热更新 provider 配置（前端 Settings 页面用）。 */
+  updateConfig(patch: Partial<OpenAICompatibleConfig>): void {
+    if (patch.baseUrl !== undefined) this._baseUrl = patch.baseUrl.replace(/\/+$/, "");
+    if (patch.apiKey !== undefined) this._apiKey = patch.apiKey;
+    if (patch.defaultModel !== undefined) this._defaultModel = patch.defaultModel;
+  }
+
+  /** 当前生效的配置（apiKey 不脱敏，调用方负责脱敏）。 */
+  getConfig(): OpenAICompatibleConfig {
+    return {
+      id: this.id,
+      baseUrl: this._baseUrl,
+      apiKey: this._apiKey,
+      defaultModel: this._defaultModel,
+    };
+  }
+
   async chat(request: LLMRequest, modelId?: string): Promise<LLMResponse> {
     const model = modelId ?? this._defaultModel;
 

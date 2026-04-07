@@ -43,7 +43,7 @@ describe.skipIf(SKIP)("Full Day Simulation — 6 Characters", () => {
 
     const world = new World(locations, 24); // tick 24 = 06:00
     for (const card of characters) {
-      world.addCharacter(card.id, card.name, card.home, undefined, card.life);
+      world.addCharacter(card.id, card.name, card.home, undefined, card.life, card.gender);
     }
     const eventBus = new EventBus();
 

@@ -566,7 +566,7 @@ async function createSimulation(llm: SmartMockLLM) {
   const world = new World(LOCATIONS, 24); // 从 06:00 开始
   const { addToInventory } = await import("../world/item-registry.js");
   for (const card of CHARACTERS) {
-    world.addCharacter(card.id, card.name, card.home, undefined, card.life);
+    world.addCharacter(card.id, card.name, card.home, undefined, card.life, card.gender);
     const state = world.getCharacter(card.id)!;
     // 给每个角色初始食材和便当
     addToInventory(state.inventory, "ingredients", 20);

@@ -31,11 +31,16 @@ const LOCATIONS = loadLocationsFromDir(locationDir);
 console.log(`📍 加载了 ${LOCATIONS.length} 个地点: ${LOCATIONS.map((l) => l.name).join(", ")}`);
 
 // --- LLM Provider ---
+// settings.json（前端 Settings 写入）优先于 .env
+import { SettingsStore } from "./api/settings-store.js";
+const SETTINGS_FILE = join(DATA_DIR, "settings.json");
+const settingsStore = new SettingsStore(SETTINGS_FILE);
+const persistedLLM = settingsStore.load().llm;
 const provider = new OpenAICompatibleProvider({
-  id: "deepseek",
-  baseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-  apiKey: process.env.DEEPSEEK_API_KEY ?? "",
-  defaultModel: "deepseek-chat",
+  id: persistedLLM?.provider ?? "deepseek",
+  baseUrl: persistedLLM?.baseUrl ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
+  apiKey: persistedLLM?.apiKey ?? process.env.DEEPSEEK_API_KEY ?? "",
+  defaultModel: persistedLLM?.model ?? "deepseek-chat",
 });
 
 // --- 加载角色 ---
@@ -46,7 +51,7 @@ console.log(`📋 加载了 ${characters.length} 个角色: ${characters.map((c)
 // --- 初始化世界 ---
 const world = new World(LOCATIONS, 24); // 从 06:00 开始 (tick 24)
 for (const card of characters) {
-  world.addCharacter(card.id, card.name, card.home, undefined, card.life);
+  world.addCharacter(card.id, card.name, card.home, undefined, card.life, card.gender);
   if (card.startingItems) {
     const state = world.getCharacter(card.id);
     if (state) {
@@ -64,7 +69,7 @@ const simulation = new Simulation(world, eventBus, {
   characters,
   actions: ALL_BASIC_ACTIONS,
   provider,
-  modelId: "deepseek-chat",
+  modelId: persistedLLM?.model ?? "deepseek-chat",
 });
 
 // --- 尝试读档 ---
@@ -113,6 +118,12 @@ const api = createApiServer({
   engine,
   staticDir: join(import.meta.dirname, "..", "web"),
   characterCards: new Map(characters.map((c) => [c.id, c])),
+  admin: {
+    charactersDir: characterDir,
+    locationsDir: locationDir,
+    settingsFile: SETTINGS_FILE,
+    provider,
+  },
 });
 api.start();
 

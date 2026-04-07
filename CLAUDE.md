@@ -106,6 +106,8 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 - [PLAN.md](./PLAN.md) — 实现分期计划
 - [DESIGN.md](./DESIGN.md) — 详细架构设计（需求系统、行为系统、五层活人感）
 - [STATUS.md](./STATUS.md) — 当前开发状态与 Live 验证结果
+- [PLAN-game-frontend.md](./PLAN-game-frontend.md) — 游戏前端设计（星露谷风格像素 RPG）
+- [PLAN-frontend-redesign.md](./PLAN-frontend-redesign.md) — `web/` 管理面板重构计划（API 设置 + 角色/地点 CRUD）
 
 ## 当前迭代焦点
 

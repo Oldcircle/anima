@@ -99,7 +99,7 @@ export async function runAgentTick(params: {
       const observable = world.getObservableState(c.id, gameTime.tick);
       const currentAction = observable?.summary
         ?? (c.currentAction ? describeObservableAction(c.name, c.currentAction.name) : undefined);
-      return { id: c.id, name: c.name, relationship: rel ? { level: rel.level, type: rel.type, bond: rel.bond } : undefined, currentAction };
+      return { id: c.id, name: c.name, gender: c.gender, relationship: rel ? { level: rel.level, type: rel.type, bond: rel.bond } : undefined, currentAction };
     });
 
   const recentEvents = eventBus.query({ actorId: card.id, limit: 5 });

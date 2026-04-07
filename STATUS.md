@@ -6,6 +6,44 @@
 
 **最后更新**：2026-03-27
 
+### 新开支线：管理前端重构（web/）— Phase A→F 全部完成 ✅
+
+`web/` 单 HTML 观察面板已升级为带 API 设置 + 角色/地点 CRUD 的运营面板。
+计划见 [PLAN-frontend-redesign.md](./PLAN-frontend-redesign.md)。
+
+**后端**（Phase A）
+- `src/shared/validation.ts` — 角色/地点/LLM 设置的轻量校验
+- `src/api/admin-routes.ts` — `/api/admin/characters|locations|settings/llm` 全套 CRUD
+- `src/api/settings-store.ts` — `data/settings.json` 持久化（apiKey 末 4 位脱敏）
+- `src/world/world.ts` — `upsertLocation` / `removeLocation` / `removeCharacter`
+- `src/agent/simulation.ts` — `enqueueMutation` / `drainMutations`，runOneTick 开头自动 drain，避免打断进行中的决策
+- `src/providers/openai-compatible.ts` — `updateConfig` / `getConfig` 热更新
+- `src/character/loader.ts` — 跳过 `disabled: true`
+- `src/cli.ts` — 启动时 `data/settings.json` 优先于 `.env`
+- 测试：`src/api/admin-routes.test.ts`，5 个用例覆盖 CRUD round-trip / 校验失败 / 热重载 / 设置脱敏
+- 构建：`pnpm build` 通过；`pnpm test` **266 passed**（28 files）
+
+**前端**（Phase B–F）
+- 旧 `web/index.html` → `web/legacy.html`，内嵌在新 Live 页 iframe
+- 新 `web/index.html` + `web/app/main.js` + `web/app/styles.css`：
+  - Preact + htm 通过 esm.sh CDN 直接 ESM 加载，**零构建步骤**
+  - Topbar（time / weather / speed / 连接状态）+ 左侧导航 + 主面板
+  - 哈希路由：`#/live` `#/characters` `#/locations` `#/settings`
+  - 全局 store + WebSocket 自动重连
+- 角色页：卡片网格 + 抽屉编辑器（5 tab：基本/性格/背景/生活/JSON 预览），新建 / 软停用 / 永久删除
+- 地点页：卡片网格 + 编辑器（含 atmosphere 多时段编辑）
+- 设置页：provider 表单 + Test connection 按钮，apiKey 脱敏显示
+
+**热重载关键设计**：API 写盘后只把变更入队 `simulation.enqueueMutation()`，下一个 `runOneTick` 开头 drain，保证不会打断正在进行的 agent 决策。
+
+**待用户验收**：
+1. 启动 `pnpm dev` 打开 http://localhost:3001/
+2. 走读 `#/live` `#/characters` `#/locations` `#/settings` 4 个页面
+3. 在 Settings 配置 DeepSeek key，点 Test connection
+4. 在 Characters 试着新建/编辑/停用一个角色
+
+注意：对象是 `web/`，不是 `web-game/` 像素 RPG。
+
 ### 当前加开主线：活人感攻坚（生活惯性 + 世界痕迹）
 
 最新判断：项目现在“不像活人”不在于角色不会聊天，而在于两处断点：

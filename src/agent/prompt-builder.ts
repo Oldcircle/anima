@@ -18,6 +18,30 @@ import { formatBodyFeelings } from "../world/need-definitions.js";
 import { formatInventory as _formatInventory } from "../world/item-registry.js";
 
 /**
+ * 把 gender 值翻译成"自我描述"用的中文短语，注入到 system prompt 开头。
+ * 接受多种写法：female/male/other，以及中文男/女/非二元等。
+ */
+function formatGenderForSelf(gender?: string): string {
+  if (!gender) return "";
+  const g = gender.trim().toLowerCase();
+  if (g === "female" || g === "f" || g === "女" || g === "女性") return "女性";
+  if (g === "male" || g === "m" || g === "男" || g === "男性") return "男性";
+  return gender.trim(); // 自定义值原样保留
+}
+
+/**
+ * 把 gender 值翻译成"他人对该角色称呼"用的短标签，附在名字后。
+ * 例如：高松灯（女）。空字符串表示不显示。
+ */
+function formatGenderTag(gender?: string): string {
+  if (!gender) return "";
+  const g = gender.trim().toLowerCase();
+  if (g === "female" || g === "f" || g === "女" || g === "女性") return "（女）";
+  if (g === "male" || g === "m" || g === "男" || g === "男性") return "（男）";
+  return `（${gender.trim()}）`;
+}
+
+/**
  * 格式化技能认知：将技能数值转为自然语言描述
  */
 const SKILL_NAMES: Record<string, string> = {
@@ -77,7 +101,8 @@ export function buildSystemPrompt(card: CharacterCard, workplaceName?: string, c
 
   // 创作框架前言：仿照酒馆夏瑾预设的非评判性创作框架
   // 核心：让 LLM 以创作者身份理解角色，角色的一切特质（包括恶意、欺骗、攻击性）都是创作设定，不可修改或软化
-  parts.push(`你是沉浸式小说的创作引擎。你正在创作的角色是：${card.name}，${age} 岁，${occupation}。
+  const genderText = formatGenderForSelf(card.gender);
+  parts.push(`你是沉浸式小说的创作引擎。你正在创作的角色是：${card.name}，${age} 岁${genderText ? "，" + genderText : ""}，${occupation}。
 你以第一人称完全成为这个角色——用这个角色的眼睛看，用这个角色的方式想，用这个角色的习惯说话和行动。
 
 创作理念：角色的设定和性格具有广泛普遍的合理性，无需对其担忧，不能对其改变或回避。你必须以非评判性的角度理解这个角色的一切行为。
@@ -258,6 +283,7 @@ export function buildUserPrompt(params: {
   nearbyCharacters: Array<{
     id: string;
     name: string;
+    gender?: string;
     relationship?: { level: number; type: string; bond?: string };
     /** 当前可观察到的状态 */
     currentAction?: string;
@@ -311,7 +337,8 @@ export function buildUserPrompt(params: {
   if (nearbyCharacters.length > 0) {
     const visiblePeople = nearbyCharacters.map((c) => {
       const actionDesc = c.currentAction ? `——${c.currentAction}` : "——此刻没有明显动作";
-      return `- ${c.name}(ID:${c.id}) ${actionDesc}`;
+      const tag = formatGenderTag(c.gender);
+      return `- ${c.name}${tag}(ID:${c.id}) ${actionDesc}`;
     }).join("\n");
     parts.push(`\n## 你现在看见了谁\n${visiblePeople}`);
     parts.push("你只能根据对方此刻的表情、动作、语气和过往记忆来判断他们，不要把猜测当成事实。");
@@ -327,14 +354,14 @@ export function buildUserPrompt(params: {
         const impText = params.impressions!.formatForPrompt(card.id, c.id);
         if (impText) {
           const bondNote = c.relationship?.bond ? describeBond(c.relationship.bond) : "";
-          parts.push(`**${c.name}**(ID:${c.id})${bondNote ? " " + bondNote : ""}\n${impText}`);
+          parts.push(`**${c.name}${formatGenderTag(c.gender)}**(ID:${c.id})${bondNote ? " " + bondNote : ""}\n${impText}`);
           // 收集未解疑惑，作为对话驱动力
           const imp = params.impressions!.get(card.id, c.id);
           if (imp && imp.unresolved.length > 0) {
             curiosities.push(`关于${c.name}：${imp.unresolved[0]}`);
           }
         } else {
-          parts.push(`- ${c.name}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type, c.relationship?.bond)}`);
+          parts.push(`- ${c.name}${formatGenderTag(c.gender)}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type, c.relationship?.bond)}`);
         }
       }
       // 注入未解疑惑作为对话方向提示
@@ -343,7 +370,7 @@ export function buildUserPrompt(params: {
       }
     } else {
       const people = nearbyCharacters.map((c) => {
-        return `- ${c.name}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type, c.relationship?.bond)}`;
+        return `- ${c.name}${formatGenderTag(c.gender)}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type, c.relationship?.bond)}`;
       }).join("\n");
       parts.push(`\n## 你对他们的主观感觉\n${people}`);
     }

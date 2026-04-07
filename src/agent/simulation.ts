@@ -48,6 +48,7 @@ export type SimulationListener = (summary: TickSummary) => void;
 export class Simulation {
   private _configs: Map<string, AgentConfig> = new Map();
   private _provider: LLMProvider;
+  private _modelId: string;
   private _actions: ActionDefinition[];
   private _listeners: SimulationListener[] = [];
   private _backgroundTasks = new Set<Promise<unknown>>();
@@ -74,6 +75,7 @@ export class Simulation {
     this.conversations = new ConversationTracker();
     this.impressions = new ImpressionStore();
     this._provider = config.provider;
+    this._modelId = config.modelId;
     this._actions = config.actions;
     this.eventBus.on((event) => {
       this.recordWitnessObservations(event);
@@ -122,6 +124,78 @@ export class Simulation {
     };
   }
 
+  // === 热重载 API（前端 CRUD 用） ===
+  //
+  // 这些方法**不**能在 runOneTick 执行期间直接调用，否则会破坏正在跑的
+  // agent 决策。API 层应把变更塞进 _pendingMutations，runOneTick 会在
+  // 开头一次性 drain。
+
+  private _pendingMutations: Array<() => void> = [];
+
+  /** 入队一个会修改世界/配置的变更，下一个 tick 开头执行。 */
+  enqueueMutation(fn: () => void): void {
+    this._pendingMutations.push(fn);
+  }
+
+  /** 立刻 drain 所有 pending 变更（runOneTick 内部调用）。 */
+  drainMutations(): void {
+    if (this._pendingMutations.length === 0) return;
+    const queue = this._pendingMutations;
+    this._pendingMutations = [];
+    for (const fn of queue) {
+      try { fn(); } catch (e) { console.error("[mutation] failed:", e); }
+    }
+  }
+
+  /** 新增或更新角色卡。已存在则替换 agent 配置；新角色还会加入 world。 */
+  upsertCharacter(card: CharacterCard & { disabled?: boolean }): void {
+    if (card.disabled) {
+      // 软停用：从 agent 配置和 world 移除，但磁盘 YAML 保留
+      this._configs.delete(card.id);
+      this.world.removeCharacter(card.id);
+      return;
+    }
+    this._configs.set(card.id, {
+      card,
+      actions: this._actions,
+      provider: this._provider,
+      modelId: this._modelId,
+    });
+    if (!this.world.getCharacter(card.id)) {
+      this.world.addCharacter(card.id, card.name, card.home, undefined, card.life, card.gender);
+    } else {
+      // 已存在角色：同步可能更新过的 gender / 名字
+      const cs = this.world.getCharacter(card.id)!;
+      cs.gender = card.gender;
+      cs.name = card.name;
+    }
+  }
+
+  /** 真删角色（停用 + 移除磁盘条目由 API 层负责）。 */
+  removeCharacterCompletely(id: string): void {
+    this._configs.delete(id);
+    this.world.removeCharacter(id);
+  }
+
+  /** 获取已注册的角色 ID 列表。 */
+  getCharacterIds(): string[] {
+    return Array.from(this._configs.keys());
+  }
+
+  /** 获取已注册角色卡（用于前端编辑回填）。 */
+  getCharacterCard(id: string): CharacterCard | undefined {
+    return this._configs.get(id)?.card;
+  }
+
+  /** 替换 LLM provider，所有 agent 配置同步更新。 */
+  setProvider(provider: LLMProvider, modelId: string): void {
+    this._provider = provider;
+    this._modelId = modelId;
+    for (const [id, cfg] of this._configs) {
+      this._configs.set(id, { ...cfg, provider, modelId });
+    }
+  }
+
   /** 等待所有后台印象/衍生任务完成，便于测试和日志收尾 */
   async waitForBackgroundTasks(): Promise<void> {
     while (this._backgroundTasks.size > 0) {
@@ -166,6 +240,9 @@ export class Simulation {
 
   /** 运行单个 tick */
   async runOneTick(gameTime: GameTime): Promise<TickSummary> {
+    // -1. 应用 API 层入队的角色/地点/provider 变更（保证 tick 内一致）
+    this.drainMutations();
+
     // 0. 每天凌晨更新天气 + 检查节日
     if (gameTime.hour === 0 && gameTime.minute === 0) {
       const newWeather = rollWeather(gameTime.season);

@@ -109,6 +109,8 @@ export interface CharacterObservableState {
 export interface CharacterState {
   id: string;
   name: string;
+  /** 性别（从角色卡复制过来，便于场景描述时其他角色感知） */
+  gender?: string;
   locationId: string;
   needs: CharacterNeeds;
   gold: number;

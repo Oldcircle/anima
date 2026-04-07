@@ -15,6 +15,9 @@ import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime, tickToGameTime } from "../core/tick-engine.js";
 import * as itemRegistry from "../world/item-registry.js";
 import type { CharacterCard } from "../character/types.js";
+import { registerAdminRoutes } from "./admin-routes.js";
+import { SettingsStore } from "./settings-store.js";
+import type { OpenAICompatibleProvider } from "../providers/openai-compatible.js";
 
 export interface ServerConfig {
   port: number;
@@ -23,6 +26,13 @@ export interface ServerConfig {
   staticDir?: string;
   /** 角色卡映射（id → CharacterCard），用于前端展示角色身份信息 */
   characterCards?: Map<string, CharacterCard>;
+  /** 管理面板用：角色/地点 YAML 目录与设置文件路径 */
+  admin?: {
+    charactersDir: string;
+    locationsDir: string;
+    settingsFile: string;
+    provider?: OpenAICompatibleProvider;
+  };
 }
 
 export function createApiServer(config: ServerConfig): { app: ReturnType<typeof express>; server: ReturnType<typeof createServer>; start: () => void; broadcast: (data: object) => void } {
@@ -213,6 +223,18 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
     }
     res.json(convs);
   });
+
+  // 管理 CRUD + 设置
+  if (config.admin) {
+    registerAdminRoutes({
+      app,
+      simulation,
+      charactersDir: config.admin.charactersDir,
+      locationsDir: config.admin.locationsDir,
+      settingsStore: new SettingsStore(config.admin.settingsFile),
+      provider: config.admin.provider,
+    });
+  }
 
   // 静态文件
   if (config.staticDir) {
