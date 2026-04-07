@@ -48,33 +48,83 @@ homes:
     summary: 睡觉、洗澡、做饭
     atmosphere: *residential
     tools: *home_tools
+    disabled: true
   - id: home_anon
     name: 爱音的家
     type: residential
     summary: 睡觉、洗澡、做饭
     atmosphere: *residential
     tools: *home_tools
+    disabled: true
   - id: home_sakiko
     name: 祥子的家
     type: residential
     summary: 睡觉、洗澡、做饭
     atmosphere: *residential
     tools: *home_tools
+    disabled: true
   - id: home_mutsumi
     name: 睦的家
     type: residential
     summary: 睡觉、洗澡、做饭
     atmosphere: *residential
     tools: *home_tools
+    disabled: true
   - id: home_soyo
     name: 素世的家
     type: residential
     summary: 睡觉、洗澡、做饭
     atmosphere: *residential
     tools: *home_tools
+    disabled: true
   - id: home_ryo
     name: 梁的住处
     type: residential
     summary: 睡觉、洗澡
+    atmosphere: *residential
+    tools: *home_tools
+    disabled: true
+
+  # —— 新阵容：动漫群像 ——
+  - id: home_l
+    name: L 的旅馆房间
+    type: residential
+    summary: L 长期租住的旅馆套房，到处都是糖罐和案宗
+    atmosphere: *residential
+    tools: *home_tools
+  - id: home_light
+    name: 月的住所
+    type: residential
+    summary: 月一个人住的整洁公寓，书桌一尘不染
+    atmosphere: *residential
+    tools: *home_tools
+  - id: home_shinji
+    name: 真嗣的小屋
+    type: residential
+    summary: 真嗣借住的旧屋，墙上挂着一副耳机
+    atmosphere: *residential
+    tools: *home_tools
+  - id: home_asuka
+    name: 明日香的公寓
+    type: residential
+    summary: 红色窗帘，地上散着衣服，桌上立着相框
+    atmosphere: *residential
+    tools: *home_tools
+  - id: home_rei
+    name: 绫波丽的房间
+    type: residential
+    summary: 几乎没有家具的白色房间，窗台上养着一盆花
+    atmosphere: *residential
+    tools: *home_tools
+  - id: home_lelouch
+    name: 鲁鲁修的住所
+    type: residential
+    summary: 看起来普通的学生公寓，书桌下有个不能打开的盒子
+    atmosphere: *residential
+    tools: *home_tools
+  - id: home_senjougahara
+    name: 战场原的家
+    type: residential
+    summary: 异常整洁的房间，文具柜里的钉书机比文具还多
     atmosphere: *residential
     tools: *home_tools

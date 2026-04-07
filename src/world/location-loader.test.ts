@@ -55,8 +55,9 @@ describe("loadLocationsFromDir", () => {
     const dir = join(import.meta.dirname, "..", "..", "data", "locations");
     const locations = loadLocationsFromDir(dir);
 
-    // Should have all 17 locations (7 residential + 10 public)
-    expect(locations.length).toBe(17);
+    // residential.yml: 6 个原角色家（已 disabled，跳过）+ 7 个动漫角色家 = 7
+    // 加上 commercial / public / nature 共 11 个 → 18
+    expect(locations.length).toBe(18);
 
     // Check a commercial location has atmosphere
     const cafe = locations.find((l) => l.id === "cafe");
@@ -66,10 +67,11 @@ describe("loadLocationsFromDir", () => {
     expect(cafe!.atmosphere!.rainy).toBeTruthy();
 
     // Check residential locations loaded from homes array
-    const homeTomori = locations.find((l) => l.id === "home_tomori");
-    expect(homeTomori).toBeDefined();
-    expect(homeTomori!.type).toBe("residential");
-    expect(homeTomori!.atmosphere).toBeDefined();
+    // home_tomori 已 disabled，改用 home_l 验证 multi-home 加载
+    const homeL = locations.find((l) => l.id === "home_l");
+    expect(homeL).toBeDefined();
+    expect(homeL!.type).toBe("residential");
+    expect(homeL!.atmosphere).toBeDefined();
 
     // Check nature location
     const beach = locations.find((l) => l.id === "beach");

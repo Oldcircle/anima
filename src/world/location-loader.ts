@@ -51,9 +51,11 @@ export function loadLocationsFromDir(dirPath: string): Location[] {
     // residential.yml contains multiple homes under `homes` key
     if (data.homes && Array.isArray(data.homes)) {
       for (const home of data.homes) {
+        if (home?.disabled === true) continue;
         locations.push(toLocation(home));
       }
     } else if (data.id) {
+      if (data.disabled === true) continue;
       // Single location file
       locations.push(toLocation(data));
     }

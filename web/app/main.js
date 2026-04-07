@@ -403,8 +403,8 @@ function LocationsPage() {
     ${list.length === 0 && html`<div class="empty">还没有地点。</div>`}
     <div class="grid">
       ${list.map((l) => html`
-        <div class="card" onClick=${() => setEditing(l)}>
-          <div class="title">${l.name} <span class="badge">${l.type}</span></div>
+        <div class=${"card" + (l.disabled ? " disabled" : "")} onClick=${() => setEditing(l)}>
+          <div class="title">${l.name} <span class="badge">${l.type}</span>${l.disabled && html`<span class="badge">停用</span>`}</div>
           <div class="meta">${l.id}</div>
           <div class="desc">${l.summary ?? ""}</div>
         </div>
@@ -453,11 +453,14 @@ function LocationDrawer({ loc, isNew = false, onClose, onSaved }) {
     finally { setSaving(false); }
   };
 
-  const remove = async () => {
-    if (!confirm(`删除地点 ${draft.name}？如果有角色在场会拒绝。`)) return;
+  const remove = async (hard) => {
+    const tip = hard
+      ? `永久删除 ${draft.name}？YAML 条目会被删除，无法恢复。`
+      : `软停用 ${draft.name}？该地点不会再出现在仿真中，可以在 YAML 中改回 disabled: false 恢复。`;
+    if (!confirm(tip)) return;
     try {
-      await api("/api/admin/locations/" + draft.id, { method: "DELETE" });
-      toast("已删除");
+      await api("/api/admin/locations/" + draft.id + (hard ? "?hard=1" : ""), { method: "DELETE" });
+      toast(hard ? "已永久删除" : "已停用");
       onSaved();
     } catch (e) { toast("删除失败：" + e.message, "error"); }
   };
@@ -491,7 +494,8 @@ function LocationDrawer({ loc, isNew = false, onClose, onSaved }) {
           `)}
         </div>
         <div class="drawer-footer">
-          ${!isNew && html`<button class="danger" onClick=${remove}>删除</button>`}
+          ${!isNew && html`<button class="danger" onClick=${() => remove(false)}>停用</button>`}
+          ${!isNew && html`<button class="danger" onClick=${() => remove(true)}>永久删除</button>`}
           <div class="spacer"></div>
           <button onClick=${onClose}>取消</button>
           <button class="primary" disabled=${saving} onClick=${save}>${saving ? "保存中…" : "保存"}</button>

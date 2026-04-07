@@ -95,7 +95,9 @@ export function validateLocationPayload(input: unknown): ValidationResult<Record
   if (!ALLOWED_TYPES.includes(input.type)) {
     return { ok: false, error: `type must be one of ${ALLOWED_TYPES.join(", ")}` };
   }
-  return { ok: true, value: input };
+  // 把 disabled 标准化成 boolean，再透传剩余字段
+  const normalized = { ...input, disabled: input.disabled === true };
+  return { ok: true, value: normalized };
 }
 
 export interface LLMSettingsPayload {

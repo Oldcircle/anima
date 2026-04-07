@@ -120,9 +120,9 @@ export function registerAdminRoutes(config: AdminRoutesConfig): void {
       try {
         const data = parseYAML(readFileSync(join(locationsDir, file), "utf-8"));
         if (data?.homes && Array.isArray(data.homes)) {
-          for (const h of data.homes) out.push({ ...h, _file: file });
+          for (const h of data.homes) out.push({ ...h, disabled: h.disabled === true, _file: file });
         } else if (data?.id) {
-          out.push({ ...data, _file: file });
+          out.push({ ...data, disabled: data.disabled === true, _file: file });
         }
       } catch {}
     }
@@ -183,6 +183,7 @@ export function registerAdminRoutes(config: AdminRoutesConfig): void {
 
   app.delete("/api/admin/locations/:id", (req, res) => {
     const id = String(req.params.id);
+    const hard = req.query.hard === "1" || req.query.hard === "true";
     const file = findLocationFile(locationsDir, id);
     if (!file) return res.status(404).json({ error: "not found" });
 
@@ -192,17 +193,31 @@ export function registerAdminRoutes(config: AdminRoutesConfig): void {
       return res.status(409).json({ error: "location has present characters", present });
     }
 
-    const data = parseYAML(readFileSync(file, "utf-8"));
+    const data = parseYAML(readFileSync(file, "utf-8")) ?? {};
+
+    if (hard) {
+      // 硬删除：从 multi-home 数组移除条目，或删整个文件
+      if (data?.homes && Array.isArray(data.homes)) {
+        data.homes = data.homes.filter((h: any) => h.id !== id);
+        writeFileSync(file, stringifyYAML(data), "utf-8");
+      } else {
+        unlinkSync(file);
+      }
+      simulation.enqueueMutation(() => simulation.world.removeLocation(id));
+      return res.json({ ok: true, hard: true });
+    }
+
+    // 软停用：YAML 加 disabled: true，loader 下次启动跳过
     if (data?.homes && Array.isArray(data.homes)) {
-      data.homes = data.homes.filter((h: any) => h.id !== id);
+      const idx = data.homes.findIndex((h: any) => h.id === id);
+      if (idx >= 0) data.homes[idx] = { ...data.homes[idx], disabled: true };
       writeFileSync(file, stringifyYAML(data), "utf-8");
     } else {
-      unlinkSync(file);
+      data.disabled = true;
+      writeFileSync(file, stringifyYAML(data), "utf-8");
     }
-    simulation.enqueueMutation(() => {
-      simulation.world.removeLocation(id);
-    });
-    res.json({ ok: true });
+    simulation.enqueueMutation(() => simulation.world.removeLocation(id));
+    res.json({ ok: true, hard: false });
   });
 
   // ===== LLM Settings =====
