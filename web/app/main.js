@@ -11,6 +11,7 @@
 import { h, render, Fragment } from "https://esm.sh/preact@10.22.0";
 import { useState, useEffect, useMemo, useCallback } from "https://esm.sh/preact@10.22.0/hooks";
 import htm from "https://esm.sh/htm@3.1.1";
+import { LLM_PROVIDERS, getProvider } from "./providers.js";
 
 const html = htm.bind(h);
 
@@ -519,6 +520,18 @@ function SettingsPage() {
 
   const patch = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
+  // 切 provider：自动填 endpoint + 第一个模型
+  const pickProvider = (id) => {
+    const p = getProvider(id);
+    if (!p) return;
+    setForm((f) => ({
+      ...f,
+      provider: id,
+      baseUrl: p.defaultEndpoint || f.baseUrl,
+      model: p.models[0] || f.model,
+    }));
+  };
+
   const save = async () => {
     setSaving(true);
     try {
@@ -539,21 +552,34 @@ function SettingsPage() {
     finally { setTesting(false); }
   };
 
+  const currentProvider = getProvider(form.provider);
+  const knownModels = currentProvider?.models ?? [];
+
   return html`
     <h1>设置</h1>
-    <div class="subtitle">LLM provider 配置。修改后会在下一个 tick 间隙生效。</div>
-    <div style="max-width:560px;">
-      <div class="field"><label>Provider 名称</label>
-        <input value=${form.provider} onInput=${(e) => patch("provider", e.target.value)} />
+    <div class="subtitle">LLM Provider 配置（参考 fable 项目，全部走 OpenAI 兼容协议）。修改后会在下一个 tick 间隙生效。</div>
+    <div style="max-width:620px;">
+      <div class="field"><label>Provider</label>
+        <select value=${form.provider} onChange=${(e) => pickProvider(e.target.value)}>
+          ${LLM_PROVIDERS.map((p) => html`<option value=${p.id}>${p.name}${p.description ? ` — ${p.description}` : ""}</option>`)}
+        </select>
       </div>
       <div class="field"><label>Base URL</label>
         <input value=${form.baseUrl} onInput=${(e) => patch("baseUrl", e.target.value)} placeholder="https://api.deepseek.com" />
       </div>
       <div class="field"><label>API Key ${maskedKey && html`<span class="muted">（当前：${maskedKey}）</span>`}</label>
-        <input type="password" value=${form.apiKey} onInput=${(e) => patch("apiKey", e.target.value)} placeholder="sk-..." />
+        <input type="password" value=${form.apiKey} onInput=${(e) => patch("apiKey", e.target.value)} placeholder="sk-... 留空保留当前 key" />
       </div>
       <div class="field"><label>Model</label>
+        ${knownModels.length > 0 && html`
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+            ${knownModels.map((m) => html`
+              <button type="button" class=${form.model === m ? "primary" : ""} style="font-size:11px;padding:3px 8px;" onClick=${() => patch("model", m)}>${m}</button>
+            `)}
+          </div>
+        `}
         <input value=${form.model} onInput=${(e) => patch("model", e.target.value)} placeholder="deepseek-chat" />
+        <div class="muted" style="font-size:10px;margin-top:4px;">点上方按钮快速选择，也可以手动输入自定义模型名。</div>
       </div>
       <div class="row">
         <button class="primary" disabled=${saving} onClick=${save}>${saving ? "保存中…" : "保存"}</button>
@@ -561,7 +587,8 @@ function SettingsPage() {
       </div>
       <div class="muted" style="margin-top:18px;font-size:11px;">
         来源：${source || "(未保存)"}<br/>
-        API key 永远不会以明文返回；保存后只显示末 4 位。
+        API key 永远不会以明文返回；保存后只显示末 4 位。<br/>
+        当前后端只支持 OpenAI 兼容协议；Anthropic / Gemini 原生 API 需要后端再加适配器。
       </div>
     </div>
   `;

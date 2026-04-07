@@ -36,6 +36,27 @@
 
 **热重载关键设计**：API 写盘后只把变更入队 `simulation.enqueueMutation()`，下一个 `runOneTick` 开头 drain，保证不会打断正在进行的 agent 决策。
 
+**后续修复（同支线）**
+
+- **角色性别字段贯通**：`CharacterCard.gender` + `CharacterState.gender`，loader 解析 YAML 顶层 `gender` 字段，
+  prompt 注入：
+  - `buildSystemPrompt` 自我介绍带性别（`高松灯，19 岁，女性，面包店学徒。`）
+  - `buildUserPrompt`「你现在看见了谁」每条人物名后带 `（女）` / `（男）` 标签
+  - 印象渲染、关系渲染、回退渲染三处全部加上 `formatGenderTag`
+  - 兼容 female/male/女/男/中文/自定义写法
+  - 6 个角色 YAML 已回填正确性别（5 女 1 男）
+  - 前端编辑器「基本」tab 加性别 select
+- **admin GET 归一化**：之前 admin 路由直接返回 raw YAML，但 YAML 用 snake_case
+  （`core_traits`/`speech_style`/`stress_response`），前端读 camelCase 导致字段空白。
+  现在 GET 走 `loadCharacterFromYAML()` 输出归一化后的 camelCase 对象。
+- **admin PUT/POST 写盘归一化**：新增 `toYamlCharacter()`，前端提交的 camelCase 转回 snake_case 写盘，
+  保持 YAML 文件风格统一，避免混合命名风格。
+- **Settings 多 Provider 支持**：参考 `~/Opensource/projects/ai/fable/src/data/providers.ts`，
+  新增 `web/app/providers.js` 包含 12 个 OpenAI 兼容 provider 目录（DeepSeek/OpenAI/OpenRouter/Groq/Mistral/xAI/Together/Fireworks/Moonshot/SiliconFlow/Ollama/Custom）。
+  Settings 页改为 provider 下拉 → 自动填 endpoint + 模型快选按钮 + 手动覆盖输入框。
+  Anthropic / Gemini 原生 API 暂未加入（需要后端再加适配器）。
+- **OpenAICompatibleProvider baseUrl 兼容**：自动检测末尾是否带 `/v1`，避免双层 `/v1/v1/chat/completions`。
+
 **待用户验收**：
 1. 启动 `pnpm dev` 打开 http://localhost:3001/
 2. 走读 `#/live` `#/characters` `#/locations` `#/settings` 4 个页面

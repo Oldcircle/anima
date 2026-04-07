@@ -72,7 +72,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
       }));
     }
 
-    const response = await fetch(`${this._baseUrl}/v1/chat/completions`, {
+    // 兼容两种 baseUrl 写法：带 /v1 后缀（OpenAI / Together / OpenRouter 等）和不带（DeepSeek 默认）
+    const endpoint = /\/v\d+$/.test(this._baseUrl)
+      ? `${this._baseUrl}/chat/completions`
+      : `${this._baseUrl}/v1/chat/completions`;
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
