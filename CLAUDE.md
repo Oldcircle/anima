@@ -108,6 +108,9 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 - [STATUS.md](./STATUS.md) — 当前开发状态与 Live 验证结果
 - [PLAN-game-frontend.md](./PLAN-game-frontend.md) — 游戏前端设计（星露谷风格像素 RPG）
 - [PLAN-frontend-redesign.md](./PLAN-frontend-redesign.md) — `web/` 管理面板重构计划（API 设置 + 角色/地点 CRUD）
+- [DESIGN-narrative.md](./DESIGN-narrative.md) — 叙事架构设计（4 层结构 + scenario pack + beat engine + LLM director）
+- [PLAN-narrative.md](./PLAN-narrative.md) — 叙事系统分期实施计划（N0-N7）
+- [IMPORT-koukou-judgment.md](./IMPORT-koukou-judgment.md) — 扣扣审判卡导入策略（1B/2B/3C 决策记录）
 
 ## 当前迭代焦点
 
