@@ -12,8 +12,7 @@ import { Simulation } from "./agent/simulation.js";
 import { ALL_BASIC_ACTIONS } from "./actions/basic-actions.js";
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { createApiServer } from "./api/server.js";
-import { loadCharactersFromDir } from "./character/loader.js";
-import { loadLocationsFromDir } from "./world/location-loader.js";
+import { loadScenario } from "./narrative/scenario-loader.js";
 import { saveGame, loadGame } from "./persistence/save-load.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -21,13 +20,26 @@ import { addToInventory } from "./world/item-registry.js";
 
 // --- 配置 ---
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
-const DATA_DIR = join(import.meta.dirname, "..", "data");
+const PROJECT_ROOT = join(import.meta.dirname, "..");
+const DATA_DIR = join(PROJECT_ROOT, "data");
 const SAVE_FILE = join(DATA_DIR, "save.db");
 const AUTO_SAVE_INTERVAL = 96; // 每游戏日自动存档
 
-// --- 地点（从 YAML 加载，含 atmosphere 感官描写）---
-const locationDir = join(DATA_DIR, "locations");
-const LOCATIONS = loadLocationsFromDir(locationDir);
+// --- 解析 --scenario 参数 ---
+function parseScenarioArg(argv: string[]): string {
+  const i = argv.findIndex((a) => a === "--scenario" || a === "-s");
+  if (i >= 0 && argv[i + 1]) return argv[i + 1];
+  const eq = argv.find((a) => a.startsWith("--scenario="));
+  if (eq) return eq.slice("--scenario=".length);
+  return process.env.ANIMA_SCENARIO ?? "default";
+}
+const SCENARIO_ID = parseScenarioArg(process.argv.slice(2));
+
+// --- 加载 Scenario（角色 + 地点） ---
+const scenario = loadScenario(SCENARIO_ID, { projectRoot: PROJECT_ROOT });
+const LOCATIONS = scenario.locations;
+const characters = scenario.characters;
+console.log(`🎬 Scenario: ${scenario.manifest.name ?? scenario.manifest.id} (${scenario.manifest.id})`);
 console.log(`📍 加载了 ${LOCATIONS.length} 个地点: ${LOCATIONS.map((l) => l.name).join(", ")}`);
 
 // --- LLM Provider ---
@@ -43,9 +55,7 @@ const provider = new OpenAICompatibleProvider({
   defaultModel: persistedLLM?.model ?? "deepseek-chat",
 });
 
-// --- 加载角色 ---
-const characterDir = join(DATA_DIR, "characters");
-const characters = loadCharactersFromDir(characterDir);
+// --- 角色已由 scenario 加载 ---
 console.log(`📋 加载了 ${characters.length} 个角色: ${characters.map((c) => c.name).join(", ")}`);
 
 // --- 初始化世界 ---
@@ -119,8 +129,8 @@ const api = createApiServer({
   staticDir: join(import.meta.dirname, "..", "web"),
   characterCards: new Map(characters.map((c) => [c.id, c])),
   admin: {
-    charactersDir: characterDir,
-    locationsDir: locationDir,
+    charactersDir: join(PROJECT_ROOT, scenario.manifest.characterDir),
+    locationsDir: join(PROJECT_ROOT, scenario.manifest.locationDir),
     settingsFile: SETTINGS_FILE,
     provider,
   },

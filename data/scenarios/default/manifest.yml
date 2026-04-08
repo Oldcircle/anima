@@ -1,0 +1,7 @@
+id: default
+name: 默认（当前活跃角色）
+description: |
+  保留 Phase N1 之前的行为：加载 data/characters 和 data/locations
+  下所有未标 disabled: true 的 yml。pnpm dev 不带参数即等于此剧本。
+characters: "*"
+locations: "*"

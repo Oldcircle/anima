@@ -1,0 +1,29 @@
+id: mygo-seaside
+name: MyGO 海边小镇
+description: |
+  以 MyGO!!!!! 5 角色为中心的海边小镇日常剧本。
+  显式启用 5 个 MyGO 角色（即使 yml 中 disabled: true 也强制加载）。
+  地点为海边小镇全集。
+characters:
+  - tomori
+  - anon
+  - sakiko
+  - mutsumi
+  - soyo
+locations:
+  - bakery
+  - cafe
+  - flower_shop
+  - library
+  - beach
+  - dock
+  - plaza
+  - shop
+  - bar
+  - forest
+  - farm
+  - home_tomori
+  - home_anon
+  - home_sakiko
+  - home_mutsumi
+  - home_soyo
