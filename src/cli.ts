@@ -88,6 +88,19 @@ if (scenario.beats.length > 0) {
   console.log(`🎬 加载了 ${scenario.beats.length} 个 beats（规则导演）`);
 }
 
+// 启用 LLM 导演（N4）。可通过 ANIMA_DIRECTOR=off 关闭。
+const directorEnabled = process.env.ANIMA_DIRECTOR !== "off" && Boolean(persistedLLM?.apiKey ?? process.env.DEEPSEEK_API_KEY);
+if (directorEnabled) {
+  simulation.enableDirector({
+    provider,
+    modelId: persistedLLM?.model ?? "deepseek-chat",
+    dailyBudget: parseInt(process.env.ANIMA_DIRECTOR_BUDGET ?? "5", 10),
+  });
+  console.log(`🎬 LLM 导演已启用 (预算: ${process.env.ANIMA_DIRECTOR_BUDGET ?? "5"} 调用/天)`);
+} else {
+  console.log("🎬 LLM 导演已禁用 (无 API key 或 ANIMA_DIRECTOR=off)");
+}
+
 // --- 尝试读档 ---
 let startTick = 23;
 if (existsSync(SAVE_FILE)) {

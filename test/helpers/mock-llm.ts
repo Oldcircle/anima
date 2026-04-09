@@ -13,6 +13,7 @@ export class MockLLMProvider implements LLMProvider {
   readonly id = "mock";
   private _responses: LLMResponse[] = [];
   private _calls: MockLLMCall[] = [];
+  private _failures: string[] = [];
   private _defaultResponse: LLMResponse = {
     content: "",
     toolCalls: [],
@@ -37,6 +38,11 @@ export class MockLLMProvider implements LLMProvider {
     };
   }
 
+  /** 安排下次调用抛错（队列模式） */
+  failNext(message: string): void {
+    this._failures.push(message);
+  }
+
   /** 获取所有调用记录 */
   get calls(): ReadonlyArray<MockLLMCall> {
     return this._calls;
@@ -46,10 +52,14 @@ export class MockLLMProvider implements LLMProvider {
   reset(): void {
     this._responses = [];
     this._calls = [];
+    this._failures = [];
   }
 
   async chat(request: LLMRequest, modelId: string): Promise<LLMResponse> {
     this._calls.push({ modelId, request });
+    if (this._failures.length > 0) {
+      throw new Error(this._failures.shift()!);
+    }
     return this._responses.shift() ?? { ...this._defaultResponse };
   }
 }

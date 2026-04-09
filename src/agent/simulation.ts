@@ -29,6 +29,7 @@ import { detectBehaviorPatterns } from "../world/behavior-chains.js";
 import { updateWorldTension } from "../narrative/tension.js";
 import { BeatEngine, type BeatDefinition, type BeatReadyEvent } from "../narrative/beat-engine.js";
 import { buildBeatContext } from "../narrative/expression.js";
+import { Director, type DirectorConfig } from "../narrative/director.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -67,8 +68,12 @@ export class Simulation {
   impressions: ImpressionStore;
   /** N3：规则导演 */
   beatEngine: BeatEngine;
+  /** N4: LLM 导演（可选，未配置时为 undefined） */
+  director?: Director;
   /** 上一次扫描 beats 的 game day（避免同一天扫多次） */
   private _lastBeatScanDay = -1;
+  /** 上一次跑日节奏检查的 game day */
+  private _lastPacingDay = -1;
 
   constructor(
     world: World,
@@ -281,6 +286,10 @@ export class Simulation {
     // 1.0b BeatEngine 扫描（N3）：每天 22:00 一次，daily cadence
     if (gameTime.hour === 22 && gameTime.minute === 0) {
       this.runBeatScan(gameTime);
+    }
+    // 1.0c LLM Director 日节奏检查（N4）：每天 06:00 一次
+    if (gameTime.hour === 6 && gameTime.minute === 0) {
+      this.runDailyPacingCheck(gameTime);
     }
     for (const c of this.world.getAllCharacters()) {
       tickMoodlets(c, gameTime.tick);
@@ -735,6 +744,11 @@ export class Simulation {
     this.beatEngine.setTriggered(this.world.narrative.getWorld().triggeredBeats);
   }
 
+  /** 启用 LLM 导演（N4）。可选 — 不调即不启用。 */
+  enableDirector(config: DirectorConfig): void {
+    this.director = new Director(config);
+  }
+
   /**
    * 跑一次 BeatEngine.scan。
    * 1) 构建 BeatContext（从 narrative_state + relationships + needs 拼）
@@ -799,7 +813,37 @@ export class Simulation {
         witnesses: [],
       });
     }
+
+    // N4: 异步派给 LLM Director（不阻塞 tick）
+    if (this.director?.isEnabled()) {
+      const beats = this.beatEngine.getBeats();
+      for (const ev of ready) {
+        const def = beats.find((b) => b.id === ev.beatId);
+        const task = this.director.handleBeatReady(ev, this.world, def).catch((err) => {
+          console.warn(`🎬 [director] handleBeatReady 失败: ${err.message}`);
+          return null;
+        });
+        this._backgroundTasks.add(task);
+        task.finally(() => this._backgroundTasks.delete(task));
+      }
+    }
+
     return ready;
+  }
+
+  /** 每天 06:00 触发 LLM 导演的节奏检查（N4） */
+  runDailyPacingCheck(gameTime: GameTime): void {
+    if (!this.director?.isEnabled()) return;
+    const day = Math.floor(gameTime.tick / 96) + 1;
+    if (this._lastPacingDay === day) return;
+    this._lastPacingDay = day;
+
+    const task = this.director.handleDailyPacing(this.world, gameTime.tick).catch((err) => {
+      console.warn(`🎬 [director] handleDailyPacing 失败: ${err.message}`);
+      return null;
+    });
+    this._backgroundTasks.add(task);
+    task.finally(() => this._backgroundTasks.delete(task));
   }
 }
 

@@ -209,6 +209,23 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
     res.json(cards);
   });
 
+  // ── 叙事系统 (N4) ──
+  app.get("/api/narrative", (_req, res) => {
+    res.json({
+      snapshot: simulation.world.narrative.getSnapshot(),
+      beats: {
+        loaded: simulation.beatEngine.getBeats().length,
+        triggered: simulation.beatEngine.getTriggered(),
+      },
+      director: simulation.director
+        ? {
+            enabled: simulation.director.isEnabled(),
+            recentCalls: simulation.director.getCallLogs().slice(-20),
+          }
+        : { enabled: false },
+    });
+  });
+
   app.get("/api/conversations", (_req, res) => {
     // 返回当前所有活跃对话历史
     const chars = simulation.world.getAllCharacters();
@@ -258,6 +275,7 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
 
 function getWorldSnapshot(sim: Simulation) {
   const gt = tickToGameTime(sim.world.tick);
+  const ns = sim.world.narrative.getWorld();
   return {
     tick: sim.world.tick,
     gameTime: gt,
@@ -270,6 +288,14 @@ function getWorldSnapshot(sim: Simulation) {
       type: l.type,
       presentCharacters: l.presentCharacters,
     })),
+    narrative: {
+      tensionIndex: ns.tensionIndex,
+      activePhase: ns.activePhase,
+      unresolvedEventsCount: ns.unresolvedEvents.length,
+      triggeredBeatsCount: ns.triggeredBeats.length,
+      rumorsCount: ns.rumors.length,
+      directorEnabled: Boolean(sim.director?.isEnabled()),
+    },
   };
 }
 
