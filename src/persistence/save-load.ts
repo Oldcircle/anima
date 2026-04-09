@@ -71,6 +71,7 @@ export function saveGame(sim: Simulation, dbPath: string): void {
       events,
       impressions,
       longTermMemories,
+      narrativeJson: JSON.stringify(sim.world.narrative.getSnapshot()),
     });
 
     console.log(`💾 已保存到 ${dbPath} (tick=${sim.world.tick}, ${characters.length} 角色, ${memories.length} 记忆, ${relationships.length} 关系)`);
@@ -95,6 +96,14 @@ export function loadGame(sim: Simulation, dbPath: string): boolean {
     // 恢复世界状态
     sim.world.setTick(worldState.tick);
     sim.world.setWeather(worldState.weather as Weather);
+    if (worldState.narrativeJson) {
+      try {
+        const snap = JSON.parse(worldState.narrativeJson);
+        sim.world.narrative.replaceSnapshot(snap);
+      } catch (e) {
+        console.warn(`⚠️  narrative_state 读档失败: ${(e as Error).message}`);
+      }
+    }
 
     // 恢复角色状态
     const savedChars = db.loadCharacters();

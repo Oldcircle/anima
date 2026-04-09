@@ -20,6 +20,7 @@ import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
 import { buildToolList, type ToolBuildContext } from "./tool-builder.js";
 import { narrateAction } from "../memory/memory-narrator.js";
 import { applySocialModifier } from "./social-modifier.js";
+import { applyNarrativeTags, extractTagsFromArgs, hasAnyTags } from "../narrative/tag-applier.js";
 import { v4 as uuid } from "uuid";
 
 export interface AgentConfig {
@@ -151,6 +152,8 @@ export async function runAgentTick(params: {
     impressions: params.impressions,
     characterNames: new Map(world.getAllCharacters().map((c) => [c.id, c.name])),
     currentIntent,
+    unresolvedEvents: world.narrative.getUnresolvedEventsVisibleTo(card.id),
+    activePhase: world.narrative.getWorld().activePhase,
   });
 
   // 对话模式：如果提供了 conversationRequest，使用它替代标准 prompt
@@ -351,6 +354,23 @@ async function executeAction(
           state.life.skills[effect.skill] = Math.min(10, current + effect.delta);
         }
         break;
+    }
+  }
+
+  // ── 叙事标签（N2）：把工具调用的可选语义标签翻译成 narrative_state 写入 ──
+  {
+    const tags = extractTagsFromArgs(toolCall.arguments);
+    if (hasAnyTags(tags)) {
+      const targetId = (toolCall.arguments.target as string | undefined) ?? undefined;
+      const log = applyNarrativeTags(world, card.id, targetId, tags);
+      if (log.disclosedSecrets.length > 0 || log.knownFactsAdded.length > 0 || log.unresolvedWithAdded.length > 0) {
+        console.log(
+          `📖 [narrative] ${card.id} via ${toolCall.name}: ` +
+            (log.disclosedSecrets.length ? `disclosed=[${log.disclosedSecrets.join(",")}] ` : "") +
+            (log.knownFactsAdded.length ? `facts+=[${log.knownFactsAdded.join(",")}] ` : "") +
+            (log.unresolvedWithAdded.length ? `refs=[${log.unresolvedWithAdded.join(",")}]` : ""),
+        );
+      }
     }
   }
 

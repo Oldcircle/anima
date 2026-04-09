@@ -12,7 +12,7 @@
 
 Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford Generative Agents。
 
-- **5 个 AI 角色**：高松灯（面包店学徒）、千早爱音（咖啡馆店员）、丰川祥子（咖啡馆兼职）、若叶睦（花店店主）、长崎素世（图书馆管理员）
+- **可切换剧本（Scenario Pack）**：默认 `default` 剧本启用 7 个混搭角色（asuka/L/lelouch/light/rei/senjougahara/shinji），`mygo-seaside` 剧本启用 5 个 MyGO!!!!! 角色。`pnpm dev --scenario <id>` 切换。
 - **Tool-based Agent**：每个角色的行为空间由工具定义（talk/eat/work/go_to 等），LLM 自主选择
 - **零预设关系**：角色卡不包含任何跨角色引用，所有关系从零涌现
 - **五层活人感**：环境感知 + 印象系统 + 内心独白分级 + 对话模式 + 观察推理
@@ -91,15 +91,18 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 - 这是最常用的验证测试：快速验证对话、印象、观察推理完整链路
 - 输出实时 per-tick 行为 + 最终摘要 + Markdown 日志
 
-## 角色（MyGO!!!!! 适配）
+## 剧本系统（Phase N1 引入）
 
-| ID | 名字 | 职业 | 性格核心 |
-|----|------|------|---------|
-| tomori | 高松灯 | 面包店学徒 | 极度内向，断断续续，笔记本写满心里话 |
-| anon | 千早爱音 | 咖啡馆店员 | 社交达人，爱面子，内心空虚 |
-| sakiko | 丰川祥子 | 咖啡馆兼职 | 前大小姐，用礼貌当盔甲 |
-| mutsumi | 若叶睦 | 花店店主 | 沉默寡言，面无表情，暗地弹吉他 |
-| soyo | 长崎素世 | 图书馆管理员 | 温柔周到，控制欲藏在善意下 |
+通过 `data/scenarios/<id>/manifest.yml` 声明启用哪些角色和地点。
+
+| Scenario | 角色 | 用途 |
+|---|---|---|
+| `default` | asuka, L, lelouch, light, rei, senjougahara, shinji（7 个） | CLI 默认，当前活跃 sim |
+| `mygo-seaside` | tomori, anon, sakiko, mutsumi, soyo（5 个 MyGO） | 备用剧本，覆盖 yml 的 disabled flag |
+
+`data/characters/` 下还有 13 个角色 yml（含 disabled），任何 scenario 可按 id 显式启用。
+
+未来 Phase N6 会加 `koukou-judgment` 剧本（魔法少女监狱审判，14 角色 + 4 阶段 chapter loop）。
 
 ## 活跃文档
 

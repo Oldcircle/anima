@@ -85,6 +85,14 @@ export const goToAction: ActionDefinition = {
           type: "string",
           description: "目标地点 ID（如 cafe, plaza, beach, library, shop, bar, farm, forest）",
         },
+        intent: {
+          type: "string",
+          description: "（叙事标签 / 可选）你前往的真实意图：seek_someone | flee | scheduled | curiosity | hide 等。",
+        },
+        references_event: {
+          type: "string",
+          description: "（叙事标签 / 可选）此次移动针对的未解决事件 id（如要去找某人解决某事）。",
+        },
       },
       required: ["location"],
     },
@@ -122,6 +130,24 @@ export const talkAction: ActionDefinition = {
         manner: {
           type: "string",
           description: "你说话时的动作、表情、语气（可选，简短白描，如'低头搓着围裙边角'、'视线移向窗外'）",
+        },
+        topic_tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "（叙事标签 / 可选）这次对话涉及的话题主题，如 ['family','past','secret']。仅在话题有叙事意义时填写。",
+        },
+        intent: {
+          type: "string",
+          description: "（叙事标签 / 可选）你说这句话的真实意图：disclose | comfort | probe | lie | confront | apologize | flirt | warn 等。让世界更好地记住这一刻。",
+        },
+        reveals: {
+          type: "array",
+          items: { type: "string" },
+          description: "（叙事标签 / 可选）你正在向对方坦白哪些秘密的 id。只在你确实在揭示之前隐瞒过的事时填写。",
+        },
+        references_event: {
+          type: "string",
+          description: "（叙事标签 / 可选）你这次对话引用的未解决事件 id（如系统提示中列出的 unresolved_events 之一）。",
         },
       },
       required: ["target", "message"],

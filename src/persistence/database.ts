@@ -99,18 +99,25 @@ export class AnimaDB {
 
   // --- 世界状态 ---
 
-  saveWorldState(tick: number, weather: string) {
+  saveWorldState(tick: number, weather: string, narrativeJson?: string) {
     const upsert = this.db.prepare("INSERT OR REPLACE INTO world_state (key, value) VALUES (?, ?)");
     upsert.run("tick", String(tick));
     upsert.run("weather", weather);
+    if (narrativeJson !== undefined) {
+      upsert.run("narrative_state", narrativeJson);
+    }
   }
 
-  loadWorldState(): { tick: number; weather: string } | null {
+  loadWorldState(): { tick: number; weather: string; narrativeJson?: string } | null {
     const get = this.db.prepare("SELECT key, value FROM world_state");
     const rows = get.all() as Array<{ key: string; value: string }>;
     if (rows.length === 0) return null;
     const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-    return { tick: parseInt(map.tick ?? "0", 10), weather: map.weather ?? "sunny" };
+    return {
+      tick: parseInt(map.tick ?? "0", 10),
+      weather: map.weather ?? "sunny",
+      narrativeJson: map.narrative_state,
+    };
   }
 
   // --- 角色状态 ---
@@ -271,9 +278,10 @@ export class AnimaDB {
     events: any[];
     impressions?: Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; lastUpdated: number } }>;
     longTermMemories?: Array<{ characterId: string; tick: number; type: string; content: string; importance: number; relatedCharacterId?: string }>;
+    narrativeJson?: string;
   }) {
     const tx = this.db.transaction(() => {
-      this.saveWorldState(params.tick, params.weather);
+      this.saveWorldState(params.tick, params.weather, params.narrativeJson);
       for (const c of params.characters) this.saveCharacter(c);
       for (const r of params.relationships) {
         this.saveRelationship(r.characterA, r.characterB, r.level, r.type, r.lastInteraction, r.history, r.bond);

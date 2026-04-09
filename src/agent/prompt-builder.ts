@@ -304,6 +304,10 @@ export function buildUserPrompt(params: {
   characterNames?: Map<string, string>;
   /** 当前还挂在心上的短期意图 */
   currentIntent?: CharacterIntent;
+  /** 该角色能看见的未解决叙事事件（N2） */
+  unresolvedEvents?: Array<{ id: string; summary: string }>;
+  /** 当前剧本阶段（N2，可选） */
+  activePhase?: string;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
@@ -455,6 +459,15 @@ export function buildUserPrompt(params: {
     }
   }
 
+  // ── 叙事线索（N2）：注入未解决事件，给角色提供"心里挂着的事" ──
+  if (params.unresolvedEvents && params.unresolvedEvents.length > 0) {
+    const lines = params.unresolvedEvents.slice(0, 5).map((e) => `- [${e.id}] ${e.summary}`).join("\n");
+    parts.push(`\n## 还没了结的事\n${lines}\n（这些事一直在你心里。如果你的行动跟其中某件有关，可在工具的 references_event 字段填它的 id。）`);
+  }
+  if (params.activePhase) {
+    parts.push(`\n（当前剧本阶段：${params.activePhase}）`);
+  }
+
   // 角色行为强化提醒：从角色的性格特质中提取关键词，在行动指令中再次强调
   // 这是对抗 LLM 安全对齐的最后一道防线——直接在 user prompt 的决策点注入角色特质
   const traitReminder = buildTraitReminder(card);
@@ -470,6 +483,10 @@ export function buildUserPrompt(params: {
     parts.push("\n请根据以上信息，决定你现在要做什么。先简短说说你的想法（1-2句，以角色的真实内心），然后调用一个工具。");
   }
   parts.push("注意：如果你已经在目标地点了，不需要再 go_to 那里，直接做想做的事。");
+  // 叙事标签使用提示（N2，温和引导，全部可选）
+  if ((params.unresolvedEvents && params.unresolvedEvents.length > 0) || params.activePhase) {
+    parts.push("当你做有叙事意义的事（坦白秘密、揭露真相、回应挂在心上的事），可以填写工具的 intent / topic_tags / reveals / references_event 字段。这些字段全都可选，只在有意义时填，不影响你的台词本身。");
+  }
 
   return parts.join("\n");
 }

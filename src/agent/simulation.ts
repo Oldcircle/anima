@@ -26,6 +26,7 @@ import { shouldObserve, generateObservation, type ObservationResult } from "./ob
 import { tickMoodlets, generateNeedMoodlets, addMoodlet } from "../world/moodlets.js";
 import { checkPromotion, applyPromotion, type PromotionResult } from "../world/career.js";
 import { detectBehaviorPatterns } from "../world/behavior-chains.js";
+import { updateWorldTension } from "../narrative/tension.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -268,6 +269,8 @@ export class Simulation {
     // 1. 衰减需求 + Moodlet 管理
     this.world.decayNeeds();
     this.world.setTick(gameTime.tick);
+    // 1.0a 叙事张力（N2）：每 tick 末更新 tension_index
+    updateWorldTension(this.world);
     for (const c of this.world.getAllCharacters()) {
       tickMoodlets(c, gameTime.tick);
       generateNeedMoodlets(c, gameTime.tick);

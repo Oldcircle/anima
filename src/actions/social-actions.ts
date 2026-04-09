@@ -44,6 +44,14 @@ export const giveGiftAction: ActionDefinition = {
       properties: {
         target: { type: "string", description: "对象角色 ID" },
         item: { type: "string", description: "礼物名称" },
+        intent: {
+          type: "string",
+          description: "（叙事标签 / 可选）送礼意图：apologize | court | bribe | thanks | reconcile 等。",
+        },
+        references_event: {
+          type: "string",
+          description: "（叙事标签 / 可选）送礼针对的未解决事件 id。",
+        },
       },
       required: ["target", "item"],
     },

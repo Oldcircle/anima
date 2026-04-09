@@ -15,10 +15,13 @@ import type {
 import type { LifeState } from "../character/types.js";
 import { tickToGameTime, type GameTime } from "../core/tick-engine.js";
 import { getDefaultNeeds, getDecayRates } from "./need-definitions.js";
+import { NarrativeState } from "../narrative/narrative-state.js";
 
 export class World {
   private _state: WorldState;
   private _characters: Map<string, CharacterState> = new Map();
+  /** 叙事状态命名空间（N2 引入）。与 needs/relationships 平级。 */
+  readonly narrative: NarrativeState;
 
   constructor(locations: Location[], initialTick = 0) {
     this._state = {
@@ -26,6 +29,7 @@ export class World {
       weather: "sunny",
       locations: new Map(locations.map((l) => [l.id, { ...l, presentCharacters: [...l.presentCharacters] }])),
     };
+    this.narrative = new NarrativeState();
   }
 
   get tick(): number {
