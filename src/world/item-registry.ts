@@ -11,24 +11,24 @@ import type { ItemDef, ItemInstance } from "./item-types.js";
 
 const CONSUMABLES: ItemDef[] = [
   // 面包店
-  { id: "bread_plain", name: "白面包", type: "consumable", value: 5, stackable: true, effects: { hunger: 25 }, traits: ["food", "basic"] },
-  { id: "bread_red_bean", name: "红豆面包", type: "consumable", value: 8, stackable: true, effects: { hunger: 35, fun: 3 }, traits: ["food", "sweet"] },
-  { id: "croissant", name: "可颂", type: "consumable", value: 10, stackable: true, effects: { hunger: 30, fun: 5 }, traits: ["food", "pastry"] },
+  { id: "bread_plain", name: "白面包", type: "consumable", value: 5, stackable: true, effects: { hunger: 35 }, traits: ["food", "basic"] },
+  { id: "bread_red_bean", name: "红豆面包", type: "consumable", value: 8, stackable: true, effects: { hunger: 45, fun: 3 }, traits: ["food", "sweet"] },
+  { id: "croissant", name: "可颂", type: "consumable", value: 10, stackable: true, effects: { hunger: 40, fun: 5 }, traits: ["food", "pastry"] },
   // 咖啡馆
   { id: "coffee_latte", name: "拿铁", type: "consumable", value: 8, stackable: true, effects: { energy: 12, fun: 5, bladder: -15 }, traits: ["drink", "hot"] },
   { id: "coffee_americano", name: "美式咖啡", type: "consumable", value: 6, stackable: true, effects: { energy: 15, fun: 2, bladder: -15 }, traits: ["drink", "hot", "bitter"] },
-  { id: "sandwich", name: "三明治", type: "consumable", value: 12, stackable: true, effects: { hunger: 40, fun: 3 }, traits: ["food"] },
-  { id: "cake_slice", name: "蛋糕", type: "consumable", value: 15, stackable: true, effects: { hunger: 15, fun: 10 }, traits: ["food", "sweet", "treat"] },
+  { id: "sandwich", name: "三明治", type: "consumable", value: 12, stackable: true, effects: { hunger: 55, fun: 3 }, traits: ["food"] },
+  { id: "cake_slice", name: "蛋糕", type: "consumable", value: 15, stackable: true, effects: { hunger: 25, fun: 10 }, traits: ["food", "sweet", "treat"] },
   // 酒吧
   { id: "beer", name: "啤酒", type: "consumable", value: 10, stackable: true, effects: { fun: 15, social: 5, energy: -3, bladder: -20 }, traits: ["drink", "alcohol"] },
-  { id: "juice", name: "果汁", type: "consumable", value: 6, stackable: true, effects: { hunger: 5, fun: 5, bladder: -10 }, traits: ["drink", "sweet"] },
+  { id: "juice", name: "果汁", type: "consumable", value: 6, stackable: true, effects: { hunger: 8, fun: 5, bladder: -10 }, traits: ["drink", "sweet"] },
   // 杂货店
-  { id: "bento", name: "便当", type: "consumable", value: 10, stackable: true, effects: { hunger: 45, fun: 3 }, traits: ["food", "prepared"] },
+  { id: "bento", name: "便当", type: "consumable", value: 10, stackable: true, effects: { hunger: 60, fun: 3 }, traits: ["food", "prepared"] },
   { id: "water_bottle", name: "矿泉水", type: "consumable", value: 3, stackable: true, effects: { energy: 3, bladder: -5 }, traits: ["drink", "basic"] },
-  { id: "onigiri", name: "饭团", type: "consumable", value: 5, stackable: true, effects: { hunger: 20 }, traits: ["food", "basic", "portable"] },
+  { id: "onigiri", name: "饭团", type: "consumable", value: 5, stackable: true, effects: { hunger: 30 }, traits: ["food", "basic", "portable"] },
   // 自制
-  { id: "home_cooked_meal", name: "家常饭", type: "consumable", value: 5, stackable: false, effects: { hunger: 60, fun: 5 }, traits: ["food", "homemade"] },
-  { id: "fresh_fish", name: "鲜鱼", type: "consumable", value: 8, stackable: true, effects: { hunger: 20 }, traits: ["food", "raw", "fresh"], description: "刚钓上来的鱼" },
+  { id: "home_cooked_meal", name: "家常饭", type: "consumable", value: 5, stackable: false, effects: { hunger: 75, fun: 5 }, traits: ["food", "homemade"] },
+  { id: "fresh_fish", name: "鲜鱼", type: "consumable", value: 8, stackable: true, effects: { hunger: 30 }, traits: ["food", "raw", "fresh"], description: "刚钓上来的鱼" },
 ];
 
 const TOOLS: ItemDef[] = [

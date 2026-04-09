@@ -165,14 +165,24 @@ export class World {
     return true;
   }
 
-  /** 每 tick 衰减所有角色的需求值（数据驱动，遍历定义列表） */
+  /**
+   * 每 tick 衰减所有角色的需求值（数据驱动，遍历定义列表）
+   *
+   * 睡眠时身体需求衰减减半（hunger/bladder/hygiene）—— 模拟真人睡觉时
+   * 代谢变慢。energy 不变（睡觉本来就是为了恢复 energy）。
+   */
   decayNeeds(): void {
     const decayRates = getDecayRates();
+    const SLEEP_SLOWDOWN_NEEDS = new Set(["hunger", "bladder", "hygiene"]);
     for (const character of this._characters.values()) {
+      const isAsleep = character.currentAction?.name === "sleep";
       for (const [needId, delta] of Object.entries(decayRates)) {
-        if (character.needs[needId] !== undefined) {
-          character.needs[needId] = Math.max(0, Math.min(100, character.needs[needId] + delta));
+        if (character.needs[needId] === undefined) continue;
+        let effectiveDelta = delta;
+        if (isAsleep && SLEEP_SLOWDOWN_NEEDS.has(needId)) {
+          effectiveDelta = delta * 0.5; // 睡眠时减半
         }
+        character.needs[needId] = Math.max(0, Math.min(100, character.needs[needId] + effectiveDelta));
       }
     }
   }

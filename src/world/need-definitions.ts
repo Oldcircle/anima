@@ -38,7 +38,9 @@ export const NEED_DEFINITIONS: NeedDefinition[] = [
   {
     id: "hunger",
     category: "physical",
-    decayRate: -2,
+    // -1/tick × 96 ticks/day = -96/天，配合 3 顿饭（每顿 ~30-40 恢复）
+    // 起点 80 + 3 餐 90 = 170 - 96 衰减 = 74，能撑过一整天
+    decayRate: -1,
     defaultValue: 80,
     feelings: [
       { below: 15, severity: "urgent", text: "饿到胃在抽痛，必须马上吃点东西。" },
@@ -100,7 +102,7 @@ export const NEED_DEFINITIONS: NeedDefinition[] = [
   {
     id: "bladder",
     category: "physical",
-    decayRate: -1.5,
+    decayRate: -1,
     defaultValue: 90,
     feelings: [
       { below: 15, severity: "urgent", text: "快憋不住了，必须马上找厕所。" },

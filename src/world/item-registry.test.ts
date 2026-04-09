@@ -17,7 +17,7 @@ describe("Item Registry", () => {
     expect(bread).toBeDefined();
     expect(bread!.name).toBe("红豆面包");
     expect(bread!.type).toBe("consumable");
-    expect(bread!.effects?.hunger).toBe(35);
+    expect(bread!.effects?.hunger).toBe(45);
   });
 
   it("getItemDef 对未知 ID 返回 undefined", () => {

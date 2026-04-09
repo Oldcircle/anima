@@ -43,12 +43,32 @@ describe("World", () => {
     world.decayNeeds();
 
     const tomoriAfter = world.getCharacter("tomori")!.needs;
-    expect(tomoriAfter.hunger).toBe(tomoriBefore.hunger - 2);
+    expect(tomoriAfter.hunger).toBe(tomoriBefore.hunger - 1);
     expect(tomoriAfter.energy).toBe(tomoriBefore.energy - 1);
     expect(tomoriAfter.social).toBe(tomoriBefore.social - 1);
     expect(tomoriAfter.fun).toBe(tomoriBefore.fun - 1.5);
-    expect(tomoriAfter.bladder).toBe(tomoriBefore.bladder - 1.5);
+    expect(tomoriAfter.bladder).toBe(tomoriBefore.bladder - 1);
     expect(tomoriAfter.hygiene).toBe(tomoriBefore.hygiene - 0.5);
+  });
+
+  it("睡觉时 hunger/bladder/hygiene 衰减减半，energy 不变", () => {
+    const world = createTestWorldWithCharacters();
+    const tomori = world.getCharacter("tomori")!;
+    tomori.currentAction = { name: "sleep", remainingTicks: 8 };
+    const before = { ...tomori.needs };
+
+    world.decayNeeds();
+
+    const after = world.getCharacter("tomori")!.needs;
+    // 减半的需求
+    expect(after.hunger).toBe(before.hunger - 0.5);   // -1 * 0.5
+    expect(after.bladder).toBe(before.bladder - 0.5); // -1 * 0.5
+    expect(after.hygiene).toBe(before.hygiene - 0.25);// -0.5 * 0.5
+    // 不变的（睡觉本来就是为了恢复 energy，衰减保持原样）
+    expect(after.energy).toBe(before.energy - 1);
+    // 心理需求不影响
+    expect(after.social).toBe(before.social - 1);
+    expect(after.fun).toBe(before.fun - 1.5);
   });
 
   it("需求值不低于 0", () => {

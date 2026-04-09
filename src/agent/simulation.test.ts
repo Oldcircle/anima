@@ -74,7 +74,7 @@ describe("Simulation", () => {
     const tomoriBefore = { ...world.getCharacter("tomori")!.needs };
     await sim.runOneTick(tickToGameTime(1));
 
-    expect(world.getCharacter("tomori")!.needs.hunger).toBe(tomoriBefore.hunger - 2);
+    expect(world.getCharacter("tomori")!.needs.hunger).toBe(tomoriBefore.hunger - 1);
   });
 
   it("talk 通过信箱发送消息并触发反应轮", async () => {
