@@ -97,12 +97,12 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 
 | Scenario | 角色 | 用途 |
 |---|---|---|
-| `default` | asuka, L, lelouch, light, rei, senjougahara, shinji（7 个） | CLI 默认，当前活跃 sim |
-| `mygo-seaside` | tomori, anon, sakiko, mutsumi, soyo（5 个 MyGO） | 备用剧本，覆盖 yml 的 disabled flag |
+| `default` | asuka, L, lelouch, light, rei, senjougahara, shinji（7 个） | CLI 默认 |
+| `mygo-seaside` | tomori, anon, sakiko, mutsumi, soyo（5 个 MyGO） | 备用剧本 |
+| `koukou-judgment` | 14 个魔法少女（艾玛/希罗/雪莉/诺亚/蕾雅/...） | 弹丸论破式审判，含 seeds + beats + trial 工具 |
 
-`data/characters/` 下还有 13 个角色 yml（含 disabled），任何 scenario 可按 id 显式启用。
-
-未来 Phase N6 会加 `koukou-judgment` 剧本（魔法少女监狱审判，14 角色 + 4 阶段 chapter loop）。
+`data/characters/` 下含 27 个角色 yml（多数标 disabled，由各 scenario 显式启用）。
+`data/locations/` 下含 43+ 个地点 yml（含 25 个监狱地点，标 disabled，由 koukou-judgment 显式启用）。
 
 ## 活跃文档
 
@@ -117,9 +117,13 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 
 ## 当前迭代焦点
 
-- 角色不该每个 tick 都像“重新做人”；未完成的念头要能自然延续
-- 角色的行为不该只留在日志里；要在场景中留下能被别人看见和误读的痕迹
-- 优先实现：`currentIntent` 真正接入决策循环、`observableState` 成为观察/印象系统的输入
+**N0-N6 完成，N7 收尾中**：叙事系统已完整接入。
+- 规则导演 (BeatEngine) + LLM 导演 (Director) 双层架构
+- scenario pack 抽象支持任意剧本切换
+- koukou-judgment（魔法少女监狱审判）作为完整旗舰剧本
+- 玩家通过 web 叙事面板可塞纸条、注入事件、触发 director
+
+完整规划见 PLAN-narrative.md，当前进度见 STATUS.md。
 
 ## 环境配置
 

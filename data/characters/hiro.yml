@@ -1,4 +1,5 @@
 id: "hiro"
+disabled: true
 name: "二阶堂希罗"
 gender: "female"
 age: 15

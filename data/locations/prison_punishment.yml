@@ -1,4 +1,5 @@
 id: prison_punishment
+disabled: true
 name: 惩罚房
 type: special
 summary: |

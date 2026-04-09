@@ -1,4 +1,5 @@
 id: prison_infirmary
+disabled: true
 name: 监狱医务室
 type: public
 summary: |

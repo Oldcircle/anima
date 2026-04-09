@@ -1,4 +1,5 @@
 id: prison_courtyard
+disabled: true
 name: 中庭
 type: nature
 summary: |

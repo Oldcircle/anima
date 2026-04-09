@@ -1,4 +1,5 @@
 id: prison_hall
+disabled: true
 name: 玄关大厅
 type: public
 summary: |

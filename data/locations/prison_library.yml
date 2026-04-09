@@ -1,4 +1,5 @@
 id: prison_library
+disabled: true
 name: 图书室
 type: public
 summary: |

@@ -3,6 +3,7 @@
 
 homes:
   - id: cell_b1_ema
+    disabled: true
     name: 艾玛的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。艾玛的住处。
@@ -13,6 +14,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_hiro
+    disabled: true
     name: 希罗的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。希罗的住处。
@@ -23,6 +25,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_shelly
+    disabled: true
     name: 雪莉的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。雪莉的住处。
@@ -33,6 +36,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_noah
+    disabled: true
     name: 诺亚的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。诺亚的住处。
@@ -43,6 +47,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_arisa
+    disabled: true
     name: 亚里沙的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。亚里沙的住处。
@@ -53,6 +58,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_anan
+    disabled: true
     name: 安安的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。安安的住处。
@@ -63,6 +69,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_milia
+    disabled: true
     name: 米莉亚的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。米莉亚的住处。
@@ -73,6 +80,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_nayaka
+    disabled: true
     name: 奈叶香的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。奈叶香的住处。
@@ -83,6 +91,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_marg
+    disabled: true
     name: 玛格的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。玛格的住处。
@@ -93,6 +102,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_melulu
+    disabled: true
     name: 梅露露的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。梅露露的住处。
@@ -103,6 +113,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_leya
+    disabled: true
     name: 蕾雅的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。蕾雅的住处。
@@ -113,6 +124,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_hanna
+    disabled: true
     name: 汉娜的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。汉娜的住处。
@@ -123,6 +135,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_yukio
+    disabled: true
     name: 月代雪的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。月代雪的住处。
@@ -133,6 +146,7 @@ homes:
       night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
 
   - id: cell_b1_coco
+    disabled: true
     name: 可可的牢房
     type: residential
     summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。可可的住处。

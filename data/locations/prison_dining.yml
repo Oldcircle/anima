@@ -1,4 +1,5 @@
 id: prison_dining
+disabled: true
 name: 监狱食堂
 type: public
 summary: |
