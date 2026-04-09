@@ -1,0 +1,94 @@
+# 海边三人 — beats
+# 6 个简短 beats 推动一个微型 arc
+# 设计：让玩家在 1-2 个游戏日内就能看到完整的 beat → director → 角色反应链
+
+beats:
+  # ─── Day 1 早晨 ───
+  - id: trio_d1_morning_check
+    description: 第一天早上 — 让 director 启动叙事张力
+    preconditions:
+      all:
+        - "world.day == 1"
+    priority: 10
+    on_trigger:
+      hint: |
+        三人都背着秘密。开场就给一个角色注入念头让他/她去找另一个角色。
+        建议优先：
+        - inject_intent 给 shinji 一个想找绫波丽的念头（呼应 rei_strange_silence_at_beach）
+        - 或 inject_intent 给 asuka 想去咖啡馆的念头（间接接近 shinji）
+        不要让 director 制造新人物或新事件 — 用现有 unresolved_events 中的内容。
+
+  # ─── Day 1 下午 ───
+  - id: trio_d1_secret_revealed
+    description: 至少有一个未解决事件被某个角色注意到
+    preconditions:
+      all:
+        - "world.day >= 1"
+    fallback_deadline_day: 2
+    priority: 8
+    on_trigger:
+      hint: |
+        让 director 用 inject_observation 让一个角色"想起"或"突然意识到"
+        某个其他角色的反常。例如：
+        - 让 asuka 突然想起昨晚的眼泪还没擦干
+        - 让 shinji 想起他写的那封信被人看到了
+        让叙事张力上升。
+
+  # ─── Day 2 早晨 ───
+  - id: trio_d2_confrontation_pressure
+    description: 三人的关系到了不得不互动的时候
+    preconditions:
+      all:
+        - "world.day >= 2"
+    fallback_deadline_day: 3
+    priority: 7
+    on_trigger:
+      hint: |
+        必须让其中两人产生一次有意义的相遇。
+        director 可以：
+        - inject_intent 给 asuka "今天必须找真嗣问清楚"
+        - 或 set_observable_state 让某人显现出"再也压不住"的状态
+        重点：呼应已经存在的 unresolved events，不要凭空造新冲突。
+
+  # ─── Day 2 下午 ───
+  - id: trio_d2_rei_reveals_something
+    description: 绫波丽的沉默被打破
+    preconditions:
+      all:
+        - "world.day >= 2"
+    fallback_deadline_day: 3
+    priority: 7
+    on_trigger:
+      hint: |
+        绫波丽是三人中最神秘的。让她开始"做点什么"。
+        director 可以：
+        - inject_intent 给 rei "我必须告诉某个人那件事"
+        - 或 add_unresolved_event 揭示绫波丽在海边发呆的原因
+        她的角色弧应该开始动起来。
+
+  # ─── Day 3 ───
+  - id: trio_d3_climax
+    description: 第 3 天 — 关键时刻
+    preconditions:
+      all:
+        - "world.day >= 3"
+    fallback_deadline_day: 4
+    priority: 9
+    on_trigger:
+      hint: |
+        三人的故事到了一个 climax 节点。
+        director 应该让所有未解决的事件向某个核心场景汇集。
+        可以注入一个"今晚必须聚到一起"的强 intent。
+        不要解决全部事件 — 留一些悬念。
+
+  # ─── 兜底 director nudge ───
+  - id: trio_pacing_check
+    description: 第 2 天结束如果世界仍然太平淡 — 兜底
+    preconditions:
+      all:
+        - "false"  # 永不自然触发
+    fallback_deadline_day: 2
+    priority: 1
+    on_trigger:
+      hint: |
+        如果到了第 2 天 22:00 角色们还各过各的，注入一个轻度扰动。

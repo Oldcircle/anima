@@ -346,6 +346,43 @@ export class Simulation {
       const state = this.world.getCharacter(id);
       if (!state) continue;
 
+      // Bug #3 修复：主循环也检测对话活跃，活跃时用 conversation mode
+      // 这能让角色在主决策点也能看到完整对话历史 + "不要重复"指令
+      let conversationRequest: import("../providers/types.js").LLMRequest | undefined;
+      const activePartnerId = this._findActiveConversationPartner(id, gameTime.tick);
+      if (activePartnerId) {
+        const partnerConfig = this._configs.get(activePartnerId);
+        const partnerState = this.world.getCharacter(activePartnerId);
+        if (partnerConfig && partnerState) {
+          const location = this.world.getLocation(state.locationId);
+          const rel = this.relationships.get(id, activePartnerId);
+          const recentMemoriesText = this.memory.formatForPrompt(id, 12);
+          const impressionText = this.impressions.formatForPrompt(id, activePartnerId);
+          const wpId = state.life?.workplace ?? config.card.life?.workplace;
+          const wpName = wpId ? this.world.getLocation(wpId)?.name : undefined;
+          conversationRequest = buildConversationRequest({
+            card: config.card,
+            state,
+            partnerCard: partnerConfig.card,
+            partnerState,
+            history: this.conversations.getHistory(id, activePartnerId),
+            gameTime,
+            locationName: location?.name ?? state.locationId,
+            atmosphere: location?.atmosphere,
+            weather: this.world.weather,
+            relationship: rel,
+            impressionText,
+            recentMemories: recentMemoriesText,
+            actions: this._actions,
+            workplaceName: wpName,
+            colleagueNames: this.relationships.getRelationshipsOf(id)
+              .filter((r) => r.relationship.bond === "colleague")
+              .map((r) => this.world.getCharacter(r.otherId)?.name)
+              .filter((n): n is string => !!n),
+          });
+        }
+      }
+
       promises.push(runAgentTick({
         config,
         world: this.world,
@@ -356,6 +393,7 @@ export class Simulation {
         memory: this.memory,
         impressions: this.impressions,
         phaseTools: this._getActivePhaseTools(),
+        conversationRequest,
       }));
     }
 
@@ -761,6 +799,29 @@ export class Simulation {
     const phase = this.world.narrative.getWorld().activePhase;
     if (!phase) return [];
     return this.phaseTools[phase] ?? [];
+  }
+
+  /**
+   * Bug #3 修复用：查找该角色当前是否在和某人对话中。
+   * 返回最近一次对话的对方 id，如果没有活跃对话返回 undefined。
+   * 主 agent 循环会用这个来决定是否进入 conversation mode。
+   */
+  private _findActiveConversationPartner(charId: string, currentTick: number): string | undefined {
+    let bestPartner: string | undefined;
+    let bestTick = -1;
+    for (const other of this._configs.keys()) {
+      if (other === charId) continue;
+      if (this.conversations.isActiveConversation(charId, other, currentTick)) {
+        // 找最近一次 talk 的 partner
+        const history = this.conversations.getHistory(charId, other);
+        const lastTick = history.length > 0 ? history[history.length - 1]!.tick : -1;
+        if (lastTick > bestTick) {
+          bestTick = lastTick;
+          bestPartner = other;
+        }
+      }
+    }
+    return bestPartner;
   }
 
   /**

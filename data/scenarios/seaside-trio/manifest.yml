@@ -1,0 +1,25 @@
+id: seaside-trio
+name: 海边三人 — 明日香、真嗣、绫波丽
+description: |
+  3 角色精简剧本，专门用来低成本验证叙事系统效果。
+  Eva 三人组在海边小镇相遇，每个人都背着秘密。
+  对比 koukou-judgment 14 角色，token 成本约 1/5。
+  适合短时间体验完整 director→character 闭环。
+
+characters:
+  - asuka
+  - shinji
+  - rei
+
+locations:
+  # 主要活动场所
+  - cafe
+  - bakery
+  - beach
+  - plaza
+  - shop
+  - flower_shop
+  # 三个家
+  - home_asuka
+  - home_shinji
+  - home_rei

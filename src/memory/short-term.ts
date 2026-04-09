@@ -56,9 +56,23 @@ export class ShortTermMemory {
     return entries.filter((e) => e.tick >= dayStartTick && e.tick <= dayEndTick);
   }
 
-  /** 格式化为 prompt 文本（含时间戳、连续压缩、对话标注） */
+  /**
+   * 拿出最近的纯想法（thought 类型），按时间正序。
+   * 用于 prompt 单独渲染"你刚才想过的"段落。
+   */
+  getRecentThoughts(characterId: string, count = 5): MemoryEntry[] {
+    const entries = this._memories.get(characterId) ?? [];
+    const thoughts = entries.filter((e) => e.type === "thought");
+    return thoughts.slice(-count);
+  }
+
+  /**
+   * 格式化为 prompt 文本（含时间戳、连续压缩、对话标注）
+   * 注意：thought 类型已被 prompt-builder 单独成段，这里跳过它们避免重复。
+   */
   formatForPrompt(characterId: string, count = 10): string {
-    const entries = this.getRecent(characterId, count);
+    const allEntries = this.getRecent(characterId, count * 2);
+    const entries = allEntries.filter((e) => e.type !== "thought").slice(-count);
     if (entries.length === 0) return "";
 
     // 第一遍：对话未回复检测

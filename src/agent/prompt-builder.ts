@@ -308,6 +308,10 @@ export function buildUserPrompt(params: {
   unresolvedEvents?: Array<{ id: string; summary: string }>;
   /** 当前剧本阶段（N2，可选） */
   activePhase?: string;
+  /** 角色自己最近的一句 talk（防止字面重复） */
+  lastSelfTalk?: { target: string; message: string; tick: number };
+  /** 角色最近的想法（单独成段渲染，让模型看到自己想过什么） */
+  recentThoughts?: Array<{ tick: number; content: string }>;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
@@ -445,11 +449,35 @@ export function buildUserPrompt(params: {
     } else if (streak >= 2) {
       hint += `你刚才也做了这个。`;
     }
+
+    // 如果上次是 talk，把具体说过的话亮出来，并明确禁止字面重复
+    if (params.lastSelfTalk && lastAction === "talk") {
+      hint += `\n你刚刚对 ${params.lastSelfTalk.target} 说过：「${params.lastSelfTalk.message}」`;
+      hint += `\n⚠️ 严禁重复你刚才说过的话。如果对方还没新的反应可以让你回应，你应该：`;
+      hint += `\n  - 等一下（调用 sit / stroll / journal 等其他行为）`;
+      hint += `\n  - 或换一个完全不同的话题`;
+      hint += `\n  - 或离开（go_to）`;
+      hint += `\n绝不能再说一遍刚才已经说过的内容。`;
+    }
+
     parts.push(`\n## 你刚刚\n${hint}`);
   }
 
+  // 你刚才想过的（单独成段，让模型看清自己脑子里转过什么）
+  if (params.recentThoughts && params.recentThoughts.length > 0) {
+    const thoughtLines = params.recentThoughts
+      .map((t) => {
+        const gt = (t.tick % 96 / 4) | 0;
+        const min = ((t.tick % 4) * 15);
+        const time = `${String(gt).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+        return `- [${time}] ${t.content}`;
+      })
+      .join("\n");
+    parts.push(`\n## 你刚才在脑子里转过的念头\n${thoughtLines}`);
+  }
+
   if (params.recentMemories) {
-    parts.push(`\n## 你的记忆（最近经历）\n${params.recentMemories}`);
+    parts.push(`\n## 你做过的事和发生的事\n${params.recentMemories}`);
   }
 
   if (recentEvents.length > 0) {

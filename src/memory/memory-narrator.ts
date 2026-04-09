@@ -90,7 +90,9 @@ export function narrateAction(params: {
       const target = args.target as string | undefined;
       const message = args.message as string | undefined;
       if (target && message) {
-        const short = message.length > 60 ? message.slice(0, 60) + "…" : message;
+        // 不再截断到 60 字 — 角色必须记得自己具体说过什么，否则会原地重复。
+        // 250 字足够装一段长台词，超出才省略。
+        const short = message.length > 250 ? message.slice(0, 250) + "…" : message;
         return `对${target}说：「${short}」`;
       }
       return `和${target ?? "别人"}聊了聊`;

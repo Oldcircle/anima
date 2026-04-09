@@ -1,0 +1,46 @@
+# 海边三人 — 初始世界状态
+# 给 sim 一个"已经运行了一段时间"的起点
+
+active_phase: peaceful
+
+# ── 4 个开场未解决事件 ──
+# 设计目的：每个事件都涉及至少 2 个角色，让 director 有充足上下文
+unresolved_events:
+  - id: shinji_left_letter_yesterday
+    summary: 真嗣昨天在咖啡馆桌上忘了一封没寄出的信，明日香路过时看见了一行字"对不起..."
+    involved: [shinji, asuka]
+    visible_to: [shinji, asuka]
+
+  - id: rei_strange_silence_at_beach
+    summary: 绫波丽这几天每天傍晚都会去海边发呆 - 没人知道为什么，但她以前不这样
+    involved: [rei]
+    visible_to: "*"
+
+  - id: asuka_crying_at_night
+    summary: 明日香的邻居说昨晚听到她房间传出哭声 — 但她白天的态度像没事一样
+    involved: [asuka]
+    visible_to: [shinji, rei]
+
+  - id: trio_avoiding_each_other
+    summary: 三个人最近三天没有同时出现在任何一个地方 — 像是在故意避开
+    involved: [asuka, shinji, rei]
+    visible_to: "*"
+
+# ── 初始关系（带数值起点） ──
+# Eva 原作中三人的羁绊
+character_relationships:
+  - { a: asuka, b: shinji, level: 50, type: "复杂", bond: "complicated" }
+  - { a: shinji, b: asuka, level: 35, type: "怕但在意", bond: "complicated" }
+  - { a: shinji, b: rei, level: 60, type: "心动", bond: "crush" }
+  - { a: rei, b: shinji, level: 50, type: "默默关注", bond: "watching" }
+  - { a: asuka, b: rei, level: 25, type: "莫名敌意", bond: "rival" }
+  - { a: rei, b: asuka, level: 30, type: "看不透" }
+
+# ── 初始流言 ──
+initial_rumors:
+  - content: "听说真嗣最近每天都在咖啡馆呆到打烊 — 他在等谁吗？"
+    source_char_id: ~
+    spread_to: [asuka, rei]
+  - content: "镇上有人说看到明日香一个人去了花店买花 — 她从没买过花"
+    source_char_id: ~
+    spread_to: [shinji, rei]

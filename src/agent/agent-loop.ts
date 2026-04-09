@@ -108,6 +108,25 @@ export async function runAgentTick(params: {
   const recentEvents = eventBus.query({ actorId: card.id, limit: 5 });
   const recentMemories = params.memory?.formatForPrompt(card.id, 12) ?? "";
 
+  // 单独提取最近 5 条想法，prompt 会拎出来单独成段（让 LLM 清楚看到自己最近想过什么）
+  const recentThoughts = params.memory?.getRecentThoughts(card.id, 5) ?? [];
+
+  // 提取这个角色最近的 talk（用于"你刚刚"段防止字面重复）
+  // 从最新往前找第一个 "对X说：「Y」" 事件
+  let lastSelfTalk: { target: string; message: string; tick: number } | undefined;
+  if (params.memory) {
+    const recent = params.memory.getRecent(card.id, 8);
+    for (let i = recent.length - 1; i >= 0; i--) {
+      const e = recent[i]!;
+      if (e.type !== "event" || !e.relatedCharacterId) continue;
+      const m = e.content.match(/^对.+?说：「(.+?)」$/);
+      if (m && m[1]) {
+        lastSelfTalk = { target: e.relatedCharacterId, message: m[1], tick: e.tick };
+        break;
+      }
+    }
+  }
+
   // 动态组装工具列表（情境工具系统）
   const characterNames = new Map(world.getAllCharacters().map((c) => [c.id, c.name]));
   const dynamicActions = buildToolList({
@@ -158,6 +177,8 @@ export async function runAgentTick(params: {
     currentIntent,
     unresolvedEvents: world.narrative.getUnresolvedEventsVisibleTo(card.id),
     activePhase: world.narrative.getWorld().activePhase,
+    lastSelfTalk,
+    recentThoughts: recentThoughts.map((t) => ({ tick: t.tick, content: t.content })),
   });
 
   // 对话模式：如果提供了 conversationRequest，使用它替代标准 prompt
@@ -217,6 +238,44 @@ export async function runAgentTick(params: {
   if (!availableNames.includes(toolCall.name)) {
     console.log(`[${card.id}] ⚠️ 不存在的工具: ${toolCall.name}`);
   }
+  // 字面重复拦截 (Bug #4): 如果 LLM 生成的 talk 和最近说过的话一字不差，
+  // 强行降级为 sit/journal，避免角色卡死。
+  if (toolCall.name === "talk" && params.memory) {
+    const newMessage = (toolCall.arguments.message as string ?? "").trim();
+    const newTarget = (toolCall.arguments.target as string ?? "").trim();
+    if (newMessage && newTarget) {
+      const recent = params.memory.getRecent(card.id, 8);
+      let isLiteralRepeat = false;
+      for (let i = recent.length - 1; i >= 0; i--) {
+        const e = recent[i]!;
+        if (e.type !== "event") continue;
+        if (e.relatedCharacterId !== newTarget) continue;
+        const m = e.content.match(/^对.+?说：「(.+?)」$/);
+        if (m && m[1]) {
+          // 比较前 100 字（避免微小字符差异；80% 以上重叠也算重复）
+          const oldHead = m[1].slice(0, 100);
+          const newHead = newMessage.slice(0, 100);
+          if (oldHead === newHead) {
+            isLiteralRepeat = true;
+            console.warn(`[${card.id}] ⚠️ 字面重复拦截: 对 ${newTarget} 重复了刚说过的话「${newHead.slice(0,40)}…」`);
+            break;
+          }
+        }
+      }
+      if (isLiteralRepeat) {
+        // 降级为 sit（如果工具列表里有），否则 stroll，否则什么都不做
+        const fallback = dynamicActions.find((a) => ["sit", "stroll", "journal", "use_toilet"].includes(a.tool.name));
+        if (fallback) {
+          toolCall.name = fallback.tool.name;
+          toolCall.arguments = {};
+        } else {
+          // 没合适的降级工具：返回 skip
+          return { characterId: card.id, thought: thought + "（觉得自己刚才已经说过这句了，决定先不说话）", skipped: true, skipReason: "literal_talk_repeat" };
+        }
+      }
+    }
+  }
+
   const result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought, params.relationships);
 
   // 收到的信箱消息存入记忆，并给读信者加社交
