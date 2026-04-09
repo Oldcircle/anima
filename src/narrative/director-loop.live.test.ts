@@ -105,10 +105,28 @@ describe.skipIf(SKIP)("Director → Character closed loop (live)", () => {
 
     console.log("\n=== Step B 闭环测试开始 ===");
 
-    // ─── Phase 1: 触发 director ───
-    console.log("\n--- Phase 1: 触发 director (06:00 daily pacing) ---");
-    sim.runDailyPacingCheck(tickToGameTime(24));
-    await new Promise((r) => setTimeout(r, 30_000)); // 等 director 完成
+    // ─── Phase 1: 触发 director (用 beat_ready，闭环测试不依赖 pacing 启发式) ───
+    console.log("\n--- Phase 1: 触发 director (fake beat_ready) ---");
+    // D1 改造后 daily pacing 变得保守（多数 do_nothing），闭环测试改用 beat_ready
+    // 这个 trigger 路径强制 director 必须做出某种"让 beat 发生"的决策。
+    await sim.director!.handleBeatReady(
+      {
+        beatId: "asuka_silence_followup",
+        reason: "preconditions_met",
+        triggeredDay: 1,
+        triggeredTick: 24,
+      },
+      world,
+      {
+        id: "asuka_silence_followup",
+        description: "明日香昨天沉默事件的后续：今天必须有人主动靠近她或她自己开口",
+        preconditions: { all: ["world.day == 1"] },
+        priority: 10,
+        on_trigger: {
+          hint: "明日香昨天在咖啡馆突然沉默了一下午。今天 beat 触发——你必须让某种'后续'发生。建议：给 alice 注入一个想找 bob 谈谈的 intent，或给 bob 注入一个想去关心 alice 的 intent。inject_intent 是首选工具。",
+        },
+      } as any,
+    );
 
     const directorLogs = sim.director!.getCallLogs();
     expect(directorLogs.length).toBeGreaterThanOrEqual(1);

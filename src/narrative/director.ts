@@ -273,12 +273,15 @@ export class Director {
           ? `${response.content}\n[工具调用结果]\n${assistantSummary}`
           : `[工具调用结果]\n${assistantSummary}`,
       });
+      const isBeatReady = params.trigger === "beat_ready";
       messages.push({
         role: "user",
         content:
           writeCallCount === 0
-            ? "继续。如果信息已经够了，请调用 1-2 个写工具（inject_intent / inject_observation / amplify_event 等），或调用 do_nothing 结束。"
-            : "继续。你已经做出了改动，可以再补一个写工具或调 do_nothing 结束。",
+            ? isBeatReady
+              ? "继续。你已经 read 了，现在**必须**调用至少一个写工具（首选 inject_intent）让这个 beat 在世界里发生。还没到调 do_nothing 的时候。"
+              : "继续。如果信息够了，请调用 1-2 个写工具，或调 do_nothing 结束。"
+            : "继续。你已经做出了改动，可以再补一个写工具或不再调用工具来结束。",
       });
     }
 
@@ -358,21 +361,21 @@ ${charLines}
     world: World,
   ): { system: string; user: string } {
     const system = `你是一名"世界导演"。你的工作不是当角色，不是写台词，而是决定"该让什么发生"。
-你看不见的角色们正在自主生活；你只在世界需要轻推时介入。
+你看不见的角色们正在自主生活；现在一个**剧情节拍 (beat) 已经触发**——这意味着故事需要这件事发生，而你必须让它发生。
 
 铁律：
 1. 你**不能**让角色直接说话。你没有任何 talk/say 工具。台词永远由角色自己产出。
 2. 所有角色 id 必须来自下面列出的"角色"列表，**绝不允许**编造或使用动漫角色名。
 3. **先看后写**：在调用任何写工具之前，**至少先调用一次 read_character 或 read_scene** 调查相关角色/场景的真实状态。世界快照里只有 id 列表，详情必须自己 read。
-4. 写工具（每次调用最多用 2 个写工具）：
-   - inject_intent: 注入念头（强力，慎用）
+4. **beat_ready 必须介入**：beat 触发就意味着这一刻该有事发生。read 完之后你**必须**至少调用一个写工具（inject_intent / inject_observation / add_unresolved_event 等）。do_nothing 仅在你确认这个 beat 已经在世界里自然发生（read 看到了证据）时才允许。
+5. 写工具（每次调用最多用 2 个）：
+   - inject_intent: 注入念头（最有效，首选）
    - inject_observation: 让角色注意到某事
    - set_observable_state: 改可观察痕迹
    - add_unresolved_event / add_rumor: 添加事件/流言（呼应现有故事）
    - nudge_weather: 调天气（极少用）
-   - mark_beat_resolved / do_nothing
-5. 工作流：先 read 1-2 次 → 思考 → 写 1-2 个工具 → 用 do_nothing 或不再调用工具来结束。最多 5 步。
-6. 如果 read 完之后觉得世界已经在轨道上，直接 do_nothing 是好答案。`;
+   - mark_beat_resolved: beat 已发生时调用
+6. 工作流：先 read 1-2 次 → 思考 → 写 1-2 个工具 → 不再调用工具来结束。最多 5 步。`;
 
     const beatHint = beatDef?.on_trigger as { hint?: string; director_hint?: string } | undefined;
     const hintText = beatHint?.director_hint ?? beatHint?.hint ?? event.description ?? "";
