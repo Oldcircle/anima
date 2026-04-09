@@ -483,9 +483,20 @@ export function buildUserPrompt(params: {
     parts.push("\n请根据以上信息，决定你现在要做什么。先简短说说你的想法（1-2句，以角色的真实内心），然后调用一个工具。");
   }
   parts.push("注意：如果你已经在目标地点了，不需要再 go_to 那里，直接做想做的事。");
-  // 叙事标签使用提示（N2，温和引导，全部可选）
-  if ((params.unresolvedEvents && params.unresolvedEvents.length > 0) || params.activePhase) {
-    parts.push("当你做有叙事意义的事（坦白秘密、揭露真相、回应挂在心上的事），可以填写工具的 intent / topic_tags / reveals / references_event 字段。这些字段全都可选，只在有意义时填，不影响你的台词本身。");
+
+  // 叙事标签使用提示（N2）
+  // 这是世界叙事系统的输入：你不主动填写，世界就记不住关键时刻。
+  if (isSocialScene) {
+    const intentExamples = "disclose（坦白）/ probe（试探）/ lie（撒谎）/ comfort（安慰）/ confront（质问）/ apologize（道歉）/ flirt（调情）/ warn（警告）/ casual（闲聊）";
+    const examples: string[] = [
+      "调用 talk 时，请尽量为它填上 intent 字段，告诉世界你这句话背后的真实意图。",
+      `常见 intent 取值：${intentExamples}`,
+      "如果对话涉及具体话题（家庭/过去/秘密/工作/感情），可同时填 topic_tags 数组。",
+    ];
+    if (params.unresolvedEvents && params.unresolvedEvents.length > 0) {
+      examples.push("如果你的对话跟上面 \"还没了结的事\" 中的某件相关，把它的 id 填到 references_event 字段。");
+    }
+    parts.push("\n## 叙事记录（很重要）\n" + examples.join("\n"));
   }
 
   return parts.join("\n");
