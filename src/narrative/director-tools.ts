@@ -13,6 +13,7 @@ import type { World } from "../world/world.js";
 import type { CharacterIntent } from "../world/types.js";
 import type { ShortTermMemory } from "../memory/short-term.js";
 import type { ImpressionStore } from "../memory/impressions.js";
+import type { InMemoryPulseStore } from "./pulse-store.js";
 
 export interface DirectorToolContext {
   world: World;
@@ -22,6 +23,8 @@ export interface DirectorToolContext {
   memory?: ShortTermMemory;
   /** D1: read 工具需要访问印象库 */
   impressions?: ImpressionStore;
+  /** D2: read_pulse_outcome 工具需要访问 pulse store */
+  pulseStore?: InMemoryPulseStore;
 }
 
 export interface DirectorToolResult {

@@ -11,6 +11,7 @@
  */
 
 import type { DirectorToolDefinition, DirectorToolResult } from "./director-tools.js";
+import { OBSERVATION_WINDOW } from "./pulse-store.js";
 
 const HISTORY_WINDOW_TICKS = 8;
 const SCENE_EVENT_WINDOW = 10;
@@ -188,10 +189,59 @@ export const readArcStatusTool: DirectorToolDefinition = {
   },
 };
 
+// ── read_pulse_outcome (D2) ──
+
+export const readPulseOutcomeTool: DirectorToolDefinition = {
+  tool: {
+    name: "read_pulse_outcome",
+    description:
+      "查看你之前一次写工具调用（pulse）后世界实际发生了什么。返回 expected（你当时的期望）+ observed（reducer 自动回填的目标角色后续行为摘要）。如果 pulse 还在 observation 窗口内（< 8 tick），observed 会是空。可用 list_recent_pulses 找 pulse_id（D2 暂未实现 list，请记住自己刚才返回的 pulse_id）。",
+    parameters: {
+      type: "object",
+      properties: {
+        pulse_id: { type: "string", description: "pulse id（形如 pulse_<tick>_<n>）" },
+      },
+      required: ["pulse_id"],
+    },
+  },
+  handler: (args, ctx): DirectorToolResult => {
+    const id = args.pulse_id as string;
+    if (!id) return { ok: false, description: "缺少 pulse_id", error: "missing_arg" };
+    if (!ctx.pulseStore) {
+      return {
+        ok: false,
+        description: "pulseStore 未配置（director 未启用 D2 反馈）",
+        error: "no_pulse_store",
+      };
+    }
+    const p = ctx.pulseStore.get(id);
+    if (!p) return { ok: false, description: `pulse ${id} 不存在`, error: "unknown_pulse" };
+
+    const lines = [
+      `pulse_id: ${p.id}`,
+      `tick: ${p.tick} (创建)`,
+      `工具: ${p.toolName}`,
+      `目标角色: ${p.targetChar ?? "(无)"}`,
+      `expected: ${p.expected ?? "(未声明)"}`,
+      `observed: ${
+        p.observed ?? `(尚在观察窗口内，需等到 tick ${p.tick + OBSERVATION_WINDOW} 之后)`
+      }`,
+      p.observedAtTick !== undefined ? `observed_at_tick: ${p.observedAtTick}` : "",
+    ].filter(Boolean);
+
+    return {
+      ok: true,
+      description: lines.join("\n"),
+      changed: { read_pulse_outcome: id },
+    };
+  },
+};
+
 export const ALL_DIRECTOR_READ_TOOLS: DirectorToolDefinition[] = [
   readCharacterTool,
   readSceneTool,
   readArcStatusTool,
+  readPulseOutcomeTool,
 ];
 
 export const READ_TOOL_NAMES = new Set(ALL_DIRECTOR_READ_TOOLS.map((t) => t.tool.name));

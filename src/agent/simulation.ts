@@ -30,6 +30,7 @@ import { updateWorldTension } from "../narrative/tension.js";
 import { BeatEngine, type BeatDefinition, type BeatReadyEvent } from "../narrative/beat-engine.js";
 import { buildBeatContext } from "../narrative/expression.js";
 import { Director, type DirectorConfig } from "../narrative/director.js";
+import { observePulses } from "../narrative/pulse-store.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -257,6 +258,12 @@ export class Simulation {
   async runOneTick(gameTime: GameTime): Promise<TickSummary> {
     // -1. 应用 API 层入队的角色/地点/provider 变更（保证 tick 内一致）
     this.drainMutations();
+
+    // D2: 让 director 的 pulse store 把已过观察窗口的 pulse 自动 observe 回填
+    const pulseStore = this.director?.getPulseStore();
+    if (pulseStore) {
+      observePulses(pulseStore, this.memory, gameTime.tick);
+    }
 
     // 0. 每天凌晨更新天气 + 检查节日
     if (gameTime.hour === 0 && gameTime.minute === 0) {

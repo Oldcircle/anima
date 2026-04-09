@@ -25,11 +25,35 @@ import {
   type DirectorToolResult,
 } from "./director-tools.js";
 import { ALL_DIRECTOR_READ_TOOLS, READ_TOOL_NAMES } from "./director-read-tools.js";
+import { InMemoryPulseStore, extractTargetChar, type PulseRecord } from "./pulse-store.js";
 
 const FORBIDDEN_TOOL_PREFIXES = ["talk", "say", "speak", "message"]; // 兜底防越权
 
 // D1: 合并写工具 + 读工具
-const ALL_TOOLS: DirectorToolDefinition[] = [...ALL_DIRECTOR_TOOLS, ...ALL_DIRECTOR_READ_TOOLS];
+// D2: 给所有写工具的 schema 注入可选 expected 字段（不修改原 handler）
+const WRITE_TOOLS_WITH_EXPECTED: DirectorToolDefinition[] = ALL_DIRECTOR_TOOLS.map((t) => {
+  if (t.tool.name === "do_nothing" || t.tool.name === "mark_beat_resolved") return t;
+  const params = t.tool.parameters as { type: string; properties?: Record<string, unknown>; required?: string[] };
+  if (!params.properties || params.properties.expected) return t;
+  return {
+    ...t,
+    tool: {
+      ...t.tool,
+      parameters: {
+        ...params,
+        properties: {
+          ...params.properties,
+          expected: {
+            type: "string",
+            description:
+              "(可选) 你期望这次注入之后世界发生什么。仅用于后续 read_pulse_outcome 自查，写一句话即可。",
+          },
+        },
+      },
+    },
+  };
+});
+const ALL_TOOLS: DirectorToolDefinition[] = [...WRITE_TOOLS_WITH_EXPECTED, ...ALL_DIRECTOR_READ_TOOLS];
 function lookupTool(name: string): DirectorToolDefinition | undefined {
   return ALL_TOOLS.find((t) => t.tool.name === name);
 }
@@ -55,6 +79,10 @@ export interface DirectorConfig {
   impressions?: ImpressionStore;
   /** D1: 是否启用 read 工具 + tool loop 模式（默认 true，可关闭回退到旧单步路径） */
   useReadTools?: boolean;
+  /** D2: pulse 反馈闭环。不传则自动创建一个 InMemoryPulseStore（除非 usePulseFeedback=false） */
+  pulseStore?: InMemoryPulseStore;
+  /** D2: 是否启用 pulse 反馈（默认 true） */
+  usePulseFeedback?: boolean;
 }
 
 export interface DirectorCallLog {
@@ -74,6 +102,8 @@ export class Director {
   private memory?: ShortTermMemory;
   private impressions?: ImpressionStore;
   private useReadTools: boolean;
+  private pulseStore?: InMemoryPulseStore;
+  private usePulseFeedback: boolean;
 
   /** 每天的剩余调用预算（key = game day） */
   private budgetByDay = new Map<number, number>();
@@ -89,6 +119,15 @@ export class Director {
     this.memory = config.memory;
     this.impressions = config.impressions;
     this.useReadTools = config.useReadTools ?? true;
+    this.usePulseFeedback = config.usePulseFeedback ?? true;
+    this.pulseStore = this.usePulseFeedback
+      ? config.pulseStore ?? new InMemoryPulseStore()
+      : undefined;
+  }
+
+  /** D2: 暴露 pulse store 供外部 reducer 调用 + 测试访问 */
+  getPulseStore(): InMemoryPulseStore | undefined {
+    return this.pulseStore;
   }
 
   isEnabled(): boolean {
@@ -160,6 +199,7 @@ export class Director {
       tick: params.tick,
       memory: this.memory,
       impressions: this.impressions,
+      pulseStore: this.pulseStore,
     };
 
     const useLoop = this.useReadTools;
@@ -206,7 +246,7 @@ export class Director {
 
       // 一次最多处理 2 个 tool call（同一步里）
       let stepHadTerminal = false;
-      const stepResults: Array<{ name: string; result: DirectorToolResult }> = [];
+      const stepResults: Array<{ name: string; result: DirectorToolResult; pulseId?: string }> = [];
 
       for (const tc of toolCalls.slice(0, 2)) {
         // 越权防御
@@ -250,12 +290,26 @@ export class Director {
 
         const result = tool.handler(tc.arguments, ctx);
         appliedCalls.push({ name: tc.name, args: tc.arguments, result });
-        stepResults.push({ name: tc.name, result });
+
+        // D2: 写工具成功 → 记录 pulse
+        let pulseId: string | undefined;
+        const isTerminal = tc.name === "do_nothing" || tc.name === "mark_beat_resolved";
+        if (!isRead && !isTerminal && result.ok && this.pulseStore) {
+          pulseId = this.pulseStore.nextId(params.tick);
+          const pulse: PulseRecord = {
+            id: pulseId,
+            tick: params.tick,
+            toolName: tc.name,
+            targetChar: extractTargetChar(tc.arguments),
+            args: tc.arguments,
+            expected: typeof tc.arguments.expected === "string" ? tc.arguments.expected : undefined,
+          };
+          this.pulseStore.record(pulse);
+        }
+        stepResults.push({ name: tc.name, result, pulseId });
 
         if (!isRead) writeCallCount++;
-        if (tc.name === "do_nothing" || tc.name === "mark_beat_resolved") {
-          stepHadTerminal = true;
-        }
+        if (isTerminal) stepHadTerminal = true;
       }
 
       // 如果这一步只调了写工具，达到了写上限，结束
@@ -265,7 +319,10 @@ export class Director {
 
       // 把这一步的结果反喂回 messages，供下一轮决策
       const assistantSummary = stepResults
-        .map((r) => `调用 ${r.name} → ${r.result.ok ? "ok" : "fail"}: ${truncate(r.result.description, 600)}`)
+        .map((r) => {
+          const tag = r.pulseId ? ` [${r.pulseId}]` : "";
+          return `调用 ${r.name}${tag} → ${r.result.ok ? "ok" : "fail"}: ${truncate(r.result.description, 600)}`;
+        })
         .join("\n");
       messages.push({
         role: "assistant",
@@ -375,7 +432,8 @@ ${charLines}
    - add_unresolved_event / add_rumor: 添加事件/流言（呼应现有故事）
    - nudge_weather: 调天气（极少用）
    - mark_beat_resolved: beat 已发生时调用
-6. 工作流：先 read 1-2 次 → 思考 → 写 1-2 个工具 → 不再调用工具来结束。最多 5 步。`;
+6. 工作流：先 read 1-2 次 → 思考 → 写 1-2 个工具 → 不再调用工具来结束。最多 5 步。
+7. **每次写工具都建议带 expected 字段**（一句话："我期望 alice 下一 tick 主动 talk bob"）。这会被记成 pulse，下次 invoke 时你可以用 read_pulse_outcome 查回看实际发生了什么。`;
 
     const beatHint = beatDef?.on_trigger as { hint?: string; director_hint?: string } | undefined;
     const hintText = beatHint?.director_hint ?? beatHint?.hint ?? event.description ?? "";

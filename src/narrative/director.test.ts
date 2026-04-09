@@ -155,6 +155,46 @@ describe("Director", () => {
     expect(mockLLM.calls.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("D2: pulse store auto-records successful write tool calls", async () => {
+    mockLLM.enqueueResponse("", [
+      { name: "read_character", arguments: { character_id: "alice" } },
+    ]);
+    mockLLM.enqueueResponse("", [
+      {
+        name: "inject_intent",
+        arguments: {
+          character_id: "alice",
+          summary: "想找 bob 谈谈",
+          target_character_id: "bob",
+          expected: "alice 下一 tick 主动 talk(bob)",
+        },
+      },
+    ]);
+    mockLLM.enqueueResponse("", [{ name: "do_nothing", arguments: {} }]);
+
+    await director.handleBeatReady(fakeBeatReady, world);
+
+    const store = director.getPulseStore()!;
+    expect(store).toBeDefined();
+    const pulses = store.list();
+    expect(pulses.length).toBe(1);
+    expect(pulses[0]!.toolName).toBe("inject_intent");
+    expect(pulses[0]!.targetChar).toBe("alice");
+    expect(pulses[0]!.expected).toBe("alice 下一 tick 主动 talk(bob)");
+    expect(pulses[0]!.observed).toBeUndefined(); // 还没到窗口
+  });
+
+  it("D2: do_nothing 和 mark_beat_resolved 不记 pulse", async () => {
+    mockLLM.enqueueResponse("", [{ name: "do_nothing", arguments: {} }]);
+    await director.handleBeatReady(fakeBeatReady, world);
+    expect(director.getPulseStore()!.size()).toBe(0);
+  });
+
+  it("D2: usePulseFeedback=false 时禁用 pulse store", async () => {
+    director = new Director({ provider: mockLLM, modelId: "test", usePulseFeedback: false });
+    expect(director.getPulseStore()).toBeUndefined();
+  });
+
   it("D1: write call cap blocks excessive writes across steps", async () => {
     // Step 1: 一次塞 2 个写
     mockLLM.enqueueResponse("", [
