@@ -82,6 +82,12 @@ const simulation = new Simulation(world, eventBus, {
   modelId: persistedLLM?.model ?? "deepseek-chat",
 });
 
+// 加载剧本的 beats（N3）
+if (scenario.beats.length > 0) {
+  simulation.loadBeats(scenario.beats);
+  console.log(`🎬 加载了 ${scenario.beats.length} 个 beats（规则导演）`);
+}
+
 // --- 尝试读档 ---
 let startTick = 23;
 if (existsSync(SAVE_FILE)) {

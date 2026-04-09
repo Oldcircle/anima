@@ -27,6 +27,8 @@ import { tickMoodlets, generateNeedMoodlets, addMoodlet } from "../world/moodlet
 import { checkPromotion, applyPromotion, type PromotionResult } from "../world/career.js";
 import { detectBehaviorPatterns } from "../world/behavior-chains.js";
 import { updateWorldTension } from "../narrative/tension.js";
+import { BeatEngine, type BeatDefinition, type BeatReadyEvent } from "../narrative/beat-engine.js";
+import { buildBeatContext } from "../narrative/expression.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -63,6 +65,10 @@ export class Simulation {
   memory: ShortTermMemory;
   conversations: ConversationTracker;
   impressions: ImpressionStore;
+  /** N3：规则导演 */
+  beatEngine: BeatEngine;
+  /** 上一次扫描 beats 的 game day（避免同一天扫多次） */
+  private _lastBeatScanDay = -1;
 
   constructor(
     world: World,
@@ -75,6 +81,7 @@ export class Simulation {
     this.memory = new ShortTermMemory();
     this.conversations = new ConversationTracker();
     this.impressions = new ImpressionStore();
+    this.beatEngine = new BeatEngine();
     this._provider = config.provider;
     this._modelId = config.modelId;
     this._actions = config.actions;
@@ -271,6 +278,10 @@ export class Simulation {
     this.world.setTick(gameTime.tick);
     // 1.0a 叙事张力（N2）：每 tick 末更新 tension_index
     updateWorldTension(this.world);
+    // 1.0b BeatEngine 扫描（N3）：每天 22:00 一次，daily cadence
+    if (gameTime.hour === 22 && gameTime.minute === 0) {
+      this.runBeatScan(gameTime);
+    }
     for (const c of this.world.getAllCharacters()) {
       tickMoodlets(c, gameTime.tick);
       generateNeedMoodlets(c, gameTime.tick);
@@ -714,6 +725,81 @@ export class Simulation {
     // 4. 匹配不上，记录警告并原样返回（后续 talk handler 会拦截）
     console.warn(`[resolveCharacterId] "${raw}" 无法匹配任何角色`);
     return raw;
+  }
+
+  // ── N3: BeatEngine 扫描 ──
+
+  /** 将 scenario 加载的 beats 灌入 engine（CLI / 测试 setup 用）。 */
+  loadBeats(beats: BeatDefinition[]): void {
+    this.beatEngine.setBeats(beats);
+    this.beatEngine.setTriggered(this.world.narrative.getWorld().triggeredBeats);
+  }
+
+  /**
+   * 跑一次 BeatEngine.scan。
+   * 1) 构建 BeatContext（从 narrative_state + relationships + needs 拼）
+   * 2) scan
+   * 3) 把触发的 beats 写回 narrative_state
+   * 4) emit 事件到 event bus（N4 director 订阅）
+   */
+  runBeatScan(gameTime: GameTime): BeatReadyEvent[] {
+    if (this.beatEngine.getBeats().length === 0) return [];
+
+    // 同一天扫描幂等：若本 game day 已扫过则跳过
+    const day = Math.floor(gameTime.tick / 96) + 1;
+    if (this._lastBeatScanDay === day) return [];
+    this._lastBeatScanDay = day;
+
+    // 构建上下文
+    const allChars = this.world.getAllCharacters();
+    const charRelationships: Record<string, Record<string, { level: number; type: string; bond?: string; trust: number }>> = {};
+    const charNeeds: Record<string, Record<string, number>> = {};
+    const charLocations: Record<string, string> = {};
+    for (const c of allChars) {
+      const rels: Record<string, { level: number; type: string; bond?: string; trust: number }> = {};
+      for (const { otherId, relationship: rel } of this.relationships.getRelationshipsOf(c.id)) {
+        rels[otherId] = {
+          level: rel.level,
+          type: rel.type,
+          bond: rel.bond,
+          // 简单 trust 派生：level 0..100 → 0..1
+          trust: Math.max(0, Math.min(1, rel.level / 100)),
+        };
+      }
+      charRelationships[c.id] = rels;
+      charNeeds[c.id] = { ...c.needs };
+      charLocations[c.id] = c.locationId;
+    }
+
+    const ctx = buildBeatContext({
+      narrative: this.world.narrative.getSnapshot(),
+      tick: gameTime.tick,
+      characterRelationships: charRelationships,
+      characterNeeds: charNeeds,
+      characterLocations: charLocations,
+    });
+
+    const ready = this.beatEngine.scan(ctx);
+
+    if (ready.length === 0) return [];
+
+    console.log(`🎬 [beat] scan @ day ${day}: ${ready.length} beat(s) ready`);
+    for (const ev of ready) {
+      console.log(`   → ${ev.beatId} (${ev.reason}) ${ev.description ?? ""}`);
+      this.world.narrative.markBeatTriggered(ev.beatId);
+      // 同步 emit 到 event bus，N4 director 会订阅
+      this.eventBus.emit({
+        id: `beat_${ev.beatId}_${gameTime.tick}`,
+        tick: gameTime.tick,
+        type: "beat.ready",
+        actorId: "__beat_engine__",
+        locationId: "__system__",
+        description: `Beat 触发: ${ev.beatId} (${ev.reason})`,
+        effects: [],
+        witnesses: [],
+      });
+    }
+    return ready;
   }
 }
 

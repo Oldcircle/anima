@@ -21,6 +21,7 @@ import { loadCharacterFromYAML, loadCharactersFromDir } from "../character/loade
 import { loadLocationsFromDir } from "../world/location-loader.js";
 import type { CharacterCard } from "../character/types.js";
 import type { Location } from "../world/types.js";
+import { parseBeatsConfig, type BeatDefinition } from "./beat-engine.js";
 
 export interface ScenarioManifest {
   id: string;
@@ -36,6 +37,8 @@ export interface LoadedScenario {
   manifest: ScenarioManifest;
   characters: CharacterCard[];
   locations: Location[];
+  /** beats.yml 内容（如有） */
+  beats: BeatDefinition[];
 }
 
 const DEFAULT_CHARACTER_DIR = "data/characters";
@@ -108,8 +111,17 @@ export function loadScenario(
 
   const characters = loadCharactersBySelector(characterDirAbs, manifest.characters);
   const locations = loadLocationsBySelector(locationDirAbs, manifest.locations);
+  const beats = loadBeats(scenariosRoot, scenarioId);
 
-  return { manifest, characters, locations };
+  return { manifest, characters, locations, beats };
+}
+
+function loadBeats(scenariosRoot: string, scenarioId: string): BeatDefinition[] {
+  const path = join(scenariosRoot, scenarioId, "beats.yml");
+  if (!existsSync(path)) return [];
+  const raw = readFileSync(path, "utf-8");
+  const parsed = parseYAML(raw);
+  return parseBeatsConfig(parsed);
 }
 
 function loadCharactersBySelector(
