@@ -50,6 +50,8 @@ export async function runAgentTick(params: {
   impressions?: ImpressionStore;
   /** 对话模式覆盖：如果提供，跳过标准 prompt 构建，直接使用这个 LLM request */
   conversationRequest?: LLMRequest;
+  /** Phase-specific 工具集 (N6.4) - 当 active_phase 匹配时浮现 */
+  phaseTools?: ActionDefinition[];
 }): Promise<AgentTickResult> {
   const { config, world, eventBus, gameTime } = params;
   const { card, actions, provider, modelId } = config;
@@ -119,6 +121,8 @@ export async function runAgentTick(params: {
     hour: gameTime.hour,
     relationships: params.relationships,
     characterNames,
+    activePhase: world.narrative.getWorld().activePhase,
+    phaseTools: params.phaseTools,
   });
 
   // 构建 prompt

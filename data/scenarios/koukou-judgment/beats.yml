@@ -1,0 +1,241 @@
+# 扣扣审判 — 第一章 beats
+#
+# 设计哲学：beats = 必须发生的"事件锚点"
+#  - 不规定具体台词或行动 (那些由角色 LLM emergent)
+#  - 用 preconditions + fallback_deadline_day 保证发生
+#  - on_trigger.director_hint 给 LLM director 引导发生方式
+#
+# 第一章 4 个 phase：peaceful → investigation → trial → execution
+# active_phase 由 director 在 phase_transition 触发时通过 inject_intent
+# 或 add_unresolved_event 改世界状态。phase 状态机由人工 phase_transition
+# beats 推进（暂未实现 active_phase 的写入工具，N7 时再加）。
+#
+# 偏离原卡的关键决策（D2 允许偏离 + 必须合理）:
+#  - 希罗在原卡 day 1 被看守杀掉，本剧本里**保留她活着**作为 sim 持续角色
+#    （理由：她是详细写的核心，杀掉浪费内容）
+#  - Trial 简化为 3 轮（原卡 6 轮，N6 完成标准）
+#  - 凶手 / 受害者 / 凶器保持原卡：诺亚被蕾雅杀
+
+beats:
+  # ═══════════════════ Day 1: 适应期 ═══════════════════
+
+  - id: c1_d1_morning_assembly
+    description: 第一天 - 所有少女在会客厅集合，第一次见面
+    preconditions:
+      all:
+        - "world.day == 1"
+    priority: 10
+    on_trigger:
+      hint: |
+        让 13 个少女对"被关进监狱"产生第一反应。
+        每个角色的反应应该符合性格：
+        - shelly 兴奋
+        - hanna 装大小姐
+        - hiro 冷淡观察艾玛
+        - ema 紧张但试图友好
+        - 蕾雅自我介绍当领导
+        director 应该 inject_intent 给 ema 一个"想找希罗说话"的念头。
+
+  - id: c1_d1_hiro_pushes_ema
+    description: 希罗在走廊推开试图接近的艾玛 (核心冲突起点)
+    preconditions:
+      all:
+        - "world.day >= 1"
+        - "characters.ema.relationships.hiro.trust < 0.4"
+    fallback_deadline_day: 2
+    priority: 8
+    on_trigger:
+      hint: |
+        希罗对艾玛的厌恶必须以某种方式被场上其他角色看到，
+        变成公开的事实。director 可以 set_observable_state 给希罗
+        一个冷漠的姿态描写，或 add_unresolved_event 让其他角色
+        议论这件事。
+
+  # ═══════════════════ Day 2-3: 张力积累 ═══════════════════
+
+  - id: c1_d2_noah_paints_room
+    description: 诺亚把自己的牢房整个涂成白色 - 准备最后的画布
+    preconditions:
+      all:
+        - "world.day >= 2"
+    fallback_deadline_day: 3
+    priority: 6
+    on_trigger:
+      hint: |
+        让 director 添加 set_observable_state 给 noah:
+        "全身沾满白色喷漆，沉迷在自己的世界里"
+        并 add_unresolved_event "诺亚在牢房做什么没人知道"
+
+  - id: c1_d2_leya_reveals_jealousy
+    description: 蕾雅第一次表现出对诺亚名气的嫉妒 (动机伏笔)
+    preconditions:
+      all:
+        - "world.day >= 2"
+    fallback_deadline_day: 3
+    priority: 7
+    on_trigger:
+      hint: |
+        蕾雅是即将杀人的凶手，她对"诺亚 = 气球 = 比她更红的明星"心怀嫉妒。
+        director 应该 add_unresolved_event 描述：
+        "蕾雅在听到大家议论诺亚的画时，表情明显变僵了一下"
+        让其他角色注意到这个细节。
+
+  - id: c1_d3_strange_disappearances
+    description: 弩枪和发带相继失踪 - 没人知道是谁拿的
+    preconditions:
+      all:
+        - "world.day >= 3"
+    fallback_deadline_day: 4
+    priority: 9
+    on_trigger:
+      hint: |
+        关键的线索铺垫。director 应该:
+        add_unresolved_event "弩枪上的箭两天前不见了，弩枪本体昨天也不见了"
+        add_unresolved_event "奈叶香的发带丢了，谁也没承认拿过"
+        这两件事会在审判中成为关键证据。
+
+  # ═══════════════════ Day 4: 案发 → Investigation phase ═══════════════════
+
+  - id: c1_d4_noah_murdered
+    description: 城崎诺亚被发现死在自己的牢房中 - 进入案发搜查阶段
+    preconditions:
+      all:
+        - "world.day >= 4"
+    fallback_deadline_day: 5
+    priority: 100   # 最高优先级 - 必须发生
+    on_trigger:
+      hint: |
+        【关键 phase transition】
+        诺亚被发现死在涂成纯白的牢房中，胸口中箭，地上用她自己的血画满蝴蝶。
+        现场没有足迹（凶手用了假象）。
+
+        director 必须：
+        1. add_unresolved_event id="noah_murder":
+           "城崎诺亚被发现死在自己的纯白牢房，胸口中箭，地上用血画着蝴蝶。
+            现场没有足迹，像是密室。"
+        2. inject_observation 给 anan (第一发现者) 和 ema:
+           "你看到了诺亚的尸体，那双总是似笑非笑的眼睛永远闭上了"
+        3. set_observable_state 给所有角色一种压抑感
+      new_phase: investigation
+
+  - id: c1_investigation_evidence_drops
+    description: 搜查阶段 - 关键证据被找到
+    preconditions:
+      all:
+        - "world.day >= 4"
+    fallback_deadline_day: 6
+    priority: 50
+    on_trigger:
+      hint: |
+        director 应该一次性 add_unresolved_event 多个证据：
+        - "弩枪零件在过道垃圾桶里被发现 - 弩枪在案发前已被拆"
+        - "奈叶香的发带在湖边被亚里沙捡到 - 沾有血迹和颜料"
+        - "扫帚被拆解的痕迹"
+        - "苹果上有白色颜料 - 蕾雅的剑曾沾过白漆"
+        让推理派的角色 (shelly, ema, hiro) 注意到这些。
+
+  # ═══════════════════ Day 5: Trial phase ═══════════════════
+
+  - id: c1_trial_opens
+    description: 魔女审判开庭 - 进入审判阶段
+    preconditions:
+      all:
+        - "world.day >= 5"
+    fallback_deadline_day: 6
+    priority: 100
+    on_trigger:
+      hint: |
+        【关键 phase transition - investigation → trial】
+        典狱长广播召集所有囚犯到审判庭。
+
+        director 必须：
+        1. inject_intent 给所有还活着的角色:
+           "我必须去审判庭，开始辩论谁是凶手"
+        2. add_unresolved_event "审判已经开庭，必须在限定时间内投出魔女"
+      new_phase: trial
+
+  # 简化版 trial — 3 轮辩论 (原卡 6 轮)
+  - id: c1_trial_round1_butterfly
+    description: 第一轮辩论 - 蝴蝶画的含义
+    preconditions:
+      all:
+        - "world.day >= 5"
+    fallback_deadline_day: 6
+    priority: 80
+    on_trigger:
+      hint: |
+        让 ema 或 shelly 提出蝴蝶画不是死亡讯息，而是诺亚的标志。
+        director inject_intent 给 ema:
+        "我必须解释清楚 - 蝴蝶不是凶手的暗示，是诺亚一直画的图案"
+
+  - id: c1_trial_round2_locked_room
+    description: 第二轮辩论 - 密室之谜（无足迹）
+    preconditions:
+      all:
+        - "world.day >= 5"
+    fallback_deadline_day: 6
+    priority: 70
+    on_trigger:
+      hint: |
+        分析现场没有足迹的问题。
+        director inject_intent 给 shelly 或 hiro:
+        "我必须分析为什么现场没有足迹 - 凶手是从门外刺杀的"
+
+  - id: c1_trial_round3_apple_paint
+    description: 第三轮辩论 - 苹果上的颜料 (决定性证据)
+    preconditions:
+      all:
+        - "world.day >= 5"
+    fallback_deadline_day: 6
+    priority: 60
+    on_trigger:
+      hint: |
+        指出蕾雅的剑曾沾过案发现场的白色颜料。
+        director inject_intent 给 ema:
+        "我抓到关键了 - 蕾雅的剑！她戳过苹果，苹果上有颜料的痕迹！
+         那只可能是从诺亚那房间的颜料地板上沾来的！"
+
+  - id: c1_trial_verdict
+    description: 投票 - 蕾雅被认定为凶手
+    preconditions:
+      all:
+        - "world.day >= 5"
+    fallback_deadline_day: 6
+    priority: 90
+    on_trigger:
+      hint: |
+        让所有角色调用 vote 工具（N6.4 会加）投蕾雅。
+        director inject_intent 给所有角色: "我要投票了，目标是蕾雅"
+        如果投票一致，phase 转 execution。
+      new_phase: execution
+
+  # ═══════════════════ Day 5 evening: Execution ═══════════════════
+
+  - id: c1_execution
+    description: 蕾雅被处刑 - 一周目第一章结束
+    preconditions:
+      all:
+        - "world.day >= 5"
+    fallback_deadline_day: 7
+    priority: 100
+    on_trigger:
+      hint: |
+        【最终 phase transition】
+        典狱长执行处刑（铁处女装置）。
+        director 应该：
+        1. set_observable_state 给所有角色一种沉重感
+        2. add_unresolved_event "第一章结束 - 但还有 4 个章节"
+        3. mark_beat_resolved "c1_execution" outcome="蕾雅处刑完毕，第一章闭幕"
+
+  # ═══════════════════ Fallback director nudge ═══════════════════
+
+  - id: c1_pacing_check
+    description: 第 2 天结束 - 兜底节奏检查
+    preconditions:
+      all:
+        - "false"   # 永不自然触发
+    fallback_deadline_day: 2
+    priority: 1
+    on_trigger:
+      hint: |
+        如果第 2 天结束时世界仍然太平淡，注入一些角色互动的扰动。

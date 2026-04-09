@@ -34,6 +34,10 @@ export interface ToolBuildContext {
   relationships?: import("../world/relationships.js").RelationshipManager;
   /** 角色 ID → 显示名映射（用于 go_to 地点人物描述） */
   characterNames?: Map<string, string>;
+  /** 当前剧本阶段 (N6.4 phase gating) */
+  activePhase?: string;
+  /** 剧本提供的 phase-specific 工具集 */
+  phaseTools?: ActionDefinition[];
 }
 
 /**
@@ -171,6 +175,13 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
   }
   if (ctx.gold === 0 && (ctx.state.needs.hunger ?? 100) < 20) {
     tools.push(buildStealTool());
+  }
+
+  // 5. Phase-specific 工具 (N6.4)：仅在 active_phase 在剧本白名单中时浮现
+  if (ctx.activePhase && ctx.phaseTools && ctx.phaseTools.length > 0) {
+    for (const t of ctx.phaseTools) {
+      tools.push(t);
+    }
   }
 
   // 去重（防止地点工具和通用工具同名）

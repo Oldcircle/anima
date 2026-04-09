@@ -39,6 +39,30 @@ export interface LoadedScenario {
   locations: Location[];
   /** beats.yml 内容（如有） */
   beats: BeatDefinition[];
+  /** seeds.yml 内容（如有） — 初始 narrative 状态 */
+  seeds?: ScenarioSeeds;
+}
+
+export interface ScenarioSeeds {
+  activePhase?: string;
+  unresolvedEvents?: Array<{
+    id: string;
+    summary: string;
+    involved?: string[];
+    visibleTo?: string[] | "*";
+  }>;
+  characterRelationships?: Array<{
+    a: string;
+    b: string;
+    level?: number;
+    type?: string;
+    bond?: string;
+  }>;
+  initialRumors?: Array<{
+    content: string;
+    sourceCharId?: string | null;
+    spreadTo?: string[];
+  }>;
 }
 
 const DEFAULT_CHARACTER_DIR = "data/characters";
@@ -112,8 +136,9 @@ export function loadScenario(
   const characters = loadCharactersBySelector(characterDirAbs, manifest.characters);
   const locations = loadLocationsBySelector(locationDirAbs, manifest.locations);
   const beats = loadBeats(scenariosRoot, scenarioId);
+  const seeds = loadSeeds(scenariosRoot, scenarioId);
 
-  return { manifest, characters, locations, beats };
+  return { manifest, characters, locations, beats, seeds };
 }
 
 function loadBeats(scenariosRoot: string, scenarioId: string): BeatDefinition[] {
@@ -122,6 +147,20 @@ function loadBeats(scenariosRoot: string, scenarioId: string): BeatDefinition[] 
   const raw = readFileSync(path, "utf-8");
   const parsed = parseYAML(raw);
   return parseBeatsConfig(parsed);
+}
+
+function loadSeeds(scenariosRoot: string, scenarioId: string): ScenarioSeeds | undefined {
+  const path = join(scenariosRoot, scenarioId, "seeds.yml");
+  if (!existsSync(path)) return undefined;
+  const raw = readFileSync(path, "utf-8");
+  const parsed = parseYAML(raw) as Record<string, unknown> | null;
+  if (!parsed) return undefined;
+  return {
+    activePhase: typeof parsed.active_phase === "string" ? parsed.active_phase : undefined,
+    unresolvedEvents: Array.isArray(parsed.unresolved_events) ? (parsed.unresolved_events as ScenarioSeeds["unresolvedEvents"]) : undefined,
+    characterRelationships: Array.isArray(parsed.character_relationships) ? (parsed.character_relationships as ScenarioSeeds["characterRelationships"]) : undefined,
+    initialRumors: Array.isArray(parsed.initial_rumors) ? (parsed.initial_rumors as ScenarioSeeds["initialRumors"]) : undefined,
+  };
 }
 
 function loadCharactersBySelector(

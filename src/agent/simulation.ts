@@ -70,6 +70,8 @@ export class Simulation {
   beatEngine: BeatEngine;
   /** N4: LLM 导演（可选，未配置时为 undefined） */
   director?: Director;
+  /** N6.4: phase-specific 工具映射 (active_phase → ActionDefinition[]) */
+  phaseTools: Record<string, ActionDefinition[]> = {};
   /** 上一次扫描 beats 的 game day（避免同一天扫多次） */
   private _lastBeatScanDay = -1;
   /** 上一次跑日节奏检查的 game day */
@@ -353,6 +355,7 @@ export class Simulation {
         relationships: this.relationships,
         memory: this.memory,
         impressions: this.impressions,
+        phaseTools: this._getActivePhaseTools(),
       }));
     }
 
@@ -747,6 +750,62 @@ export class Simulation {
   /** 启用 LLM 导演（N4）。可选 — 不调即不启用。 */
   enableDirector(config: DirectorConfig): void {
     this.director = new Director(config);
+  }
+
+  /** 注册 phase-specific 工具（N6.4）。CLI 启动时调一次。 */
+  registerPhaseTools(byPhase: Record<string, ActionDefinition[]>): void {
+    this.phaseTools = byPhase;
+  }
+
+  private _getActivePhaseTools(): ActionDefinition[] {
+    const phase = this.world.narrative.getWorld().activePhase;
+    if (!phase) return [];
+    return this.phaseTools[phase] ?? [];
+  }
+
+  /**
+   * 把 scenario 的 seeds.yml 应用到世界状态（N6.3）。
+   * 只在新存档场景调用 — 已读档时不要再 apply 否则覆盖玩家进度。
+   */
+  applySeeds(seeds: {
+    activePhase?: string;
+    unresolvedEvents?: Array<{ id: string; summary: string; involved?: string[]; visibleTo?: string[] | "*" }>;
+    characterRelationships?: Array<{ a: string; b: string; level?: number; type?: string; bond?: string }>;
+    initialRumors?: Array<{ content: string; sourceCharId?: string | null; spreadTo?: string[] }>;
+  }): void {
+    const ns = this.world.narrative;
+    if (seeds.activePhase) {
+      ns.setActivePhase(seeds.activePhase);
+    }
+    for (const e of seeds.unresolvedEvents ?? []) {
+      ns.addUnresolvedEvent({
+        id: e.id,
+        summary: e.summary,
+        involved: e.involved ?? [],
+        visibleTo: e.visibleTo ?? "*",
+        createdTick: this.world.tick,
+      });
+    }
+    for (const r of seeds.characterRelationships ?? []) {
+      this.relationships.set(r.a, r.b, r.level ?? 0, (r.type as any) ?? "stranger");
+      if (r.bond) {
+        this.relationships.setBond(r.a, r.b, r.bond as any, this.world.tick);
+      }
+    }
+    for (const r of seeds.initialRumors ?? []) {
+      ns.getWorld().rumors.push({
+        content: r.content,
+        sourceCharId: r.sourceCharId ?? undefined,
+        tick: this.world.tick,
+        reachedChars: r.spreadTo ?? [],
+      });
+    }
+    console.log(
+      `🌱 Seeds 已应用: ${seeds.unresolvedEvents?.length ?? 0} 未解决事件, ` +
+        `${seeds.characterRelationships?.length ?? 0} 关系, ` +
+        `${seeds.initialRumors?.length ?? 0} 流言, ` +
+        `phase=${seeds.activePhase ?? "(无)"}`,
+    );
   }
 
   /**

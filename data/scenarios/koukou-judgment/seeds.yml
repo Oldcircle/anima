@@ -1,0 +1,63 @@
+# 扣扣审判 — 第一章初始世界状态
+#
+# 这些数据由 CLI 启动时（或新存档创建时）写入 narrative_state，
+# 给世界一个"已经在跑了一段时间"的起点，避免冷启动。
+#
+# 字段说明：
+#   unresolved_events: 写入 narrative_state.world.unresolvedEvents
+#   character_relationships: 用来初始化 RelationshipManager（仅当当前为 0）
+#   active_phase: 写入 narrative_state.world.activePhase
+
+active_phase: peaceful
+
+# ── 5 个开场未解决事件（叙事引力源） ──
+unresolved_events:
+  - id: hiro_silent_hatred
+    summary: 二阶堂希罗对樱羽艾玛表现出明显的厌恶 — 但艾玛不知道为什么
+    involved: [ema, hiro]
+    visible_to: "*"
+
+  - id: noah_secret_white_room
+    summary: 城崎诺亚把自己的牢房整个用白色喷漆涂成了画布，没人知道她在准备什么
+    involved: [noah, anan]
+    visible_to: "*"
+
+  - id: arisa_in_punishment
+    summary: 紫藤亚里沙因为试图越狱已经被关进惩罚房 — 但她似乎是故意的
+    involved: [arisa]
+    visible_to: "*"
+
+  - id: nayaka_questioning_warden
+    summary: 黑部奈叶香在打听典狱长背后的"主人"是谁 — 她似乎知道一些事
+    involved: [nayaka]
+    visible_to: [nayaka, hiro, leya]
+
+  - id: shelly_seeking_real_emotion
+    summary: 雪莉笑着说"希望发生大事让她的心动一下" — 听起来像玩笑但雪莉是认真的
+    involved: [shelly]
+    visible_to: [shelly, hanna, ema]
+
+# ── 角色之间的初始关系（trust level 0..100，type，bond） ──
+# 数据来自各角色卡的 known_relationships 字段，这里集中初始化
+character_relationships:
+  - { a: ema, b: hiro, level: 30, type: "童年好友 (敌对)", bond: "childhood_friend" }
+  - { a: ema, b: shelly, level: 60, type: "朋友", bond: "friend" }
+  - { a: ema, b: noah, level: 40, type: "同囚伙伴" }
+  - { a: ema, b: arisa, level: 30 }
+  - { a: hiro, b: ema, level: 10, type: "复仇对象" }   # 希罗对艾玛的态度
+  - { a: hiro, b: noah, level: 40 }
+  - { a: hiro, b: leya, level: 50 }
+  - { a: shelly, b: hanna, level: 70, type: "挚友", bond: "best_friend" }
+  - { a: shelly, b: arisa, level: 20, type: "室友 (不和)" }
+  - { a: noah, b: anan, level: 60, type: "室友" }
+  - { a: arisa, b: hiro, level: 5 }
+  - { a: arisa, b: leya, level: 5 }
+
+# ── 公共流言（写入 narrative_state.world.rumors） ──
+initial_rumors:
+  - content: 听说城崎诺亚就是大名鼎鼎的街头艺术家"气球" — 几个少女已经认出她
+    source_char_id: shelly
+    spread_to: [shelly, ema, leya, marg]
+  - content: 据说亚里沙第一晚就因为越狱被关进惩罚房 — 这才到第二天
+    source_char_id: ~
+    spread_to: [shelly, ema, melulu, hanna]

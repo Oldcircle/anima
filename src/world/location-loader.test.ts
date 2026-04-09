@@ -55,9 +55,9 @@ describe("loadLocationsFromDir", () => {
     const dir = join(import.meta.dirname, "..", "..", "data", "locations");
     const locations = loadLocationsFromDir(dir);
 
-    // residential.yml: 6 个原角色家（已 disabled，跳过）+ 7 个动漫角色家 = 7
-    // 加上 commercial / public / nature 共 11 个 → 18
-    expect(locations.length).toBe(18);
+    // 至少有原 default scenario 的 18 个地点。N6 加了 25 个监狱地点 → 现在 ≥18。
+    // 不锁死具体数字，因为新 scenario 会持续添加 location。
+    expect(locations.length).toBeGreaterThanOrEqual(18);
 
     // Check a commercial location has atmosphere
     const cafe = locations.find((l) => l.id === "cafe");

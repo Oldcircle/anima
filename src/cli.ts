@@ -10,6 +10,7 @@ import { EventBus } from "./core/event-bus.js";
 import { World } from "./world/world.js";
 import { Simulation } from "./agent/simulation.js";
 import { ALL_BASIC_ACTIONS } from "./actions/basic-actions.js";
+import { ALL_TRIAL_ACTIONS, PHASE_TOOL_WHITELIST } from "./actions/trial-actions.js";
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { createApiServer } from "./api/server.js";
 import { loadScenario } from "./narrative/scenario-loader.js";
@@ -86,6 +87,22 @@ const simulation = new Simulation(world, eventBus, {
 if (scenario.beats.length > 0) {
   simulation.loadBeats(scenario.beats);
   console.log(`🎬 加载了 ${scenario.beats.length} 个 beats（规则导演）`);
+}
+
+// 注册 phase-specific 工具（N6.4）— koukou-judgment 的 trial/investigation tools
+{
+  const phaseTools: Record<string, typeof ALL_TRIAL_ACTIONS> = {};
+  for (const [phase, names] of Object.entries(PHASE_TOOL_WHITELIST)) {
+    phaseTools[phase] = ALL_TRIAL_ACTIONS.filter((a) => names.includes(a.tool.name));
+  }
+  simulation.registerPhaseTools(phaseTools);
+  console.log(`🎬 注册了 phase 工具: ${Object.keys(phaseTools).join(",")}`);
+}
+
+// 加载 seeds（N6.3）— 只在新存档时 apply (已读档则跳过避免覆盖玩家进度)
+const isNewSave = !existsSync(SAVE_FILE);
+if (isNewSave && scenario.seeds) {
+  simulation.applySeeds(scenario.seeds);
 }
 
 // 启用 LLM 导演（N4）。可通过 ANIMA_DIRECTOR=off 关闭。
