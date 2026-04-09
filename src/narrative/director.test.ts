@@ -195,6 +195,77 @@ describe("Director", () => {
     expect(director.getPulseStore()).toBeUndefined();
   });
 
+  it("D4: create_arc 工具创建 arc 进 agenda store", async () => {
+    mockLLM.enqueueResponse("", [
+      {
+        name: "create_arc",
+        arguments: {
+          beat_id: "test_beat",
+          goal: "推进真相揭露",
+          target_day: 3,
+          watch_chars: ["alice", "bob"],
+        },
+      },
+    ]);
+    mockLLM.enqueueResponse("", [{ name: "do_nothing", arguments: {} }]);
+    await director.handleBeatReady(fakeBeatReady, world);
+    const store = director.getAgendaStore()!;
+    expect(store.size()).toBe(1);
+    expect(store.active()[0]!.goal).toBe("推进真相揭露");
+  });
+
+  it("D4: update_agenda 标记 resolved 后归档", async () => {
+    const agenda = director.getAgendaStore()!;
+    const created = agenda.create(
+      { beatId: "b1", goal: "g", targetDay: 3, watchChars: [] },
+      100,
+      1,
+    );
+    if (!created.ok) throw new Error("setup failed");
+    const arcId = created.arc.id;
+
+    mockLLM.enqueueResponse("", [
+      { name: "update_agenda", arguments: { arc_id: arcId, status: "resolved" } },
+    ]);
+    mockLLM.enqueueResponse("", [{ name: "do_nothing", arguments: {} }]);
+    await director.handleBeatReady(fakeBeatReady, world);
+    expect(agenda.size()).toBe(0); // 已归档
+    expect(agenda.get(arcId)?.status).toBe("resolved");
+  });
+
+  it("D4: agenda 摘要会注入到 prompt 用户消息里", async () => {
+    const agenda = director.getAgendaStore()!;
+    agenda.create({ beatId: "b1", goal: "推进真相揭露", targetDay: 3, watchChars: ["alice"] }, 100, 1);
+
+    mockLLM.enqueueResponse("", [{ name: "do_nothing", arguments: {} }]);
+    await director.handleBeatReady(fakeBeatReady, world);
+
+    const lastCall = mockLLM.calls[mockLLM.calls.length - 1]!;
+    const userMsg = lastCall.request.messages[0]!.content;
+    expect(userMsg).toContain("当前 agenda");
+    expect(userMsg).toContain("推进真相揭露");
+    expect(userMsg).toContain("[beat:b1]");
+  });
+
+  it("D4: handleBeatReady 触发 maintenance（abandon 过期 freelance）", async () => {
+    const agenda = director.getAgendaStore()!;
+    agenda.create({ beatId: "freelance", goal: "g", targetDay: 5, watchChars: [] }, 100, 1);
+    expect(agenda.size()).toBe(1);
+
+    mockLLM.enqueueResponse("", [{ name: "do_nothing", arguments: {} }]);
+    // fake event 在 day 5（>1+2=3）
+    await director.handleBeatReady(
+      { beatId: "tb", reason: "preconditions_met", triggeredDay: 5, triggeredTick: 480 },
+      world,
+    );
+    expect(agenda.size()).toBe(0); // freelance 被 maintenance 自动 abandon
+  });
+
+  it("D4: useAgenda=false 时禁用 agenda store", async () => {
+    director = new Director({ provider: mockLLM, modelId: "test", useAgenda: false });
+    expect(director.getAgendaStore()).toBeUndefined();
+  });
+
   it("D1: write call cap blocks excessive writes across steps", async () => {
     // Step 1: 一次塞 2 个写
     mockLLM.enqueueResponse("", [

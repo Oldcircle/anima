@@ -793,7 +793,8 @@ export class Simulation {
   }
 
   /** 启用 LLM 导演（N4）。可选 — 不调即不启用。
-   * D1: 自动注入 simulation 的 memory + impressions 给 director 的 read 工具。 */
+   * D1: 自动注入 simulation 的 memory + impressions 给 director 的 read 工具。
+   * D2/D4: pulse store / agenda store 由 Director 内部默认创建。 */
   enableDirector(config: DirectorConfig): void {
     this.director = new Director({
       ...config,

@@ -14,6 +14,7 @@ import type { CharacterIntent } from "../world/types.js";
 import type { ShortTermMemory } from "../memory/short-term.js";
 import type { ImpressionStore } from "../memory/impressions.js";
 import type { InMemoryPulseStore } from "./pulse-store.js";
+import type { InMemoryAgendaStore } from "./agenda-store.js";
 
 export interface DirectorToolContext {
   world: World;
@@ -25,6 +26,10 @@ export interface DirectorToolContext {
   impressions?: ImpressionStore;
   /** D2: read_pulse_outcome 工具需要访问 pulse store */
   pulseStore?: InMemoryPulseStore;
+  /** D4: agenda 工具需要访问 agenda store */
+  agendaStore?: InMemoryAgendaStore;
+  /** D4: 当前游戏日（agenda 维护需要） */
+  currentDay?: number;
 }
 
 export interface DirectorToolResult {
@@ -312,6 +317,97 @@ export const doNothingTool: DirectorToolDefinition = {
   }),
 };
 
+// ── 9. create_arc (D4) ──
+// Director 创建一条新的剧情 arc，pin 到某个 beat 或 'freelance'。
+// 这是 director 的"长期工作记忆"——下一次 invoke 时 prompt 会自动注入活跃 arc 摘要。
+
+export const createArcTool: DirectorToolDefinition = {
+  tool: {
+    name: "create_arc",
+    description:
+      "创建一条新的剧情 arc，记录到 director 的工作记忆里。下次 invoke 时你能在 prompt 顶部看到所有活跃 arc。活跃 arc 上限 3 条；freelance 上限 1 条且只能存在 2 游戏日。",
+    parameters: {
+      type: "object",
+      properties: {
+        beat_id: {
+          type: "string",
+          description: "pin 到的 beat id（来自 beats.yml），或写 'freelance' 表示自由剧情线（受 2 天寿命限制）",
+        },
+        goal: { type: "string", description: "一句话描述这条 arc 想达成什么" },
+        target_day: { type: "number", description: "想在哪天达成" },
+        watch_chars: { type: "array", items: { type: "string" }, description: "这条 arc 关注的角色 id 列表" },
+        notes: { type: "string", description: "（可选）≤200 字备注" },
+      },
+      required: ["beat_id", "goal", "target_day", "watch_chars"],
+    },
+  },
+  handler: (args, ctx): DirectorToolResult => {
+    if (!ctx.agendaStore)
+      return { ok: false, description: "agenda store 未配置（D4 未启用）", error: "no_agenda_store" };
+    const day = ctx.currentDay ?? Math.floor(ctx.tick / 96) + 1;
+    const result = ctx.agendaStore.create(
+      {
+        beatId: args.beat_id as string,
+        goal: args.goal as string,
+        targetDay: args.target_day as number,
+        watchChars: (args.watch_chars as string[]) ?? [],
+        notes: args.notes as string | undefined,
+      },
+      ctx.tick,
+      day,
+    );
+    if (!result.ok) return { ok: false, description: result.error, error: "create_failed" };
+    return {
+      ok: true,
+      description: `创建 arc ${result.arc.id}（pin=${result.arc.beatId}, target_day=${result.arc.targetDay}）: ${result.arc.goal}`,
+      changed: { arc_id: result.arc.id },
+    };
+  },
+};
+
+// ── 10. update_agenda (D4) ──
+
+export const updateAgendaTool: DirectorToolDefinition = {
+  tool: {
+    name: "update_agenda",
+    description:
+      "更新一条已存在的 arc 的状态/备注/目标日。把 arc 标记为 resolved 或 abandoned 之后会被归档，不再出现在 prompt 注入里。",
+    parameters: {
+      type: "object",
+      properties: {
+        arc_id: { type: "string", description: "要更新的 arc id" },
+        status: {
+          type: "string",
+          enum: ["setup", "brewing", "climax_ready", "resolved", "abandoned"],
+          description: "新状态",
+        },
+        notes: { type: "string", description: "（可选）覆盖 notes（≤200 字）" },
+        target_day: { type: "number", description: "（可选）改 target_day" },
+      },
+      required: ["arc_id"],
+    },
+  },
+  handler: (args, ctx): DirectorToolResult => {
+    if (!ctx.agendaStore)
+      return { ok: false, description: "agenda store 未配置（D4 未启用）", error: "no_agenda_store" };
+    const result = ctx.agendaStore.update(
+      args.arc_id as string,
+      {
+        status: args.status as any,
+        notes: args.notes as string | undefined,
+        targetDay: args.target_day as number | undefined,
+      },
+      ctx.tick,
+    );
+    if (!result.ok) return { ok: false, description: result.error, error: "update_failed" };
+    return {
+      ok: true,
+      description: `更新 arc ${result.arc.id}: status=${result.arc.status} target_day=${result.arc.targetDay}`,
+      changed: { arc_id: result.arc.id, status: result.arc.status },
+    };
+  },
+};
+
 export const ALL_DIRECTOR_TOOLS: DirectorToolDefinition[] = [
   injectIntentTool,
   injectObservationTool,
@@ -321,6 +417,8 @@ export const ALL_DIRECTOR_TOOLS: DirectorToolDefinition[] = [
   markBeatResolvedTool,
   nudgeWeatherTool,
   doNothingTool,
+  createArcTool,
+  updateAgendaTool,
 ];
 
 export function getDirectorToolByName(name: string): DirectorToolDefinition | undefined {

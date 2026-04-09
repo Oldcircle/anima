@@ -26,6 +26,7 @@ import {
 } from "./director-tools.js";
 import { ALL_DIRECTOR_READ_TOOLS, READ_TOOL_NAMES } from "./director-read-tools.js";
 import { InMemoryPulseStore, extractTargetChar, type PulseRecord } from "./pulse-store.js";
+import { InMemoryAgendaStore } from "./agenda-store.js";
 
 const FORBIDDEN_TOOL_PREFIXES = ["talk", "say", "speak", "message"]; // 兜底防越权
 
@@ -83,6 +84,10 @@ export interface DirectorConfig {
   pulseStore?: InMemoryPulseStore;
   /** D2: 是否启用 pulse 反馈（默认 true） */
   usePulseFeedback?: boolean;
+  /** D4: agenda 持久化。不传则自动创建（除非 useAgenda=false） */
+  agendaStore?: InMemoryAgendaStore;
+  /** D4: 是否启用 agenda 持久化（默认 true） */
+  useAgenda?: boolean;
 }
 
 export interface DirectorCallLog {
@@ -104,6 +109,8 @@ export class Director {
   private useReadTools: boolean;
   private pulseStore?: InMemoryPulseStore;
   private usePulseFeedback: boolean;
+  private agendaStore?: InMemoryAgendaStore;
+  private useAgenda: boolean;
 
   /** 每天的剩余调用预算（key = game day） */
   private budgetByDay = new Map<number, number>();
@@ -123,11 +130,20 @@ export class Director {
     this.pulseStore = this.usePulseFeedback
       ? config.pulseStore ?? new InMemoryPulseStore()
       : undefined;
+    this.useAgenda = config.useAgenda ?? true;
+    this.agendaStore = this.useAgenda
+      ? config.agendaStore ?? new InMemoryAgendaStore()
+      : undefined;
   }
 
   /** D2: 暴露 pulse store 供外部 reducer 调用 + 测试访问 */
   getPulseStore(): InMemoryPulseStore | undefined {
     return this.pulseStore;
+  }
+
+  /** D4: 暴露 agenda store 供 simulation 维护 + 测试访问 */
+  getAgendaStore(): InMemoryAgendaStore | undefined {
+    return this.agendaStore;
   }
 
   isEnabled(): boolean {
@@ -153,6 +169,8 @@ export class Director {
     world: World,
     beatDef?: BeatDefinition,
   ): Promise<DirectorCallLog | null> {
+    // D4: 维护一次 agenda（自动 abandon 过期 freelance）
+    this.agendaStore?.maintenance(event.triggeredDay, event.triggeredTick);
     return this.invoke({
       world,
       tick: event.triggeredTick,
@@ -165,6 +183,7 @@ export class Director {
 
   async handleDailyPacing(world: World, tick: number): Promise<DirectorCallLog | null> {
     const day = Math.floor(tick / 96) + 1;
+    this.agendaStore?.maintenance(day, tick);
     return this.invoke({
       world,
       tick,
@@ -200,6 +219,8 @@ export class Director {
       memory: this.memory,
       impressions: this.impressions,
       pulseStore: this.pulseStore,
+      agendaStore: this.agendaStore,
+      currentDay: params.day,
     };
 
     const useLoop = this.useReadTools;
@@ -403,13 +424,17 @@ export class Director {
             })
             .join(", ");
 
+    const agendaBlock = this.agendaStore
+      ? `\n\n你的当前 agenda（活跃 arc，跨 invoke 持续）:\n${this.agendaStore.renderForPrompt()}`
+      : "";
+
     return `角色（合法 id 列表，禁止编造其他 id）:
 ${charLines}
 
 未解决事件 id（详情请用 read_character/read_scene 调查具体情况）:
   ${eventIds}
 
-世界张力: ${ns.world.tensionIndex}/100  天气: ${world.weather}  已触发 beats: ${ns.world.triggeredBeats.length}`;
+世界张力: ${ns.world.tensionIndex}/100  天气: ${world.weather}  已触发 beats: ${ns.world.triggeredBeats.length}${agendaBlock}`;
   }
 
   private buildBeatReadyPrompt(
@@ -433,7 +458,8 @@ ${charLines}
    - nudge_weather: 调天气（极少用）
    - mark_beat_resolved: beat 已发生时调用
 6. 工作流：先 read 1-2 次 → 思考 → 写 1-2 个工具 → 不再调用工具来结束。最多 5 步。
-7. **每次写工具都建议带 expected 字段**（一句话："我期望 alice 下一 tick 主动 talk bob"）。这会被记成 pulse，下次 invoke 时你可以用 read_pulse_outcome 查回看实际发生了什么。`;
+7. **每次写工具都建议带 expected 字段**（一句话："我期望 alice 下一 tick 主动 talk bob"）。这会被记成 pulse，下次 invoke 时你可以用 read_pulse_outcome 查回看实际发生了什么。
+8. **Agenda（你的工作记忆）**：prompt 顶部会列出你当前的活跃 arc。如果当前 beat 该开一条新 arc 来跟进，用 create_arc(beat_id, goal, target_day, watch_chars)。需要标记 arc 进度时用 update_agenda(arc_id, status=...)。状态值: setup → brewing → climax_ready → resolved/abandoned。活跃 arc 上限 3 条。`;
 
     const beatHint = beatDef?.on_trigger as { hint?: string; director_hint?: string } | undefined;
     const hintText = beatHint?.director_hint ?? beatHint?.hint ?? event.description ?? "";

@@ -165,27 +165,41 @@ export const readSceneTool: DirectorToolDefinition = {
   },
 };
 
-// ── read_arc_status (D1 stub, D4 真正实现) ──
+// ── read_arc_status (D4 真实实现) ──
 
 export const readArcStatusTool: DirectorToolDefinition = {
   tool: {
     name: "read_arc_status",
     description:
-      "查看某条剧情 arc 的当前状态、目标、已经推过的 pulse 历史。D1 阶段为 stub，D4 才完整支持。当前总是返回 not_implemented。",
+      "查看某条剧情 arc 的当前状态、目标、备注。如果该 arc 已归档（resolved/abandoned）也能查到。",
     parameters: {
       type: "object",
       properties: {
-        arc_id: { type: "string", description: "arc id" },
+        arc_id: { type: "string", description: "arc id（如 arc_1）" },
       },
       required: ["arc_id"],
     },
   },
-  handler: (args, _ctx): DirectorToolResult => {
-    return {
-      ok: false,
-      description: `read_arc_status(${args.arc_id}) — D4 未实现，当前 director 没有 agenda 持久化。请改用 read_character 或 read_scene。`,
-      error: "not_implemented",
-    };
+  handler: (args, ctx): DirectorToolResult => {
+    const id = args.arc_id as string;
+    if (!id) return { ok: false, description: "缺少 arc_id", error: "missing_arg" };
+    if (!ctx.agendaStore)
+      return { ok: false, description: "agenda store 未配置", error: "no_agenda_store" };
+    const arc = ctx.agendaStore.get(id);
+    if (!arc) return { ok: false, description: `arc ${id} 不存在`, error: "unknown_arc" };
+
+    const lines = [
+      `arc_id: ${arc.id}`,
+      `pin: ${arc.beatId}`,
+      `goal: ${arc.goal}`,
+      `status: ${arc.status}`,
+      `target_day: ${arc.targetDay}`,
+      `watch_chars: ${arc.watchChars.join(", ") || "(无)"}`,
+      `created: tick ${arc.createdAtTick} (day ${arc.createdAtDay})`,
+      `updated: tick ${arc.updatedAtTick}`,
+      `notes: ${arc.notes || "(无)"}`,
+    ];
+    return { ok: true, description: lines.join("\n"), changed: { read_arc_status: id } };
   },
 };
 

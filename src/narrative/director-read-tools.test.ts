@@ -115,11 +115,30 @@ describe("director-read-tools D1", () => {
     });
   });
 
-  describe("read_arc_status", () => {
-    it("returns not_implemented stub for D1", () => {
+  describe("read_arc_status (D4)", () => {
+    it("returns no_agenda_store when ctx 没有 agendaStore", () => {
       const result = readArcStatusTool.handler({ arc_id: "any" }, ctx);
       expect(result.ok).toBe(false);
-      expect(result.error).toBe("not_implemented");
+      expect(result.error).toBe("no_agenda_store");
+    });
+
+    it("returns unknown_arc when arc 不存在", async () => {
+      const { InMemoryAgendaStore } = await import("./agenda-store.js");
+      const ctxWithAgenda = { ...ctx, agendaStore: new InMemoryAgendaStore() };
+      const result = readArcStatusTool.handler({ arc_id: "arc_999" }, ctxWithAgenda);
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe("unknown_arc");
+    });
+
+    it("returns arc detail when arc exists", async () => {
+      const { InMemoryAgendaStore } = await import("./agenda-store.js");
+      const agenda = new InMemoryAgendaStore();
+      agenda.create({ beatId: "b1", goal: "推真相", targetDay: 3, watchChars: ["alice"] }, 100, 1);
+      const ctxWithAgenda = { ...ctx, agendaStore: agenda };
+      const result = readArcStatusTool.handler({ arc_id: "arc_1" }, ctxWithAgenda);
+      expect(result.ok).toBe(true);
+      expect(result.description).toContain("推真相");
+      expect(result.description).toContain("setup");
     });
   });
 });
