@@ -90,7 +90,7 @@ export class Director {
       day: event.triggeredDay,
       trigger: "beat_ready",
       beatId: event.beatId,
-      promptContext: this.buildBeatReadyPrompt(event, beatDef),
+      promptContext: this.buildBeatReadyPrompt(event, beatDef, world),
     });
   }
 
@@ -117,12 +117,13 @@ export class Director {
   }): Promise<DirectorCallLog | null> {
     if (!this.enabled) return null;
 
-    // 预算检查
+    // 预算检查 + 立即扣减（防止并发竞态）
     const remaining = this.budgetByDay.get(params.day) ?? this.dailyBudget;
     if (remaining <= 0) {
       console.log(`🎬 [director] 预算耗尽 (day ${params.day}), skip ${params.trigger}`);
       return null;
     }
+    this.budgetByDay.set(params.day, remaining - 1);
 
     let response;
     try {
@@ -136,11 +137,10 @@ export class Director {
       response = await this.provider.chat(request, this.modelId);
     } catch (err) {
       console.warn(`🎬 [director] LLM 调用失败: ${(err as Error).message}`);
+      // 失败回退：还原预算
+      this.budgetByDay.set(params.day, remaining);
       return null;
     }
-
-    // 扣预算
-    this.budgetByDay.set(params.day, remaining - 1);
 
     // 应用 tool calls
     const appliedCalls: DirectorCallLog["toolCalls"] = [];
@@ -194,24 +194,75 @@ export class Director {
 
   // ── Prompt 构造 ──
 
+  /**
+   * 共用的"世界快照"段落：实际角色 id 列表 + 当前 unresolved events + 关键状态。
+   * 这是修复 P1/P2 的核心 — 让 director 看见真实世界，而不是凭空想象。
+   */
+  private buildWorldSnapshot(world: World): string {
+    const characters = world.getAllCharacters();
+    const ns = world.narrative.getSnapshot();
+
+    const charLines = characters
+      .map((c) => {
+        const loc = world.getLocation(c.locationId)?.name ?? c.locationId;
+        return `  - id="${c.id}" name="${c.name}" 当前在 ${loc}`;
+      })
+      .join("\n");
+
+    const unresolvedLines =
+      ns.world.unresolvedEvents.length === 0
+        ? "  （无）"
+        : ns.world.unresolvedEvents
+            .map((e) => {
+              const visibility = e.visibleTo === "*" ? "*" : e.visibleTo.join(",");
+              return `  - id="${e.id}" 涉及=[${e.involved.join(",")}] 可见=${visibility}\n    "${e.summary}"`;
+            })
+            .join("\n");
+
+    const rumorLines =
+      ns.world.rumors.length === 0
+        ? "  （无）"
+        : ns.world.rumors
+            .slice(-3)
+            .map((r) => `  - "${r.content.slice(0, 60)}"`)
+            .join("\n");
+
+    return `当前世界存在的角色（这是你能合法引用的所有角色 id，不要编造其他 id）:
+${charLines}
+
+当前未解决事件:
+${unresolvedLines}
+
+最近流言（最多 3 条）:
+${rumorLines}
+
+世界张力 tension_index: ${ns.world.tensionIndex}/100
+天气: ${world.weather}
+已触发 beats: ${ns.world.triggeredBeats.length} 个`;
+  }
+
   private buildBeatReadyPrompt(
     event: BeatReadyEvent,
-    beatDef?: BeatDefinition,
+    beatDef: BeatDefinition | undefined,
+    world: World,
   ): { system: string; user: string } {
     const system = `你是一名"世界导演"。你的工作不是当角色，不是写台词，而是决定"该让什么发生"。
 你看不见的角色们正在自主生活；你只在世界需要轻推时介入。
 
 铁律：
 1. 你**不能**让角色直接说话。你没有任何 talk/say 工具。台词永远由角色自己产出。
-2. 你只能通过以下方式影响世界：
-   - 给角色注入念头（inject_intent）
-   - 让角色注意到某事（inject_observation）
-   - 添加未解决事件（add_unresolved_event）
-   - 加流言（add_rumor）
-   - 改可观察痕迹（set_observable_state）
-   - 调天气（nudge_weather，谨慎用）
-3. 触发后的发生方式必须**符合当前世界状态和角色性格**。如果没必要介入就调 do_nothing。
-4. 一次最多调用 1-2 个工具。简洁。`;
+2. 所有 character_id / observer_id / source_character_id / spread_to 等字段必须使用下面"当前世界存在的角色"列表里**真实存在**的 id。**绝不允许**编造 id 或使用动漫角色名。
+3. 你只能通过以下方式影响世界：
+   - inject_intent: 给角色注入念头（**最高优先级，最有效**）
+   - inject_observation: 让角色注意到某事
+   - set_observable_state: 改可观察痕迹
+   - add_unresolved_event: 添加未解决事件（要呼应现有故事，不要凭空编）
+   - add_rumor: 加流言（同上，不要凭空编新人物）
+   - nudge_weather: 调天气（谨慎用）
+   - mark_beat_resolved / do_nothing
+4. 触发后的发生方式必须**符合当前世界状态和已存在的角色**。如果没必要介入就调 do_nothing。
+5. 优先用 inject_intent — 它最直接影响下一 tick 的角色行为。
+6. 一次最多调用 1-2 个工具。简洁。`;
 
     const beatHint = beatDef?.on_trigger as { hint?: string; director_hint?: string } | undefined;
     const hintText = beatHint?.director_hint ?? beatHint?.hint ?? event.description ?? "";
@@ -220,13 +271,16 @@ export class Director {
         ? "⚠️ 这是 fallback 强制触发——意味着原本预期的前置条件没满足，但 deadline 到了，必须让它发生。"
         : "前置条件已自然满足。";
 
-    const user = `BEAT 触发: ${event.beatId}
+    const user = `${this.buildWorldSnapshot(world)}
+
+────────────────
+BEAT 触发: ${event.beatId}
 ${reasonText}
 
 ${hintText ? `Beat 提示:\n${hintText}\n` : ""}
 现在 game day ${event.triggeredDay}, tick ${event.triggeredTick}.
 
-请决定怎么让这个 beat 在世界里发生。先用一两句话说你的判断，然后调用 1-2 个工具（或 do_nothing）。`;
+请决定怎么让这个 beat 在世界里发生。先用一两句话说你的判断，然后调用 1-2 个工具（或 do_nothing）。所有角色 id 必须来自上面的列表。`;
 
     return { system, user };
   }
@@ -242,16 +296,22 @@ ${hintText ? `Beat 提示:\n${hintText}\n` : ""}
 
 铁律：
 1. 你**不能**让角色直接说话。
-2. 如果世界的张力（tension_index）已经够高（>40）或最近有 beat 触发，通常调 do_nothing。
-3. 如果世界太平淡（tension < 15 且最近没什么事），可以注入一个轻度扰动（一条流言、一次天气变化、给某角色注入一个小念头）。
-4. 一次最多 1 个工具。`;
+2. 所有引用的角色 id 必须来自下面"当前世界存在的角色"列表，**绝不允许**编造。
+3. 如果世界的张力（tension_index）已经够高（>40）或最近有 beat 触发，通常调 do_nothing。
+4. 如果世界太平淡（tension < 15 且最近没什么事），可以注入一个轻度扰动：
+   - 优先 inject_intent 给某个真实角色一个微小念头
+   - 或 add_unresolved_event 呼应现有未解决事件
+   - 不要凭空编新的传说/陌生人/未提及的人物
+5. 一次最多 1 个工具。多数情况应该是 do_nothing。`;
 
-    const user = `日节奏检查 - day ${day}
-tension_index: ${tension}/100
+    const user = `${this.buildWorldSnapshot(world)}
+
+────────────────
+日节奏检查 - day ${day}
 未解决事件数: ${unresolvedCount}
 已触发 beats 总数: ${triggeredCount}
 
-请判断现在是否需要轻推世界。先一句话说你的判断，然后调用 1 个工具（多数情况下应该是 do_nothing）。`;
+请判断现在是否需要轻推世界。先一句话说你的判断，然后调用 1 个工具。`;
 
     return { system, user };
   }
