@@ -1,0 +1,69 @@
+# 最后一班船 — 初始世界状态
+#
+# 时间锚点: 第 1 天清晨。距离末班船启航还有约 3 个游戏日。
+# Day 1: 重聚日 + 各自打算暴露
+# Day 2: 张力 + Twist 揭露
+# Day 3: Climax + Deadline
+#
+# 这些 unresolved events 是世界的"已经在跑"状态，给 director 充足上下文。
+
+active_phase: peaceful
+
+# ── 5 个开场未解决事件 ──
+unresolved_events:
+  - id: forced_eviction_announcement
+    summary: |
+      昨天国家征收令送达 — 海边小镇被列入填海工程范围。
+      3 天后末班船启航，任何人不得继续留在岛上。
+      镇上居民大部分已经在过去几周走光。
+    involved: [asuka, shinji, rei]
+    visible_to: "*"
+
+  - id: asuka_tokyo_offer
+    summary: |
+      明日香一周前收到东京顶级研究所的录用通知。
+      她已经买好了末班船的票，决定去东京。
+      但她没告诉任何人她其实害怕一个人去。
+    involved: [asuka]
+    visible_to: [asuka]
+
+  - id: shinji_father_grave_excuse
+    summary: |
+      真嗣告诉所有人他要留下"陪父亲的墓"。
+      但其实他根本不知道父亲埋在哪 — 父亲十年前在外地病逝，遗体没运回小镇。
+      "陪墓"只是他不敢面对外面世界编出来的借口。
+    involved: [shinji]
+    visible_to: [shinji]
+
+  - id: rei_silent_choice
+    summary: |
+      绫波丽决定跟真嗣一起留下。她对外说是"因为这里安静"。
+      真正的理由是她暗恋真嗣 — 但她从未说出口，连真嗣自己都不知道。
+    involved: [rei]
+    visible_to: [rei]
+
+  - id: town_already_empty
+    summary: |
+      镇上其他居民几乎走光了。咖啡馆昨天关了门，面包店上周就关了。
+      街上空空荡荡，只有这 3 个人和几只猫还在。
+      整个世界都在催促他们做决定。
+    involved: [asuka, shinji, rei]
+    visible_to: "*"
+
+# ── 初始关系（童年挚友的复杂羁绊） ──
+character_relationships:
+  - { a: asuka, b: shinji, level: 70, type: "童年挚友", bond: "childhood_friend" }
+  - { a: shinji, b: asuka, level: 70, type: "童年挚友 (但怕她)", bond: "childhood_friend" }
+  - { a: shinji, b: rei, level: 60, type: "默默依靠", bond: "comfort" }
+  - { a: rei, b: shinji, level: 80, type: "暗恋", bond: "secret_crush" }
+  - { a: asuka, b: rei, level: 50, type: "看不透但关心", bond: "complicated" }
+  - { a: rei, b: asuka, level: 55, type: "敬佩 + 微妙嫉妒" }
+
+# ── 初始流言（小镇空了，没什么流言可流通，但有几条镇民走前留下的话） ──
+initial_rumors:
+  - content: "听说真嗣每天天不亮就去山上'看墓'，但镇上长辈说他爸根本不在这里下葬"
+    source_char_id: ~
+    spread_to: [asuka]
+  - content: "明日香的行李上周就打包好了，但她每次走到码头边就停住"
+    source_char_id: ~
+    spread_to: [shinji, rei]

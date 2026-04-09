@@ -1,0 +1,187 @@
+# 最后一班船 — beats
+#
+# 设计原则: 每个 beat 是一个具体场景，不是抽象阶段。
+# director_hint 必须明示具体动作建议（让 LLM 演员有抓手）。
+#
+# 三幕结构:
+#   Day 1 = 重聚 + 各自的"决定"暴露
+#   Day 2 = 张力上升 + 真嗣谎言被察觉
+#   Day 3 = Climax 真相揭露 + 末班船 deadline
+
+beats:
+  # ═══════════════════ Day 1: 重聚 ═══════════════════
+
+  - id: d1_morning_three_meet_at_bar
+    description: "Day 1 早晨 — 三人在海边小酒馆重聚，这是 10 年来第一次"
+    preconditions:
+      all:
+        - "world.day == 1"
+    priority: 10
+    on_trigger:
+      hint: |
+        这是开场 beat。三人 10 年没见，今天是末班船倒数第 3 天。
+        镇子已经空了，他们各自因为不同理由回来。
+
+        director 应该:
+        1. inject_intent 给 asuka: "10 年没见这两个人...真嗣那个胆小鬼还是那么没出息吧。
+           不过既然回来了，反正我也要去码头看看船票什么时候开，顺便去酒馆看看他们。"
+        2. inject_intent 给 shinji: "我得去酒馆买点东西回去...听说明日香和绫波丽都回来了，
+           我会不会遇到她们...对不起对不起，我应该躲开还是该过去打招呼..."
+        3. inject_intent 给 rei: "听说他们今天到了。我想去看看他们...但我不知道该说什么。"
+
+        三个意图都把目的地指向 bar (海边小酒馆)。强制汇合。
+
+  - id: d1_evening_decisions_revealed
+    description: "Day 1 傍晚 — 各自的'决定'被无意中说出口"
+    preconditions:
+      all:
+        - "world.day == 1"
+        - "world.hour >= 17"
+    fallback_deadline_day: 2
+    priority: 8
+    on_trigger:
+      hint: |
+        三人在酒馆/广场坐了一天，到傍晚时各自的决定开始浮出水面。
+        每个人都在试探对方："你打算怎么办？"
+
+        director 应该:
+        1. add_unresolved_event id="asuka_announces_tokyo":
+           summary="明日香当着两人的面说她接到东京的工作，明天就要走"
+           involved=[asuka, shinji, rei] visible_to=*
+        2. add_unresolved_event id="shinji_announces_grave":
+           summary="真嗣说他要留下'陪父亲的墓'"
+           involved=[shinji, asuka, rei] visible_to=*
+        3. inject_observation 给 asuka:
+           "你听到真嗣说'陪父亲的墓'时，心里突然觉得不对劲——
+           你模糊记得 10 年前你听过什么...真嗣的爸爸不是死在外地的吗？"
+
+  # ═══════════════════ Day 2: 张力 + Twist ═══════════════════
+
+  - id: d2_morning_asuka_investigates
+    description: "Day 2 早晨 — 明日香开始怀疑真嗣的'墓地'谎言"
+    preconditions:
+      all:
+        - "world.day == 2"
+    fallback_deadline_day: 2
+    priority: 9
+    on_trigger:
+      hint: |
+        明日香心里挂着昨晚的疑惑。她决定去问问。
+
+        director 应该:
+        1. inject_intent 给 asuka:
+           "我必须搞清楚真嗣到底在掩饰什么。直接去问他还是先去镇上的旧居民问一下他爸的事？
+           哼，反正闲着也是闲着。"
+        2. set_observable_state 给 asuka:
+           "嘴角紧抿着，眼神比平时锐利"
+
+  - id: d2_evening_truth_brewing
+    description: "Day 2 傍晚 — 明日香找到关键证据，但还没说出口"
+    preconditions:
+      all:
+        - "world.day == 2"
+        - "world.hour >= 17"
+    fallback_deadline_day: 3
+    priority: 9
+    on_trigger:
+      hint: |
+        明日香已经在某个地方（旧邻居的留言、墓地实地调查、自己的童年记忆）
+        确认了：真嗣的爸爸根本不在这里下葬。
+        "陪墓"是谎言。
+
+        director 应该:
+        1. add_unresolved_event id="asuka_knows_grave_lie":
+           summary="明日香确认了真嗣的爸爸不在这里下葬，'陪墓'是谎言。她还没说出来。"
+           involved=[asuka] visible_to=[asuka]
+        2. inject_observation 给 rei:
+           "你注意到明日香今天回来时神情有点恍惚，像是发现了什么。她整晚都看着真嗣，
+           但什么都没说。"
+        3. inject_intent 给 rei:
+           "明日香今天怪怪的。也许我应该问问她。但...我从来不主动开口。我应该开口吗？"
+
+  # ═══════════════════ Day 3: Climax ═══════════════════
+
+  - id: d3_morning_confrontation
+    description: "Day 3 早晨 — 末班船启航当天，明日香戳穿真嗣"
+    preconditions:
+      all:
+        - "world.day == 3"
+    fallback_deadline_day: 3
+    priority: 100
+    on_trigger:
+      hint: |
+        【关键 climax beat — 必须发生】
+
+        今天傍晚 18:00 末班船就要走了。明日香知道真相，再不说就来不及了。
+        她必须戳穿真嗣的谎言——不是为了羞辱他，是为了让他和她一起走。
+
+        director 必须:
+        1. inject_intent 给 asuka (高紧迫感):
+           "今天必须说出来。我知道你的'墓'是假的，真嗣。你跟我一起走。
+           Anta baka，我不会让你一个人留在这个空岛上的。"
+        2. set_observable_state 给 asuka:
+           "眼睛通红，手在颤抖，但姿态笔直"
+        3. add_unresolved_event id="climax_confrontation":
+           summary="末班船倒计时 8 小时。明日香准备摊牌。"
+           involved=[asuka, shinji, rei] visible_to=*
+
+  - id: d3_afternoon_rei_breaks_silence
+    description: "Day 3 下午 — 摊牌之后，绫波丽第一次主动开口"
+    preconditions:
+      all:
+        - "world.day == 3"
+        - "world.hour >= 13"
+    fallback_deadline_day: 3
+    priority: 90
+    on_trigger:
+      hint: |
+        摊牌已经发生（无论真嗣承认与否）。三个人坐在那里，沉默。
+        绫波丽这一辈子从未主动说过自己想要什么。但今天必须。
+
+        director 应该:
+        1. inject_intent 给 rei (打破角色一刻):
+           "我想说话。我从来没说过我想要什么。但今天...如果我不说，真嗣可能会一个人留下，
+           或者跟明日香走。两种我都不想。我应该告诉他...我喜欢他。
+           哪怕他选择走。哪怕他选择留。我至少要让他知道。"
+        2. set_observable_state 给 rei:
+           "嘴唇微微动着，像是在练习什么台词"
+
+  - id: d3_evening_ferry_horn
+    description: "Day 3 18:00 — 末班船汽笛响起"
+    preconditions:
+      all:
+        - "world.day == 3"
+        - "world.hour >= 18"
+    fallback_deadline_day: 3
+    priority: 100
+    on_trigger:
+      hint: |
+        【最后 deadline beat — 必须发生】
+
+        末班船的汽笛响彻整个港口。这是最后通牒。
+        三人在码头。每个人都必须做最终选择：上船 or 留下。
+
+        director 必须:
+        1. add_unresolved_event id="ferry_horn_blowing":
+           summary="末班船汽笛长鸣 — 还有 30 分钟启航。每个人都必须现在做决定。"
+           involved=[asuka, shinji, rei] visible_to=*
+        2. inject_observation 给所有 3 人:
+           "汽笛声传遍整个码头。你能感觉到地面的震动。这是最后通牒。"
+        3. set_observable_state 给 asuka: "站在码头边，行李在脚边，眼睛盯着船"
+        4. mark_beat_resolved beat_id="d3_evening_ferry_horn"
+           outcome="末班船启航。三人的选择各自落定。"
+
+  # ═══════════════════ Director 兜底 ═══════════════════
+
+  - id: pacing_check_d2_noon
+    description: "Day 2 中午兜底 — 如果剧情过于平淡"
+    preconditions:
+      all:
+        - "false"
+    fallback_deadline_day: 2
+    priority: 1
+    on_trigger:
+      hint: |
+        Day 2 中午世界仍然太平淡。注入一个推动剧情的扰动:
+        - 让 asuka 偶遇某个旧邻居，对方说出"真嗣的爸不在这里葬"的证据
+        - 或让 rei 在花田边遇到 shinji，看到他空洞地望着山上

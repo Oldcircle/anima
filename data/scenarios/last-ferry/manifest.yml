@@ -1,0 +1,31 @@
+id: last-ferry
+name: 最后一班船
+description: |
+  3 天压缩剧本。海边小镇被国家征收，3 天后末班船启航。
+  童年好友 10 年后在小镇关闭前的最后 3 天重聚。
+  每个人都做了不同的选择——但每个选择都建立在谎言之上。
+
+  Hard deadline: D3 18:00 末班船汽笛。
+  Twist: 真嗣留下的理由是假的。
+  Climax: D3 早晨真相揭露。
+
+  复用 default scenario 的 asuka/shinji/rei 角色卡。性格不变，处境不同。
+
+characters:
+  - asuka
+  - shinji
+  - rei
+
+locations:
+  # 主要场景
+  - dock          # 码头 — 末班船启航地
+  - bar           # 海边小酒馆 — 三人重聚地
+  - beach         # 海边
+  - plaza         # 广场
+  - cafe          # 咖啡馆 (剧情中可能已经关门)
+  - bakery        # 面包店 (同上)
+  - shop          # 杂货店
+  # 三个家
+  - home_asuka
+  - home_shinji
+  - home_rei
