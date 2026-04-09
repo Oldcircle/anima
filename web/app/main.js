@@ -35,6 +35,8 @@ const store = createStore({
   speed: 1,
   characters: [],
   toast: null,
+  narrative: null,        // {tensionIndex, activePhase, unresolvedEventsCount, triggeredBeatsCount, rumorsCount, directorEnabled}
+  recentBeats: [],        // [{tick, beatId, description}] 最多 20 条
 });
 
 function useStore() {
@@ -66,14 +68,22 @@ function connectWS() {
       const msg = JSON.parse(e.data);
       if (msg.type === "snapshot" || msg.type === "tick") {
         const d = msg.data;
-        store.set({
+        const patch = {
           tick: d.tick,
           formattedTime: d.formattedTime ?? "—",
           weather: d.weather ?? "",
           characters: d.characters ?? [],
-        });
+        };
+        if (d.narrative) patch.narrative = d.narrative;
+        store.set(patch);
       } else if (msg.type === "speed_changed") {
         store.set({ speed: msg.data.speed });
+      } else if (msg.type === "beat_ready") {
+        // 累积最近 beat 触发，给叙事面板用
+        const cur = store.get().recentBeats || [];
+        const next = [{ ...msg.data, ts: Date.now() }, ...cur].slice(0, 20);
+        store.set({ recentBeats: next });
+        toast(`🎬 Beat: ${msg.data.beatId}`);
       }
     } catch {}
   };
@@ -135,6 +145,7 @@ function App() {
         <nav class="sidebar">
           <div class="group-title">观察</div>
           <${NavLink} href="/live" route=${route}>实时</${NavLink}>
+          <${NavLink} href="/narrative" route=${route}>叙事</${NavLink}>
           <div class="group-title">配置</div>
           <${NavLink} href="/characters" route=${route}>角色</${NavLink}>
           <${NavLink} href="/locations" route=${route}>地点</${NavLink}>
@@ -176,6 +187,7 @@ function renderRoute(route) {
   if (route === "/characters") return html`<${CharactersPage} />`;
   if (route === "/locations") return html`<${LocationsPage} />`;
   if (route === "/settings") return html`<${SettingsPage} />`;
+  if (route === "/narrative") return html`<${NarrativePage} />`;
   return html`<${LivePage} />`;
 }
 
@@ -506,6 +518,191 @@ function LocationDrawer({ loc, isNew = false, onClose, onSaved }) {
 }
 
 // ===== Settings 页 =====
+
+// ===== Narrative 页 (N5) =====
+
+function NarrativePage() {
+  const s = useStore();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // 干预表单
+  const [evtForm, setEvtForm] = useState({ id: "", summary: "", involved: "", visibleTo: "*" });
+  const [rumorForm, setRumorForm] = useState({ content: "", sourceCharId: "", spreadTo: "" });
+  const [obsForm, setObsForm] = useState({ observerId: "", summary: "" });
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try { setData(await api("/api/narrative")); }
+    catch (e) { toast("加载失败：" + e.message, "error"); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { reload(); }, [reload]);
+  // 自动每 5 秒刷新一次完整 narrative 数据（snapshot 字段太大不上 WS）
+  useEffect(() => {
+    const id = setInterval(reload, 5000);
+    return () => clearInterval(id);
+  }, [reload]);
+
+  const submitEvent = async () => {
+    if (!evtForm.id || !evtForm.summary) return toast("id 和 summary 必填", "error");
+    try {
+      await api("/api/narrative/inject-event", {
+        method: "POST",
+        body: JSON.stringify({
+          id: evtForm.id,
+          summary: evtForm.summary,
+          involved: evtForm.involved.split(",").map((s) => s.trim()).filter(Boolean),
+          visibleTo: evtForm.visibleTo === "*" ? "*" : evtForm.visibleTo.split(",").map((s) => s.trim()).filter(Boolean),
+        }),
+      });
+      toast("已注入未解决事件");
+      setEvtForm({ id: "", summary: "", involved: "", visibleTo: "*" });
+      reload();
+    } catch (e) { toast("失败：" + e.message, "error"); }
+  };
+
+  const submitRumor = async () => {
+    if (!rumorForm.content) return toast("流言内容必填", "error");
+    try {
+      await api("/api/narrative/inject-rumor", {
+        method: "POST",
+        body: JSON.stringify({
+          content: rumorForm.content,
+          sourceCharId: rumorForm.sourceCharId || undefined,
+          spreadTo: rumorForm.spreadTo.split(",").map((s) => s.trim()).filter(Boolean),
+        }),
+      });
+      toast("已注入流言");
+      setRumorForm({ content: "", sourceCharId: "", spreadTo: "" });
+      reload();
+    } catch (e) { toast("失败：" + e.message, "error"); }
+  };
+
+  const submitObs = async () => {
+    if (!obsForm.observerId || !obsForm.summary) return toast("两项必填", "error");
+    try {
+      await api("/api/narrative/inject-observation", { method: "POST", body: JSON.stringify(obsForm) });
+      toast(`已塞纸条给 ${obsForm.observerId}`);
+      setObsForm({ observerId: "", summary: "" });
+    } catch (e) { toast("失败：" + e.message, "error"); }
+  };
+
+  const nudge = async () => {
+    try {
+      const r = await api("/api/narrative/nudge", { method: "POST" });
+      toast(r.log ? `导演响应: ${r.log.toolCalls?.map((t) => t.name).join(",") || "(无)"}` : "已 nudge");
+      reload();
+    } catch (e) { toast("失败：" + e.message, "error"); }
+  };
+
+  const ns = data?.snapshot;
+  const tension = s.narrative?.tensionIndex ?? ns?.world?.tensionIndex ?? 0;
+  const phase = s.narrative?.activePhase ?? ns?.world?.activePhase;
+  const directorEnabled = s.narrative?.directorEnabled ?? data?.director?.enabled ?? false;
+
+  return html`
+    <h1>叙事</h1>
+    <div class="subtitle">叙事系统状态 + 玩家干预入口。规则导演 + LLM 导演由后端自动运行；这里你可以观察 + 直接塞东西进世界。</div>
+
+    <div class="toolbar">
+      <button onClick=${reload}>${loading ? "刷新中…" : "刷新"}</button>
+      <div class="spacer"></div>
+      <button class="primary" disabled=${!directorEnabled} onClick=${nudge}>触发导演节奏检查</button>
+    </div>
+
+    <!-- 总览 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px;">
+      <div class="card"><div class="title">张力 (tension)</div><div style="font-size:28px;font-weight:600;">${tension}/100</div></div>
+      <div class="card"><div class="title">未解决事件</div><div style="font-size:28px;font-weight:600;">${ns?.world?.unresolvedEvents?.length ?? 0}</div></div>
+      <div class="card"><div class="title">已触发 beats</div><div style="font-size:28px;font-weight:600;">${ns?.world?.triggeredBeats?.length ?? 0} / ${data?.beats?.loaded ?? 0}</div></div>
+      <div class="card"><div class="title">流言数</div><div style="font-size:28px;font-weight:600;">${ns?.world?.rumors?.length ?? 0}</div></div>
+      <div class="card"><div class="title">阶段</div><div style="font-size:18px;">${phase ?? "—"}</div></div>
+      <div class="card"><div class="title">导演</div><div style="font-size:18px;">${directorEnabled ? "✓ 启用" : "✗ 禁用"}</div></div>
+    </div>
+
+    <!-- 左右布局 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+      <!-- 左：状态详情 -->
+      <div>
+        <h2 style="font-size:16px;margin-top:0;">未解决事件</h2>
+        ${(ns?.world?.unresolvedEvents ?? []).length === 0 && html`<div class="empty">（空）</div>`}
+        ${(ns?.world?.unresolvedEvents ?? []).map((e) => html`
+          <div class="card" style="margin-bottom:8px;">
+            <div class="title">[${e.id}] tick ${e.createdTick}</div>
+            <div>${e.summary}</div>
+            <div class="muted" style="font-size:11px;margin-top:4px;">涉及: ${e.involved?.join(", ") || "—"} · 可见: ${Array.isArray(e.visibleTo) ? e.visibleTo.join(",") : e.visibleTo}</div>
+          </div>
+        `)}
+
+        <h2 style="font-size:16px;margin-top:18px;">最近触发的 beats</h2>
+        ${s.recentBeats.length === 0 && html`<div class="empty">（暂无，每天 22:00 自动扫描）</div>`}
+        ${s.recentBeats.map((b) => html`
+          <div class="card" style="margin-bottom:6px;">
+            <div class="title">${b.beatId}</div>
+            <div class="muted" style="font-size:11px;">tick ${b.tick} · ${b.description}</div>
+          </div>
+        `)}
+
+        <h2 style="font-size:16px;margin-top:18px;">导演最近调用</h2>
+        ${(data?.director?.recentCalls ?? []).length === 0 && html`<div class="empty">（导演还没调用过）</div>`}
+        ${(data?.director?.recentCalls ?? []).slice().reverse().map((c) => html`
+          <div class="card" style="margin-bottom:6px;">
+            <div class="title">${c.trigger}${c.beatId ? ` · ${c.beatId}` : ""}</div>
+            <div style="font-size:12px;margin:4px 0;">💭 ${c.thought || "(无想法)"}</div>
+            <div class="muted" style="font-size:11px;">tools: ${c.toolCalls?.map((t) => `${t.name}${t.result?.ok ? "✓" : "✗"}`).join(", ") || "(无)"} · 余额 ${c.budgetRemaining}</div>
+          </div>
+        `)}
+      </div>
+
+      <!-- 右：干预表单 -->
+      <div>
+        <h2 style="font-size:16px;margin-top:0;">注入未解决事件</h2>
+        <div class="card">
+          <div class="field"><label>id</label>
+            <input value=${evtForm.id} onInput=${(e) => setEvtForm({ ...evtForm, id: e.target.value })} placeholder="如 mystery_letter" />
+          </div>
+          <div class="field"><label>summary</label>
+            <input value=${evtForm.summary} onInput=${(e) => setEvtForm({ ...evtForm, summary: e.target.value })} placeholder="一句话描述" />
+          </div>
+          <div class="field"><label>涉及角色 (id 逗号分隔)</label>
+            <input value=${evtForm.involved} onInput=${(e) => setEvtForm({ ...evtForm, involved: e.target.value })} placeholder="alice,bob" />
+          </div>
+          <div class="field"><label>可见性 (* 或 id 逗号分隔)</label>
+            <input value=${evtForm.visibleTo} onInput=${(e) => setEvtForm({ ...evtForm, visibleTo: e.target.value })} placeholder="*" />
+          </div>
+          <button class="primary" onClick=${submitEvent}>注入</button>
+        </div>
+
+        <h2 style="font-size:16px;margin-top:18px;">注入流言</h2>
+        <div class="card">
+          <div class="field"><label>内容</label>
+            <input value=${rumorForm.content} onInput=${(e) => setRumorForm({ ...rumorForm, content: e.target.value })} placeholder="听说..." />
+          </div>
+          <div class="field"><label>源头角色 id (可选)</label>
+            <input value=${rumorForm.sourceCharId} onInput=${(e) => setRumorForm({ ...rumorForm, sourceCharId: e.target.value })} placeholder="alice" />
+          </div>
+          <div class="field"><label>已传到的角色 (id 逗号分隔)</label>
+            <input value=${rumorForm.spreadTo} onInput=${(e) => setRumorForm({ ...rumorForm, spreadTo: e.target.value })} placeholder="bob,carol" />
+          </div>
+          <button class="primary" onClick=${submitRumor}>注入</button>
+        </div>
+
+        <h2 style="font-size:16px;margin-top:18px;">塞纸条 (让某角色"想起"某事)</h2>
+        <div class="card">
+          <div class="field"><label>角色 id</label>
+            <input value=${obsForm.observerId} onInput=${(e) => setObsForm({ ...obsForm, observerId: e.target.value })} placeholder="alice" />
+          </div>
+          <div class="field"><label>内容（第二人称）</label>
+            <input value=${obsForm.summary} onInput=${(e) => setObsForm({ ...obsForm, summary: e.target.value })} placeholder="你想起昨天 bob 看你的眼神有点奇怪" />
+          </div>
+          <button class="primary" onClick=${submitObs}>投递</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 function SettingsPage() {
   const [form, setForm] = useState({ provider: "deepseek", baseUrl: "https://api.deepseek.com", apiKey: "", model: "deepseek-chat" });

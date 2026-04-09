@@ -16,6 +16,7 @@ import { formatGameTime, tickToGameTime } from "../core/tick-engine.js";
 import * as itemRegistry from "../world/item-registry.js";
 import type { CharacterCard } from "../character/types.js";
 import { registerAdminRoutes } from "./admin-routes.js";
+import { registerNarrativeRoutes } from "./narrative-routes.js";
 import { SettingsStore } from "./settings-store.js";
 import type { OpenAICompatibleProvider } from "../providers/openai-compatible.js";
 
@@ -88,6 +89,20 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
       if (ws.readyState === ws.OPEN) ws.send(data);
     }
   }
+
+  // 监听 beat 事件 (N5)：把规则导演触发的 beat 实时推送到前端
+  simulation.eventBus.on((event) => {
+    if (event.type === "beat.ready") {
+      broadcast({
+        type: "beat_ready",
+        data: {
+          tick: event.tick,
+          beatId: event.id.replace(/^beat_/, "").replace(/_\d+$/, ""),
+          description: event.description,
+        },
+      });
+    }
+  });
 
   // 监听 tick 事件
   simulation.onTick((summary) => {
@@ -209,22 +224,8 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
     res.json(cards);
   });
 
-  // ── 叙事系统 (N4) ──
-  app.get("/api/narrative", (_req, res) => {
-    res.json({
-      snapshot: simulation.world.narrative.getSnapshot(),
-      beats: {
-        loaded: simulation.beatEngine.getBeats().length,
-        triggered: simulation.beatEngine.getTriggered(),
-      },
-      director: simulation.director
-        ? {
-            enabled: simulation.director.isEnabled(),
-            recentCalls: simulation.director.getCallLogs().slice(-20),
-          }
-        : { enabled: false },
-    });
-  });
+  // ── 叙事系统 (N4 + N5) ──
+  registerNarrativeRoutes(app, simulation);
 
   app.get("/api/conversations", (_req, res) => {
     // 返回当前所有活跃对话历史
