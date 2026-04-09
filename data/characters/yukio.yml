@@ -1,0 +1,35 @@
+id: "yukio"
+name: "月代雪"
+gender: "female"
+age: 15
+occupation: "魔女监狱囚犯"
+home: "cell_b1_yukio"
+
+# 占位卡（N6.1 第一期只详细写 5 核心角色，其他用占位）
+# TODO: N6 后期或 N7 时根据需要扩展
+
+appearance: "艾玛与希罗曾经的初中同学，孤僻、被霸凌的少女 (实际是大魔女)"
+
+personality:
+  traits: ["沉默", "悲伤", "深不可测"]
+  interests: []
+  dislikes: []
+  speech_style: "话少；声音温柔但带回响"
+  core_traits: |
+    艾玛与希罗曾经的初中同学，孤僻、被霸凌的少女 (实际是大魔女)
+    原罪：无 — 作为审判者而非被审判者
+
+backstory: []
+background: "艾玛与希罗曾经的初中同学，孤僻、被霸凌的少女 (实际是大魔女)"
+known_relationships: {}
+secrets: []
+
+life:
+  occupation: "魔女监狱囚犯"
+  workplace: "cell_b1_yukio"
+  age: 15
+  income: 0
+  skills: {}
+  aspiration: ""
+
+relationships: {}

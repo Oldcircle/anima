@@ -1,0 +1,35 @@
+id: "nayaka"
+name: "黑部奈叶香"
+gender: "female"
+age: 15
+occupation: "魔女监狱囚犯 编号 665"
+home: "cell_b1_nayaka"
+
+# 占位卡（N6.1 第一期只详细写 5 核心角色，其他用占位）
+# TODO: N6 后期或 N7 时根据需要扩展
+
+appearance: "对监牢抱有强烈敌意的神秘少女"
+
+personality:
+  traits: ["沉默", "敌意", "果决", "背负秘密"]
+  interests: []
+  dislikes: []
+  speech_style: "极少开口；说话直接简短；不解释"
+  core_traits: |
+    对监牢抱有强烈敌意的神秘少女
+    原罪：来自过去的狙击手
+
+backstory: []
+background: "对监牢抱有强烈敌意的神秘少女"
+known_relationships: {}
+secrets: []
+
+life:
+  occupation: "魔女监狱囚犯"
+  workplace: "cell_b1_nayaka"
+  age: 15
+  income: 0
+  skills: {}
+  aspiration: ""
+
+relationships: {}

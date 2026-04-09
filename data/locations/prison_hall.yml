@@ -1,0 +1,20 @@
+id: prison_hall
+name: 玄关大厅
+type: public
+summary: |
+  魔女监狱 1F 南侧正门。黑白格纹地板，巨大吊灯。
+  少女们到达和集合的地方。会客厅在大厅旁边——典狱长每次广播都要求大家在此集合。
+openHours:
+  open: 0
+  close: 24
+
+atmosphere:
+  morning: |
+    巨大的吊灯散发着冰冷的白光。
+    大厅永远空空如也，但永远有"被监视"的感觉。
+  afternoon: |
+    几个少女路过这里去食堂。脚步声在高拱顶下产生回响。
+  evening: |
+    吊灯的光在傍晚显得更冷。
+  night: |
+    完全的黑暗。除了广播响起的时候。

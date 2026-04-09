@@ -1,0 +1,57 @@
+id: koukou-judgment
+name: 扣扣审判 — 一周目第一章
+description: |
+  魔法少女监狱审判，弹丸论破式 Class Trial。
+  14 名拥有"魔女因子"的少女被关在 500 年历史的孤岛监牢里。
+  一周目第一章聚焦城崎诺亚之死和莲见蕾雅的审判。
+
+  改编自酒馆角色卡《魔法少女的扣扣审判 1.1》。
+  重要：本剧本不是原卡的高保真复刻——结构借用，发生方式涌现。
+  Anima 改写策略见 IMPORT-koukou-judgment.md。
+
+characters:
+  # 5 核心角色（详细卡）
+  - ema
+  - hiro
+  - shelly
+  - noah
+  - arisa
+  # 9 占位角色（极简卡，N6 后期或 N7 时扩展）
+  - anan
+  - milia
+  - nayaka
+  - marg
+  - melulu
+  - leya
+  - hanna
+  - yukio
+  - coco
+
+locations:
+  # 公共/特殊房间
+  - prison_dining
+  - prison_lounge
+  - prison_infirmary
+  - prison_punishment
+  - prison_courtroom
+  - prison_recreation
+  - prison_library
+  - prison_courtyard
+  - prison_lake
+  - prison_garden
+  - prison_hall
+  # 14 个 cell (来自 prison_cells.yml 的 homes 数组)
+  - cell_b1_ema
+  - cell_b1_hiro
+  - cell_b1_shelly
+  - cell_b1_noah
+  - cell_b1_arisa
+  - cell_b1_anan
+  - cell_b1_milia
+  - cell_b1_nayaka
+  - cell_b1_marg
+  - cell_b1_melulu
+  - cell_b1_leya
+  - cell_b1_hanna
+  - cell_b1_yukio
+  - cell_b1_coco

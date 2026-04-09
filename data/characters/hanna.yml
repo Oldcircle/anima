@@ -1,0 +1,35 @@
+id: "hanna"
+name: "远野汉娜"
+gender: "female"
+age: 15
+occupation: "魔女监狱囚犯 编号 668"
+home: "cell_b1_hanna"
+
+# 占位卡（N6.1 第一期只详细写 5 核心角色，其他用占位）
+# TODO: N6 后期或 N7 时根据需要扩展
+
+appearance: "自称名门大小姐、说话带有desuwa口癖的神秘少女"
+
+personality:
+  traits: ["做作", "空想", "古怪", "大小姐"]
+  interests: []
+  dislikes: []
+  speech_style: "desuwa 口癖；古典文体；夸张"
+  core_traits: |
+    自称名门大小姐、说话带有desuwa口癖的神秘少女
+    原罪：空想千金
+
+backstory: []
+background: "自称名门大小姐、说话带有desuwa口癖的神秘少女"
+known_relationships: {}
+secrets: []
+
+life:
+  occupation: "魔女监狱囚犯"
+  workplace: "cell_b1_hanna"
+  age: 15
+  income: 0
+  skills: {}
+  aspiration: ""
+
+relationships: {}

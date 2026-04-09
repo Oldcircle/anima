@@ -1,0 +1,35 @@
+id: "milia"
+name: "佐伯米莉亚"
+gender: "female"
+age: 15
+occupation: "魔女监狱囚犯 编号 663"
+home: "cell_b1_milia"
+
+# 占位卡（N6.1 第一期只详细写 5 核心角色，其他用占位）
+# TODO: N6 后期或 N7 时根据需要扩展
+
+appearance: "白辣妹风格的少女，外表华丽时尚，自称大叔"
+
+personality:
+  traits: ["浮夸", "直爽", "内心空虚"]
+  interests: []
+  dislikes: []
+  speech_style: "辣妹腔，自称「大叔」，「~maji」「~jan」"
+  core_traits: |
+    白辣妹风格的少女，外表华丽时尚，自称大叔
+    原罪：高中出道辣妹
+
+backstory: []
+background: "白辣妹风格的少女，外表华丽时尚，自称大叔"
+known_relationships: {}
+secrets: []
+
+life:
+  occupation: "魔女监狱囚犯"
+  workplace: "cell_b1_milia"
+  age: 15
+  income: 0
+  skills: {}
+  aspiration: ""
+
+relationships: {}

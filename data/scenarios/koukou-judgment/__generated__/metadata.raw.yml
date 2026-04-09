@@ -1,0 +1,46 @@
+# AUTO-GENERATED from /tmp/card_chara.json by scripts/import-koukou-card.ts
+# 不要手工编辑这里的文件 — 它们是参考素材。
+# 正式 scenario 文件在 data/scenarios/koukou-judgment/ 根目录下。
+
+# 角色 id 映射（中文 → anima id）
+character_id_map:
+  艾玛: ema
+  希罗: hiro
+  雪莉: shelly
+  安安: anan
+  米莉亚: milia
+  奈叶香: nayaka
+  玛格: marg
+  梅露露: melulu
+  诺亚: noah
+  蕾雅: leya
+  亚里沙: arisa
+  汉娜: hanna
+  月代雪: yukio
+  可可: coco
+
+# 全部角色 id 列表
+all_character_ids: ["ema", "hiro", "shelly", "anan", "milia", "nayaka", "marg", "melulu", "noah", "leya", "arisa", "hanna", "yukio", "coco"]
+
+# 第一周目章节顺序
+first_loop_chapters:
+  - A1_C1  # 一周目第一章 — 诺亚之死
+  - A1_C2
+  - A1_C3
+  - A1_C4
+  - A1_C5
+
+# 阶段顺序（每章）
+phase_order:
+  - peaceful   # 日常
+  - investigation  # 案发搜查
+  - trial   # 审判
+  - execution  # 处刑尾声
+
+# 第一章关键信息
+A1_C1_summary:
+  victim: noah
+  culprit: leya
+  murder_method: 临时长枪刺杀（扫帚柄+剑+剑鞘+弩箭+发带组合）
+  core_trick: 视线固定魔法制造密室假象
+  duration_days: 5  # 日常 5 天

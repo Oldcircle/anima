@@ -1,0 +1,19 @@
+id: prison_lake
+name: 监狱湖
+type: nature
+summary: |
+  魔女监狱外部，西侧出口外。静谧深邃的水域，映照森林阴影。
+  亚里沙最常独自来这里——她说"水边能让自己平静"。
+openHours:
+  open: 6
+  close: 18
+
+atmosphere:
+  morning: |
+    水面上飘着薄雾。湖底深不见底，深得让人想跳进去。
+  afternoon: |
+    阳光下水面闪着银光。远处的高墙是不可逾越的边界。
+  evening: |
+    夕阳把整个湖面染红，像血。亚里沙坐在岸边，独自一人。
+  night: |
+    禁止外出。湖在黑暗中比什么都安静。

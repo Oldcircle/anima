@@ -1,0 +1,144 @@
+# 魔女监狱牢房（B1F 监禁区）
+# 14 个 2 人一间制；这里每人单独一格用作 sim 中的 home location
+
+homes:
+  - id: cell_b1_ema
+    name: 艾玛的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。艾玛的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_hiro
+    name: 希罗的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。希罗的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_shelly
+    name: 雪莉的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。雪莉的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_noah
+    name: 诺亚的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。诺亚的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_arisa
+    name: 亚里沙的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。亚里沙的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_anan
+    name: 安安的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。安安的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_milia
+    name: 米莉亚的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。米莉亚的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_nayaka
+    name: 奈叶香的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。奈叶香的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_marg
+    name: 玛格的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。玛格的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_melulu
+    name: 梅露露的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。梅露露的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_leya
+    name: 蕾雅的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。蕾雅的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_hanna
+    name: 汉娜的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。汉娜的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_yukio
+    name: 月代雪的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。月代雪的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+
+  - id: cell_b1_coco
+    name: 可可的牢房
+    type: residential
+    summary: B1F 地下监房；电子锁、床铺、洗脸台、洗手间。可可的住处。
+    atmosphere:
+      morning: "狭小石灰墙的房间，铁床上还有体温的余温。墙外有看守巡逻的脚步声。"
+      afternoon: "光线透不进来。日光灯的低嗡声。"
+      evening: "夜晚的禁闭即将开始。门即将自动上锁。"
+      night: "完全的封闭。墙外只有巡逻猫头鹰扇动翅膀的声音。"
+

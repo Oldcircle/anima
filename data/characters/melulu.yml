@@ -1,0 +1,35 @@
+id: "melulu"
+name: "冰上梅露露"
+gender: "female"
+age: 15
+occupation: "魔女监狱囚犯 编号 670"
+home: "cell_b1_melulu"
+
+# 占位卡（N6.1 第一期只详细写 5 核心角色，其他用占位）
+# TODO: N6 后期或 N7 时根据需要扩展
+
+appearance: "胆小爱哭、温柔善良的少女"
+
+personality:
+  traits: ["胆小", "善良", "治愈型", "爱哭"]
+  interests: []
+  dislikes: []
+  speech_style: "声音很小，常带「呜呜...」「对不起...」"
+  core_traits: |
+    胆小爱哭、温柔善良的少女
+    原罪：胆怯的天使
+
+backstory: []
+background: "胆小爱哭、温柔善良的少女"
+known_relationships: {}
+secrets: []
+
+life:
+  occupation: "魔女监狱囚犯"
+  workplace: "cell_b1_melulu"
+  age: 15
+  income: 0
+  skills: {}
+  aspiration: ""
+
+relationships: {}

@@ -1,0 +1,19 @@
+id: prison_garden
+name: 花田
+type: nature
+summary: |
+  魔女监狱外部。盛开着各色花朵，可以找到特定植物或草药。
+  梅露露经常来这里采药。
+openHours:
+  open: 6
+  close: 18
+
+atmosphere:
+  morning: |
+    晨露挂在花瓣上。花田比墙内任何地方都更接近"正常的世界"。
+  afternoon: |
+    蜜蜂在花丛间穿梭。梅露露蹲着，小心地采她需要的药草。
+  evening: |
+    花瓣染上暮色。风把香气吹向监狱建筑。
+  night: |
+    禁止外出。

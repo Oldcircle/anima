@@ -1,0 +1,35 @@
+id: "marg"
+name: "宝生玛格"
+gender: "female"
+age: 15
+occupation: "魔女监狱囚犯 编号 664"
+home: "cell_b1_marg"
+
+# 占位卡（N6.1 第一期只详细写 5 核心角色，其他用占位）
+# TODO: N6 后期或 N7 时根据需要扩展
+
+appearance: "对任何人都以友善态度接近的神秘少女"
+
+personality:
+  traits: ["友善", "神秘", "令人不安", "深沉"]
+  interests: []
+  dislikes: []
+  speech_style: "温柔有礼，但每句话都让人不舒服"
+  core_traits: |
+    对任何人都以友善态度接近的神秘少女
+    原罪：知晓爱之人
+
+backstory: []
+background: "对任何人都以友善态度接近的神秘少女"
+known_relationships: {}
+secrets: []
+
+life:
+  occupation: "魔女监狱囚犯"
+  workplace: "cell_b1_marg"
+  age: 15
+  income: 0
+  skills: {}
+  aspiration: ""
+
+relationships: {}

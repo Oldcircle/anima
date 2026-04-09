@@ -1,0 +1,20 @@
+id: prison_recreation
+name: 娱乐室
+type: public
+summary: |
+  魔女监狱 2F 西侧。地毯、沙发、台球桌等娱乐设施。
+  自由时间内开放给囚犯使用。蕾雅经常在这里准备直播。
+openHours:
+  open: 8
+  close: 21
+
+atmosphere:
+  morning: |
+    清晨的阳光从大窗洒进来。地毯上还有昨晚台球比赛的痕迹。
+    沙发的纹路里夹着几根头发。
+  afternoon: |
+    蕾雅在角落布置她的直播设备。米莉亚和可可在台球桌边笑闹。
+  evening: |
+    最热闹的时段。直播灯光从某个角落亮着——蕾雅又在表演了。
+  night: |
+    禁止滞留。

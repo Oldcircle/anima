@@ -1,0 +1,20 @@
+id: prison_punishment
+name: 惩罚房
+type: special
+summary: |
+  魔女监狱 B1F。完全禁闭，束缚装置，2 天内不提供饮食。
+  违反规定者被关在这里——亚里沙第一天就被关进来了。
+openHours:
+  open: 0
+  close: 24
+
+atmosphere:
+  morning: |
+    黑暗。腕铐冰凉。墙壁上有前任囚徒留下的指甲痕。
+    被关在这里的人没有时间感。
+  afternoon: |
+    黑暗。
+  evening: |
+    黑暗。门外偶尔传来看守靴底敲打石板的声音。
+  night: |
+    黑暗中能听见自己心跳的声音，越来越响。

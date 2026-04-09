@@ -1,0 +1,35 @@
+id: "leya"
+name: "莲见蕾雅"
+gender: "female"
+age: 15
+occupation: "魔女监狱囚犯 编号 662"
+home: "cell_b1_leya"
+
+# 占位卡（N6.1 第一期只详细写 5 核心角色，其他用占位）
+# TODO: N6 后期或 N7 时根据需要扩展
+
+appearance: "志愿成为明星演员、在一流剧团中挥洒青春的少女"
+
+personality:
+  traits: ["明星气质", "表演型", "好胜", "嫉妒心"]
+  interests: []
+  dislikes: []
+  speech_style: "优雅做作，喜欢做戏剧化动作和台词"
+  core_traits: |
+    志愿成为明星演员、在一流剧团中挥洒青春的少女
+    原罪：舞台上的偶像
+
+backstory: []
+background: "志愿成为明星演员、在一流剧团中挥洒青春的少女"
+known_relationships: {}
+secrets: []
+
+life:
+  occupation: "魔女监狱囚犯"
+  workplace: "cell_b1_leya"
+  age: 15
+  income: 0
+  skills: {}
+  aspiration: ""
+
+relationships: {}

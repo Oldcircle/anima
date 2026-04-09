@@ -1,0 +1,20 @@
+id: prison_library
+name: 图书室
+type: public
+summary: |
+  魔女监狱 2F 东侧。安静空间，阅读桌椅，藏书相对克制——
+  典狱长允许的书都是某种"教材"。希罗经常在这里看书或写日记。
+openHours:
+  open: 8
+  close: 21
+
+atmosphere:
+  morning: |
+    清晨的图书室一片寂静。木质书桌上有薄薄的灰。
+    希罗已经在角落坐着了——她总是第一个到。
+  afternoon: |
+    几个少女在不同的书架前翻书。雪莉会时不时地把书架推倒寻找暗门。
+  evening: |
+    希罗坐在窗边写日记。光线变得昏黄。
+  night: |
+    禁止滞留。

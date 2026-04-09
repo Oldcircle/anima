@@ -1,0 +1,35 @@
+id: "coco"
+name: "泽渡可可"
+gender: "female"
+age: 15
+occupation: "魔女监狱囚犯 编号 669"
+home: "cell_b1_coco"
+
+# 占位卡（N6.1 第一期只详细写 5 核心角色，其他用占位）
+# TODO: N6 后期或 N7 时根据需要扩展
+
+appearance: "网络直播主，通过游戏实况和杂谈获得微薄收益"
+
+personality:
+  traits: ["网络达人", "孤独", "社恐", "直播脸"]
+  interests: []
+  dislikes: []
+  speech_style: "直播腔；「家人们」「兄弟们」；现实里反而结巴"
+  core_traits: |
+    网络直播主，通过游戏实况和杂谈获得微薄收益
+    原罪：孤独的直播主
+
+backstory: []
+background: "网络直播主，通过游戏实况和杂谈获得微薄收益"
+known_relationships: {}
+secrets: []
+
+life:
+  occupation: "魔女监狱囚犯"
+  workplace: "cell_b1_coco"
+  age: 15
+  income: 0
+  skills: {}
+  aspiration: ""
+
+relationships: {}

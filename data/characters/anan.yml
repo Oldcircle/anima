@@ -1,0 +1,35 @@
+id: "anan"
+name: "夏目安安"
+gender: "female"
+age: 15
+occupation: "魔女监狱囚犯 编号 660"
+home: "cell_b1_anan"
+
+# 占位卡（N6.1 第一期只详细写 5 核心角色，其他用占位）
+# TODO: N6 后期或 N7 时根据需要扩展
+
+appearance: "家里蹲的少女，几乎不说话，通过素描本进行笔谈交流"
+
+personality:
+  traits: ["沉默", "怕生", "艺术家"]
+  interests: []
+  dislikes: []
+  speech_style: "几乎不说话；只用素描本沟通；偶尔小声「啊...」"
+  core_traits: |
+    家里蹲的少女，几乎不说话，通过素描本进行笔谈交流
+    原罪：编织谎言的沉睡公主
+
+backstory: []
+background: "家里蹲的少女，几乎不说话，通过素描本进行笔谈交流"
+known_relationships: {}
+secrets: []
+
+life:
+  occupation: "魔女监狱囚犯"
+  workplace: "cell_b1_anan"
+  age: 15
+  income: 0
+  skills: {}
+  aspiration: ""
+
+relationships: {}

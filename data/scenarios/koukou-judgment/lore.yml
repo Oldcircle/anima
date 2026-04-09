@@ -1,0 +1,33 @@
+# 扣扣审判 — 公共背景与传说
+# 角色们都"听说过"或"模糊知道"的世界事实
+# 与角色个人秘密 (secrets) 不同，这些是公开层面的世界设定
+
+public_facts:
+  - id: prison_500_years
+    content: 这座监狱已有 500 年历史，最初是魔女们聚集休憩的公共设施
+  - id: witch_factor_test
+    content: 国家通过秘密检查筛选出有"魔女因子"的少女，强制收容
+  - id: trial_means_death
+    content: 一旦发生凶案就要审判，没人能逃过这个流程
+  - id: noah_world_artist
+    content: 城崎诺亚在监狱外的身份是世界知名艺术家"气球"——大家逐渐发现了这件事
+
+rumors:
+  - id: rumor_yesterday_strangers
+    content: 听说昨晚监狱外的森林边出现了一些奇怪的灯火——但这地方从来不该有人
+
+  - id: rumor_warden_master
+    content: 典狱长偶尔提到她"主人"的名字——这个监狱背后还有更高层的存在
+
+unresolved_world_questions:
+  - id: q_who_runs_this
+    description: "魔女监牢真正的运营方是谁？典狱长背后的'主人'是谁？"
+    visible_to: ["nayaka"]  # 只有奈叶香知道并在追问
+
+  - id: q_why_us
+    description: "为什么是我们这 14 个？我们之间有联系吗？"
+    visible_to: "*"
+
+historical_events:
+  - id: hist_first_trial
+    content: 据说几十年前曾发生过一次审判，所有囚犯都死了——因为她们一致认定不存在凶手，但运营方判定她们撒谎
