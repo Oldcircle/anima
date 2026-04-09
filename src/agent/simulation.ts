@@ -785,9 +785,14 @@ export class Simulation {
     this.beatEngine.setTriggered(this.world.narrative.getWorld().triggeredBeats);
   }
 
-  /** 启用 LLM 导演（N4）。可选 — 不调即不启用。 */
+  /** 启用 LLM 导演（N4）。可选 — 不调即不启用。
+   * D1: 自动注入 simulation 的 memory + impressions 给 director 的 read 工具。 */
   enableDirector(config: DirectorConfig): void {
-    this.director = new Director(config);
+    this.director = new Director({
+      ...config,
+      memory: config.memory ?? this.memory,
+      impressions: config.impressions ?? this.impressions,
+    });
   }
 
   /** 注册 phase-specific 工具（N6.4）。CLI 启动时调一次。 */

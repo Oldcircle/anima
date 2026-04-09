@@ -1,15 +1,12 @@
-# 最后一班船 — 初始世界状态
+# 最后一班船 — 初始世界状态（狗血版）
 #
-# 时间锚点: 第 1 天清晨。距离末班船启航还有约 3 个游戏日。
-# Day 1: 重聚日 + 各自打算暴露
-# Day 2: 张力 + Twist 揭露
-# Day 3: Climax + Deadline
-#
-# 这些 unresolved events 是世界的"已经在跑"状态，给 director 充足上下文。
+# 时间锚点: 第 1 天清晨。距离末班船启航还有 3 个游戏日。
+# Day 1: 重聚 + 各自的"现状"暴露（订婚 / 东京 / 孩子照片）
+# Day 2: 三重秘密互相撕开（一夜情 / 绝症 / 孩子的爸是谁）
+# Day 3: 末班船汽笛 + 三人必须各自做出选择
 
 active_phase: peaceful
 
-# ── 5 个开场未解决事件 ──
 unresolved_events:
   - id: forced_eviction_announcement
     summary: |
@@ -19,26 +16,47 @@ unresolved_events:
     involved: [asuka, shinji, rei]
     visible_to: "*"
 
-  - id: asuka_tokyo_offer
+  - id: ten_years_ago_couple
     summary: |
-      明日香一周前收到东京顶级研究所的录用通知。
-      她已经买好了末班船的票，决定去东京。
-      但她没告诉任何人她其实害怕一个人去。
+      10 年前真嗣和明日香是恋人。镇上人人都知道。
+      然后明日香一夜之间消失去了东京，没说一句话。
+      真嗣等了 10 年没等到一封信。
+    involved: [asuka, shinji]
+    visible_to: "*"
+
+  - id: shinji_rei_engagement
+    summary: |
+      两年前真嗣终于"接受"明日香不会回来，和绫波丽订了婚。
+      婚礼原本定在下个月。征收令一来，婚礼也悬了。
+      镇上人都觉得真嗣是"找了个温柔的人凑合"，连绫波丽自己也这么想。
+    involved: [shinji, rei]
+    visible_to: "*"
+
+  - id: asuka_real_reason_left
+    summary: |
+      10 年前明日香离开的真正理由：她发现自己怀了真嗣的孩子。
+      就在她准备告诉真嗣的那个晚上，她无意中看到绫波丽从真嗣家后门出来，
+      头发乱着，脸是红的。她当场转身，第二天买了去东京的票。
+      她从未告诉任何人。孩子今年 9 岁，叫"凉"，留在大陆的外祖父母家。
+      她钱包里有一张孩子的照片，这次回来随身带着。
     involved: [asuka]
     visible_to: [asuka]
 
-  - id: shinji_father_grave_excuse
+  - id: rei_drunk_night_secret
     summary: |
-      真嗣告诉所有人他要留下"陪父亲的墓"。
-      但其实他根本不知道父亲埋在哪 — 父亲十年前在外地病逝，遗体没运回小镇。
-      "陪墓"只是他不敢面对外面世界编出来的借口。
-    involved: [shinji]
-    visible_to: [shinji]
+      10 年前的某个夜里，绫波丽喝醉了去找真嗣。两人发生了一次。
+      第二天真嗣什么都不记得（他也喝了），但绫波丽全程清醒。
+      她背着这个秘密 10 年。她隐约觉得明日香的离开和那一夜有关，
+      但她不敢去查证。她答应嫁给真嗣，一半是补偿，一半是惩罚自己。
+    involved: [rei]
+    visible_to: [rei]
 
-  - id: rei_silent_choice
+  - id: rei_terminal_diagnosis
     summary: |
-      绫波丽决定跟真嗣一起留下。她对外说是"因为这里安静"。
-      真正的理由是她暗恋真嗣 — 但她从未说出口，连真嗣自己都不知道。
+      三个月前医生告诉绫波丽她得了无法治愈的病，最多还有半年。
+      她没告诉任何人。她答应这场婚礼，是想在走之前给真嗣留个"已经被爱过"的印象，
+      让他不至于一辈子还在等明日香。
+      她随身带着诊断书，藏在大衣内袋。
     involved: [rei]
     visible_to: [rei]
 
@@ -50,20 +68,21 @@ unresolved_events:
     involved: [asuka, shinji, rei]
     visible_to: "*"
 
-# ── 初始关系（童年挚友的复杂羁绊） ──
 character_relationships:
-  - { a: asuka, b: shinji, level: 70, type: "童年挚友", bond: "childhood_friend" }
-  - { a: shinji, b: asuka, level: 70, type: "童年挚友 (但怕她)", bond: "childhood_friend" }
-  - { a: shinji, b: rei, level: 60, type: "默默依靠", bond: "comfort" }
-  - { a: rei, b: shinji, level: 80, type: "暗恋", bond: "secret_crush" }
-  - { a: asuka, b: rei, level: 50, type: "看不透但关心", bond: "complicated" }
-  - { a: rei, b: asuka, level: 55, type: "敬佩 + 微妙嫉妒" }
+  - { a: asuka, b: shinji, level: 95, type: "10 年前的恋人 (未了结)", bond: "ex_lover" }
+  - { a: shinji, b: asuka, level: 90, type: "10 年前的恋人 (从未真正放下)", bond: "ex_lover" }
+  - { a: shinji, b: rei, level: 65, type: "未婚妻 (温柔但隔着距离)", bond: "fiancee" }
+  - { a: rei, b: shinji, level: 75, type: "未婚夫 (愧疚 + 自我惩罚的爱)", bond: "fiance" }
+  - { a: asuka, b: rei, level: 60, type: "曾经的闺蜜 (从未正面对质过那一夜)", bond: "estranged_friend" }
+  - { a: rei, b: asuka, level: 50, type: "10 年的负罪感对象", bond: "guilt" }
 
-# ── 初始流言（小镇空了，没什么流言可流通，但有几条镇民走前留下的话） ──
 initial_rumors:
-  - content: "听说真嗣每天天不亮就去山上'看墓'，但镇上长辈说他爸根本不在这里下葬"
+  - content: "明日香这次回来据说带了张'侄子'的照片在钱包里，谁见了都说那孩子的眼睛像极了真嗣"
+    source_char_id: ~
+    spread_to: [rei]
+  - content: "绫波丽这几个月经常一个人去诊所方向，回来眼睛是红的，问她她只摇头"
+    source_char_id: ~
+    spread_to: [shinji]
+  - content: "10 年前明日香走的那天，有人看到绫波丽天没亮从真嗣家后门出来"
     source_char_id: ~
     spread_to: [asuka]
-  - content: "明日香的行李上周就打包好了，但她每次走到码头边就停住"
-    source_char_id: ~
-    spread_to: [shinji, rei]

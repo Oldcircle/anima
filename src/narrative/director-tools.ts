@@ -11,11 +11,17 @@
 import type { ToolDefinition } from "../providers/types.js";
 import type { World } from "../world/world.js";
 import type { CharacterIntent } from "../world/types.js";
+import type { ShortTermMemory } from "../memory/short-term.js";
+import type { ImpressionStore } from "../memory/impressions.js";
 
 export interface DirectorToolContext {
   world: World;
   /** 当前 tick（用于设置 createdTick / expiresAt） */
   tick: number;
+  /** D1: read 工具需要访问角色短期记忆 */
+  memory?: ShortTermMemory;
+  /** D1: read 工具需要访问印象库 */
+  impressions?: ImpressionStore;
 }
 
 export interface DirectorToolResult {

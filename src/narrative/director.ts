@@ -14,15 +14,33 @@
  */
 
 import type { World } from "../world/world.js";
-import type { LLMProvider, LLMRequest, ToolCall } from "../providers/types.js";
+import type { LLMProvider, LLMRequest } from "../providers/types.js";
+import type { ShortTermMemory } from "../memory/short-term.js";
+import type { ImpressionStore } from "../memory/impressions.js";
 import type { BeatReadyEvent, BeatDefinition } from "./beat-engine.js";
 import {
   ALL_DIRECTOR_TOOLS,
-  getDirectorToolByName,
+  getDirectorToolByName as _getWriteToolByName,
+  type DirectorToolDefinition,
   type DirectorToolResult,
 } from "./director-tools.js";
+import { ALL_DIRECTOR_READ_TOOLS, READ_TOOL_NAMES } from "./director-read-tools.js";
 
 const FORBIDDEN_TOOL_PREFIXES = ["talk", "say", "speak", "message"]; // 兜底防越权
+
+// D1: 合并写工具 + 读工具
+const ALL_TOOLS: DirectorToolDefinition[] = [...ALL_DIRECTOR_TOOLS, ...ALL_DIRECTOR_READ_TOOLS];
+function lookupTool(name: string): DirectorToolDefinition | undefined {
+  return ALL_TOOLS.find((t) => t.tool.name === name);
+}
+
+const MAX_LOOP_STEPS = 5;
+const MAX_WRITE_CALLS = 2;
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max) + "…";
+}
 
 export interface DirectorConfig {
   provider: LLMProvider;
@@ -31,6 +49,12 @@ export interface DirectorConfig {
   dailyBudget?: number;
   /** 是否允许真实 LLM 调用；为 false 时所有触发走 mock 路径（测试用） */
   enabled?: boolean;
+  /** D1: 短期记忆引用，read 工具用 */
+  memory?: ShortTermMemory;
+  /** D1: 印象库引用，read 工具用 */
+  impressions?: ImpressionStore;
+  /** D1: 是否启用 read 工具 + tool loop 模式（默认 true，可关闭回退到旧单步路径） */
+  useReadTools?: boolean;
 }
 
 export interface DirectorCallLog {
@@ -47,6 +71,9 @@ export class Director {
   private modelId: string;
   private dailyBudget: number;
   private enabled: boolean;
+  private memory?: ShortTermMemory;
+  private impressions?: ImpressionStore;
+  private useReadTools: boolean;
 
   /** 每天的剩余调用预算（key = game day） */
   private budgetByDay = new Map<number, number>();
@@ -59,6 +86,9 @@ export class Director {
     this.modelId = config.modelId;
     this.dailyBudget = config.dailyBudget ?? 5;
     this.enabled = config.enabled ?? true;
+    this.memory = config.memory;
+    this.impressions = config.impressions;
+    this.useReadTools = config.useReadTools ?? true;
   }
 
   isEnabled(): boolean {
@@ -117,7 +147,7 @@ export class Director {
   }): Promise<DirectorCallLog | null> {
     if (!this.enabled) return null;
 
-    // 预算检查 + 立即扣减（防止并发竞态）
+    // 预算检查 + 立即扣减（防止并发竞态）— tool loop 整体只算一次预算
     const remaining = this.budgetByDay.get(params.day) ?? this.dailyBudget;
     if (remaining <= 0) {
       console.log(`🎬 [director] 预算耗尽 (day ${params.day}), skip ${params.trigger}`);
@@ -125,63 +155,155 @@ export class Director {
     }
     this.budgetByDay.set(params.day, remaining - 1);
 
-    let response;
-    try {
-      const request: LLMRequest = {
-        system: params.promptContext.system,
-        messages: [{ role: "user", content: params.promptContext.user }],
-        tools: ALL_DIRECTOR_TOOLS.map((t) => t.tool),
-        temperature: 0.7,
-        maxTokens: 800,
-      };
-      response = await this.provider.chat(request, this.modelId);
-    } catch (err) {
-      console.warn(`🎬 [director] LLM 调用失败: ${(err as Error).message}`);
-      // 失败回退：还原预算
-      this.budgetByDay.set(params.day, remaining);
-      return null;
+    const ctx = {
+      world: params.world,
+      tick: params.tick,
+      memory: this.memory,
+      impressions: this.impressions,
+    };
+
+    const useLoop = this.useReadTools;
+    const tools = useLoop ? ALL_TOOLS : ALL_DIRECTOR_TOOLS;
+    const messages: LLMRequest["messages"] = [{ role: "user", content: params.promptContext.user }];
+
+    const appliedCalls: DirectorCallLog["toolCalls"] = [];
+    let writeCallCount = 0;
+    let lastThought = "";
+    let stepsUsed = 0;
+    const maxSteps = useLoop ? MAX_LOOP_STEPS : 1;
+
+    for (let step = 0; step < maxSteps; step++) {
+      stepsUsed = step + 1;
+      let response;
+      try {
+        response = await this.provider.chat(
+          {
+            system: params.promptContext.system,
+            messages,
+            tools: tools.map((t) => t.tool),
+            temperature: 0.7,
+            maxTokens: 800,
+          },
+          this.modelId,
+        );
+      } catch (err) {
+        console.warn(`🎬 [director] LLM 调用失败 (step ${step}): ${(err as Error).message}`);
+        if (step === 0) {
+          // 第一步就失败：还原预算并直接返回 null（保持旧行为）
+          this.budgetByDay.set(params.day, remaining);
+          return null;
+        }
+        break;
+      }
+
+      if (response.content) lastThought = response.content;
+
+      const toolCalls = response.toolCalls ?? [];
+      if (toolCalls.length === 0) {
+        // 没工具调用 = 想结束。如果还没动过手，强制 do_nothing 记录一下
+        break;
+      }
+
+      // 一次最多处理 2 个 tool call（同一步里）
+      let stepHadTerminal = false;
+      const stepResults: Array<{ name: string; result: DirectorToolResult }> = [];
+
+      for (const tc of toolCalls.slice(0, 2)) {
+        // 越权防御
+        if (FORBIDDEN_TOOL_PREFIXES.some((p) => tc.name.toLowerCase().startsWith(p))) {
+          console.warn(`🎬 [director] 拒绝越权工具调用: ${tc.name}`);
+          const r: DirectorToolResult = {
+            ok: false,
+            description: "rejected: forbidden tool",
+            error: "forbidden_tool",
+          };
+          appliedCalls.push({ name: tc.name, args: tc.arguments, result: r });
+          stepResults.push({ name: tc.name, result: r });
+          continue;
+        }
+
+        const tool = lookupTool(tc.name);
+        if (!tool) {
+          const r: DirectorToolResult = {
+            ok: false,
+            description: `未知工具 ${tc.name}`,
+            error: "unknown_tool",
+          };
+          appliedCalls.push({ name: tc.name, args: tc.arguments, result: r });
+          stepResults.push({ name: tc.name, result: r });
+          continue;
+        }
+
+        const isRead = READ_TOOL_NAMES.has(tc.name);
+
+        // 写工具次数硬上限
+        if (!isRead && writeCallCount >= MAX_WRITE_CALLS) {
+          const r: DirectorToolResult = {
+            ok: false,
+            description: `写工具调用已达上限 ${MAX_WRITE_CALLS}，本次拒绝。请用 do_nothing 结束。`,
+            error: "write_limit",
+          };
+          appliedCalls.push({ name: tc.name, args: tc.arguments, result: r });
+          stepResults.push({ name: tc.name, result: r });
+          continue;
+        }
+
+        const result = tool.handler(tc.arguments, ctx);
+        appliedCalls.push({ name: tc.name, args: tc.arguments, result });
+        stepResults.push({ name: tc.name, result });
+
+        if (!isRead) writeCallCount++;
+        if (tc.name === "do_nothing" || tc.name === "mark_beat_resolved") {
+          stepHadTerminal = true;
+        }
+      }
+
+      // 如果这一步只调了写工具，达到了写上限，结束
+      if (writeCallCount >= MAX_WRITE_CALLS) break;
+      if (stepHadTerminal) break;
+      if (!useLoop) break; // 单步路径只跑 1 轮
+
+      // 把这一步的结果反喂回 messages，供下一轮决策
+      const assistantSummary = stepResults
+        .map((r) => `调用 ${r.name} → ${r.result.ok ? "ok" : "fail"}: ${truncate(r.result.description, 600)}`)
+        .join("\n");
+      messages.push({
+        role: "assistant",
+        content: response.content
+          ? `${response.content}\n[工具调用结果]\n${assistantSummary}`
+          : `[工具调用结果]\n${assistantSummary}`,
+      });
+      messages.push({
+        role: "user",
+        content:
+          writeCallCount === 0
+            ? "继续。如果信息已经够了，请调用 1-2 个写工具（inject_intent / inject_observation / amplify_event 等），或调用 do_nothing 结束。"
+            : "继续。你已经做出了改动，可以再补一个写工具或调 do_nothing 结束。",
+      });
     }
 
-    // 应用 tool calls
-    const appliedCalls: DirectorCallLog["toolCalls"] = [];
-    for (const tc of response.toolCalls.slice(0, 3)) {
-      // 兜底防越权：拒绝任何看起来像角色台词的工具
-      if (FORBIDDEN_TOOL_PREFIXES.some((p) => tc.name.toLowerCase().startsWith(p))) {
-        console.warn(`🎬 [director] 拒绝越权工具调用: ${tc.name}`);
-        appliedCalls.push({
-          name: tc.name,
-          args: tc.arguments,
-          result: { ok: false, description: "rejected: forbidden tool", error: "forbidden_tool" },
-        });
-        continue;
-      }
-      const tool = getDirectorToolByName(tc.name);
-      if (!tool) {
-        appliedCalls.push({
-          name: tc.name,
-          args: tc.arguments,
-          result: { ok: false, description: `未知工具 ${tc.name}`, error: "unknown_tool" },
-        });
-        continue;
-      }
-      const result = tool.handler(tc.arguments, { world: params.world, tick: params.tick });
-      appliedCalls.push({ name: tc.name, args: tc.arguments, result });
+    // 如果 useLoop 但 LLM 全程没调任何写工具且 step 用完，记一条 do_nothing
+    if (useLoop && writeCallCount === 0 && !appliedCalls.some((c) => c.name === "do_nothing")) {
+      appliedCalls.push({
+        name: "do_nothing",
+        args: { reason: "loop_ended_without_write" },
+        result: { ok: true, description: "loop_ended_without_write" },
+      });
     }
 
     const log: DirectorCallLog = {
       tick: params.tick,
       trigger: params.trigger,
       beatId: params.beatId,
-      thought: response.content || "(无想法)",
+      thought: lastThought || "(无想法)",
       toolCalls: appliedCalls,
       budgetRemaining: this.budgetByDay.get(params.day)!,
     };
     this.appendLog(log);
 
-    // 控制台 trace
     const action = appliedCalls.length === 0 ? "(无工具调用)" : appliedCalls.map((c) => c.name).join(",");
     console.log(
-      `🎬 [director] ${params.trigger}${params.beatId ? ` [${params.beatId}]` : ""} → ${action} (budget=${log.budgetRemaining})`,
+      `🎬 [director] ${params.trigger}${params.beatId ? ` [${params.beatId}]` : ""} → ${action} (steps=${stepsUsed}, writes=${writeCallCount}, budget=${log.budgetRemaining})`,
     );
 
     return log;
@@ -202,43 +324,32 @@ export class Director {
     const characters = world.getAllCharacters();
     const ns = world.narrative.getSnapshot();
 
+    // D1: 瘦身。只列角色 id + 当前地点 + 未解决事件 id 列表（不含 summary 全文）。
+    // 想看 summary / 角色细节 / 场景活动，让 director 自己调 read_character / read_scene。
     const charLines = characters
       .map((c) => {
         const loc = world.getLocation(c.locationId)?.name ?? c.locationId;
-        return `  - id="${c.id}" name="${c.name}" 当前在 ${loc}`;
+        return `  - ${c.id} (${c.name}) @ ${loc}`;
       })
       .join("\n");
 
-    const unresolvedLines =
+    const eventIds =
       ns.world.unresolvedEvents.length === 0
-        ? "  （无）"
+        ? "（无）"
         : ns.world.unresolvedEvents
             .map((e) => {
               const visibility = e.visibleTo === "*" ? "*" : e.visibleTo.join(",");
-              return `  - id="${e.id}" 涉及=[${e.involved.join(",")}] 可见=${visibility}\n    "${e.summary}"`;
+              return `${e.id}[涉及:${e.involved.join(",")}|可见:${visibility}]`;
             })
-            .join("\n");
+            .join(", ");
 
-    const rumorLines =
-      ns.world.rumors.length === 0
-        ? "  （无）"
-        : ns.world.rumors
-            .slice(-3)
-            .map((r) => `  - "${r.content.slice(0, 60)}"`)
-            .join("\n");
-
-    return `当前世界存在的角色（这是你能合法引用的所有角色 id，不要编造其他 id）:
+    return `角色（合法 id 列表，禁止编造其他 id）:
 ${charLines}
 
-当前未解决事件:
-${unresolvedLines}
+未解决事件 id（详情请用 read_character/read_scene 调查具体情况）:
+  ${eventIds}
 
-最近流言（最多 3 条）:
-${rumorLines}
-
-世界张力 tension_index: ${ns.world.tensionIndex}/100
-天气: ${world.weather}
-已触发 beats: ${ns.world.triggeredBeats.length} 个`;
+世界张力: ${ns.world.tensionIndex}/100  天气: ${world.weather}  已触发 beats: ${ns.world.triggeredBeats.length}`;
   }
 
   private buildBeatReadyPrompt(
@@ -251,18 +362,17 @@ ${rumorLines}
 
 铁律：
 1. 你**不能**让角色直接说话。你没有任何 talk/say 工具。台词永远由角色自己产出。
-2. 所有 character_id / observer_id / source_character_id / spread_to 等字段必须使用下面"当前世界存在的角色"列表里**真实存在**的 id。**绝不允许**编造 id 或使用动漫角色名。
-3. 你只能通过以下方式影响世界：
-   - inject_intent: 给角色注入念头（**最高优先级，最有效**）
+2. 所有角色 id 必须来自下面列出的"角色"列表，**绝不允许**编造或使用动漫角色名。
+3. **先看后写**：在调用任何写工具之前，**至少先调用一次 read_character 或 read_scene** 调查相关角色/场景的真实状态。世界快照里只有 id 列表，详情必须自己 read。
+4. 写工具（每次调用最多用 2 个写工具）：
+   - inject_intent: 注入念头（强力，慎用）
    - inject_observation: 让角色注意到某事
    - set_observable_state: 改可观察痕迹
-   - add_unresolved_event: 添加未解决事件（要呼应现有故事，不要凭空编）
-   - add_rumor: 加流言（同上，不要凭空编新人物）
-   - nudge_weather: 调天气（谨慎用）
+   - add_unresolved_event / add_rumor: 添加事件/流言（呼应现有故事）
+   - nudge_weather: 调天气（极少用）
    - mark_beat_resolved / do_nothing
-4. 触发后的发生方式必须**符合当前世界状态和已存在的角色**。如果没必要介入就调 do_nothing。
-5. 优先用 inject_intent — 它最直接影响下一 tick 的角色行为。
-6. 一次最多调用 1-2 个工具。简洁。`;
+5. 工作流：先 read 1-2 次 → 思考 → 写 1-2 个工具 → 用 do_nothing 或不再调用工具来结束。最多 5 步。
+6. 如果 read 完之后觉得世界已经在轨道上，直接 do_nothing 是好答案。`;
 
     const beatHint = beatDef?.on_trigger as { hint?: string; director_hint?: string } | undefined;
     const hintText = beatHint?.director_hint ?? beatHint?.hint ?? event.description ?? "";
@@ -295,14 +405,11 @@ ${hintText ? `Beat 提示:\n${hintText}\n` : ""}
 你的目标：让世界既不失控也不陷入死水。
 
 铁律：
-1. 你**不能**让角色直接说话。
-2. 所有引用的角色 id 必须来自下面"当前世界存在的角色"列表，**绝不允许**编造。
-3. 如果世界的张力（tension_index）已经够高（>40）或最近有 beat 触发，通常调 do_nothing。
-4. 如果世界太平淡（tension < 15 且最近没什么事），可以注入一个轻度扰动：
-   - 优先 inject_intent 给某个真实角色一个微小念头
-   - 或 add_unresolved_event 呼应现有未解决事件
-   - 不要凭空编新的传说/陌生人/未提及的人物
-5. 一次最多 1 个工具。多数情况应该是 do_nothing。`;
+1. 你**不能**让角色直接说话。所有角色 id 必须来自下面列表，**禁止编造**。
+2. **先看后写**：调用任何写工具前，至少先调用一次 read_character 或 read_scene 看看现在角色在干什么。
+3. 如果 tension > 40 或最近有 beat 触发，通常 do_nothing 即可。
+4. 如果世界太平淡（tension < 15），优先用 inject_intent / inject_observation 给某个真实角色一个微小念头，呼应已有未解决事件。
+5. 多数节奏检查应该以 do_nothing 结束。最多 5 步循环，写工具最多 1 个。`;
 
     const user = `${this.buildWorldSnapshot(world)}
 

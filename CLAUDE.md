@@ -113,6 +113,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 - [PLAN-frontend-redesign.md](./PLAN-frontend-redesign.md) — `web/` 管理面板重构计划（API 设置 + 角色/地点 CRUD）
 - [DESIGN-narrative.md](./DESIGN-narrative.md) — 叙事架构设计（4 层结构 + scenario pack + beat engine + LLM director）
 - [PLAN-narrative.md](./PLAN-narrative.md) — 叙事系统分期实施计划（N0-N7）
+- [PLAN-director-agent.md](./PLAN-director-agent.md) — Director Agent 化改造（D1-D4：read 工具 + tool loop + pulse 反馈 + agenda 持久化）
 - [IMPORT-koukou-judgment.md](./IMPORT-koukou-judgment.md) — 扣扣审判卡导入策略（1B/2B/3C 决策记录）
 
 ## 当前迭代焦点

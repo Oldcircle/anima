@@ -121,7 +121,7 @@ describe("Director", () => {
     expect(log!.toolCalls[0]!.name).toBe("do_nothing");
   });
 
-  it("only first 3 tool calls are applied", async () => {
+  it("only first 2 tool calls per step are applied (D1: write/step cap)", async () => {
     mockLLM.enqueueResponse("一次做太多事", [
       { name: "do_nothing", arguments: {} },
       { name: "do_nothing", arguments: {} },
@@ -130,7 +130,47 @@ describe("Director", () => {
       { name: "do_nothing", arguments: {} },
     ]);
     const log = await director.handleBeatReady(fakeBeatReady, world);
-    expect(log!.toolCalls.length).toBe(3);
+    // do_nothing 是 terminal，命中后 break；一步只取前 2 个
+    expect(log!.toolCalls.length).toBe(2);
+  });
+
+  it("D1: tool loop runs read → write across multiple steps", async () => {
+    // Step 1: director 调 read_character
+    mockLLM.enqueueResponse("先看看 alice 在干嘛", [
+      { name: "read_character", arguments: { character_id: "alice" } },
+    ]);
+    // Step 2: 看完之后调 inject_intent
+    mockLLM.enqueueResponse("alice 现在没事干，给她注入念头", [
+      { name: "inject_intent", arguments: { character_id: "alice", summary: "想找 bob 聊聊", target_character_id: "bob" } },
+    ]);
+    // Step 3: do_nothing 收尾
+    mockLLM.enqueueResponse("够了", [{ name: "do_nothing", arguments: {} }]);
+
+    const log = await director.handleBeatReady(fakeBeatReady, world);
+    expect(log).not.toBeNull();
+    const names = log!.toolCalls.map((c) => c.name);
+    expect(names).toContain("read_character");
+    expect(names).toContain("inject_intent");
+    // mock LLM 至少被调用 2 次（多步）
+    expect(mockLLM.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("D1: write call cap blocks excessive writes across steps", async () => {
+    // Step 1: 一次塞 2 个写
+    mockLLM.enqueueResponse("", [
+      { name: "inject_intent", arguments: { character_id: "alice", summary: "x", target_character_id: "bob" } },
+      { name: "inject_intent", arguments: { character_id: "bob", summary: "y", target_character_id: "alice" } },
+    ]);
+    // Step 2 不应该被调用，因为已达写上限
+    mockLLM.enqueueResponse("", [
+      { name: "inject_intent", arguments: { character_id: "alice", summary: "z", target_character_id: "bob" } },
+    ]);
+
+    const log = await director.handleBeatReady(fakeBeatReady, world);
+    const writeCalls = log!.toolCalls.filter((c) => c.name === "inject_intent");
+    expect(writeCalls.length).toBe(2);
+    // 第二步不应被触发
+    expect(mockLLM.calls.length).toBe(1);
   });
 
   it("logs are capped at 50 entries", async () => {

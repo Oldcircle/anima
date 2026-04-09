@@ -1,64 +1,94 @@
-# 最后一班船 — beats
-#
-# 设计原则: 每个 beat 是一个具体场景，不是抽象阶段。
-# director_hint 必须明示具体动作建议（让 LLM 演员有抓手）。
+# 最后一班船 — beats（狗血版）
 #
 # 三幕结构:
-#   Day 1 = 重聚 + 各自的"决定"暴露
-#   Day 2 = 张力上升 + 真嗣谎言被察觉
-#   Day 3 = Climax 真相揭露 + 末班船 deadline
+#   Day 1 = 重聚 + 订婚事实砸出来 + 孩子照片首次出现
+#   Day 2 = 三重秘密互相撕开（一夜情 / 绝症 / 孩子）
+#   Day 3 = 末班船汽笛 + 三人各自做选择
 
 beats:
   # ═══════════════════ Day 1: 重聚 ═══════════════════
 
   - id: d1_morning_three_meet_at_bar
-    description: "Day 1 早晨 — 三人在海边小酒馆重聚，这是 10 年来第一次"
+    description: "Day 1 早晨 — 10 年后第一次三人同框"
     preconditions:
       all:
         - "world.day == 1"
     priority: 10
     on_trigger:
       hint: |
-        这是开场 beat。三人 10 年没见，今天是末班船倒数第 3 天。
-        镇子已经空了，他们各自因为不同理由回来。
+        开场 beat。10 年没见。镇子已经空了，3 天后末班船启航。
+        明日香不知道真嗣已经和绫波丽订婚 — 镇上没人写信告诉她，因为没人知道她在哪。
+        真嗣不知道明日香为什么回来。绫波丽知道明日香回来了，心跳到嗓子眼。
 
         director 应该:
-        1. inject_intent 给 asuka: "10 年没见这两个人...真嗣那个胆小鬼还是那么没出息吧。
-           不过既然回来了，反正我也要去码头看看船票什么时候开，顺便去酒馆看看他们。"
-        2. inject_intent 给 shinji: "我得去酒馆买点东西回去...听说明日香和绫波丽都回来了，
-           我会不会遇到她们...对不起对不起，我应该躲开还是该过去打招呼..."
-        3. inject_intent 给 rei: "听说他们今天到了。我想去看看他们...但我不知道该说什么。"
+        1. inject_intent 给 asuka:
+           "10 年了。我回来只是因为这破岛要拆了，外祖父母让我把一些东西收回去。
+           顺便...也只是顺便...看看那个胆小鬼还在不在。Anta baka, 我才不在乎。
+           先去酒馆喝一杯压压火气。"
+        2. inject_intent 给 shinji:
+           "听说明日香回来了。她回来了。我应该去见她吗？我...我有未婚妻了。
+           我不能像 10 年前那样冲过去。但是...先去酒馆买点东西，万一遇到也只是巧合。"
+        3. inject_intent 给 rei:
+           "明日香回来了。我必须去酒馆。我必须先看到她，先开口，先告诉她'我和真嗣订婚了'，
+           不能让她从别人嘴里听到。如果今天不说，我可能一辈子都说不出口。"
+        4. add_unresolved_event id="three_converge_at_bar"
+           summary="三人同时朝酒馆走去，10 年来第一次"
+           involved=[asuka, shinji, rei] visible_to=*
 
-        三个意图都把目的地指向 bar (海边小酒馆)。强制汇合。
+  - id: d1_noon_engagement_revealed
+    description: "Day 1 中午 — 订婚事实砸到明日香脸上"
+    preconditions:
+      all:
+        - "world.day == 1"
+        - "world.hour >= 11"
+    fallback_deadline_day: 1
+    priority: 9
+    on_trigger:
+      hint: |
+        三人在酒馆碰面。寒暄两句之后，绫波丽鼓起勇气说"我和真嗣下个月要结婚"。
+        明日香脸上的笑当场凝固。她什么都没说。
 
-  - id: d1_evening_decisions_revealed
-    description: "Day 1 傍晚 — 各自的'决定'被无意中说出口"
+        director 应该:
+        1. add_unresolved_event id="engagement_announced_to_asuka"
+           summary="绫波丽当面告诉明日香：她和真嗣下个月要结婚。明日香没说话就走了。"
+           involved=[asuka, shinji, rei] visible_to=*
+        2. set_observable_state 给 asuka:
+           "嘴角抽了一下，笑容没收回来，但眼底已经空了"
+        3. inject_observation 给 shinji:
+           "你看见明日香听到'下个月结婚'四个字时手指猛地收紧 — 但她什么都没说。
+           你心里有个声音说：她在意。但又有个声音说：你已经选了绫波丽。"
+
+  - id: d1_evening_photo_glimpse
+    description: "Day 1 傍晚 — 孩子的照片第一次被瞥见"
     preconditions:
       all:
         - "world.day == 1"
         - "world.hour >= 17"
     fallback_deadline_day: 2
-    priority: 8
+    priority: 9
     on_trigger:
       hint: |
-        三人在酒馆/广场坐了一天，到傍晚时各自的决定开始浮出水面。
-        每个人都在试探对方："你打算怎么办？"
+        傍晚明日香一个人坐在海边，从钱包里拿出照片看。
+        恰好真嗣路过看到她背影，但没看到照片正面，只看到她在哭。
+        绫波丽更晚一些路过，看到照片掉在沙滩上 — 她捡起来，看到了那双眼睛。
 
         director 应该:
-        1. add_unresolved_event id="asuka_announces_tokyo":
-           summary="明日香当着两人的面说她接到东京的工作，明天就要走"
-           involved=[asuka, shinji, rei] visible_to=*
-        2. add_unresolved_event id="shinji_announces_grave":
-           summary="真嗣说他要留下'陪父亲的墓'"
-           involved=[shinji, asuka, rei] visible_to=*
-        3. inject_observation 给 asuka:
-           "你听到真嗣说'陪父亲的墓'时，心里突然觉得不对劲——
-           你模糊记得 10 年前你听过什么...真嗣的爸爸不是死在外地的吗？"
+        1. inject_intent 给 asuka:
+           "我得一个人待着。去海边。看看凉的照片。妈妈对不起你 — 你的爸爸要和别人结婚了。"
+        2. inject_observation 给 shinji:
+           "你路过海滩时看到一个红头发的背影坐在那里 — 是明日香。她肩膀在抖。
+           你想过去，但你想到绫波丽，你停住了。"
+        3. add_unresolved_event id="rei_sees_photo"
+           summary="绫波丽在沙滩上捡到一张被风吹掉的照片 — 一个 9 岁男孩，
+                   眼睛和真嗣一模一样。她把照片放回了原处，没说话。"
+           involved=[rei] visible_to=[rei]
+        4. set_observable_state 给 rei:
+           "脸色比平时还白，手在大衣口袋里攥得发抖"
 
-  # ═══════════════════ Day 2: 张力 + Twist ═══════════════════
+  # ═══════════════════ Day 2: 三重秘密 ═══════════════════
 
-  - id: d2_morning_asuka_investigates
-    description: "Day 2 早晨 — 明日香开始怀疑真嗣的'墓地'谎言"
+  - id: d2_morning_rei_confronts_self
+    description: "Day 2 早晨 — 绫波丽决定先去找明日香"
     preconditions:
       all:
         - "world.day == 2"
@@ -66,43 +96,76 @@ beats:
     priority: 9
     on_trigger:
       hint: |
-        明日香心里挂着昨晚的疑惑。她决定去问问。
+        昨晚那张照片让绫波丽一夜没睡。她想通了：那孩子是真嗣的。
+        而且时间对得上 10 年前明日香离开。她必须问明日香一个问题，
+        但她也必须先说出自己藏了 10 年的那一夜。
 
         director 应该:
-        1. inject_intent 给 asuka:
-           "我必须搞清楚真嗣到底在掩饰什么。直接去问他还是先去镇上的旧居民问一下他爸的事？
-           哼，反正闲着也是闲着。"
-        2. set_observable_state 给 asuka:
-           "嘴角紧抿着，眼神比平时锐利"
+        1. inject_intent 给 rei:
+           "我得去找明日香。今天。我得告诉她 10 年前那个晚上的事。
+           然后我要问她那个孩子是不是真嗣的。如果是 — 我必须退婚。
+           我没有资格站在那个位置上。"
+        2. set_observable_state 给 rei:
+           "眼睛充血，但站得很直，像是终于下定了一个等了 10 年的决心"
 
-  - id: d2_evening_truth_brewing
-    description: "Day 2 傍晚 — 明日香找到关键证据，但还没说出口"
+  - id: d2_noon_two_confessions
+    description: "Day 2 中午 — 绫波丽和明日香在花田对质（互相摊牌）"
+    preconditions:
+      all:
+        - "world.day == 2"
+        - "world.hour >= 11"
+    fallback_deadline_day: 2
+    priority: 10
+    on_trigger:
+      hint: |
+        两个女人 10 年来第一次单独面对面。
+        绫波丽先说："10 年前的那个晚上，我喝醉了去找了真嗣。我一直没告诉任何人。"
+        明日香愣住，然后笑了 — 是那种又疼又解脱的笑。
+        她拿出照片："这是凉。9 岁。是真嗣的。10 年前我是因为看见你从他家出来才走的。"
+        两人沉默很久。
+
+        director 必须:
+        1. add_unresolved_event id="mutual_confession"
+           summary="绫波丽承认了 10 年前的一夜。明日香承认了凉是真嗣的孩子。
+                   两人都没哭。她们答应彼此：今天傍晚之前都不告诉真嗣，让真嗣自己来选。"
+           involved=[asuka, rei] visible_to=[asuka, rei]
+        2. inject_observation 给 asuka:
+           "你看着绫波丽的脸 — 她瘦得不像样。她眼底有种你以前没见过的东西。
+           不是愧疚 — 是某种像在告别的平静。你突然有种不祥的预感。"
+
+  - id: d2_evening_rei_collapses
+    description: "Day 2 傍晚 — 绫波丽在广场晕倒，诊断书暴露"
     preconditions:
       all:
         - "world.day == 2"
         - "world.hour >= 17"
-    fallback_deadline_day: 3
-    priority: 9
+    fallback_deadline_day: 2
+    priority: 100
     on_trigger:
       hint: |
-        明日香已经在某个地方（旧邻居的留言、墓地实地调查、自己的童年记忆）
-        确认了：真嗣的爸爸根本不在这里下葬。
-        "陪墓"是谎言。
+        【关键 climax 前置 — 必须发生】
 
-        director 应该:
-        1. add_unresolved_event id="asuka_knows_grave_lie":
-           summary="明日香确认了真嗣的爸爸不在这里下葬，'陪墓'是谎言。她还没说出来。"
-           involved=[asuka] visible_to=[asuka]
-        2. inject_observation 给 rei:
-           "你注意到明日香今天回来时神情有点恍惚，像是发现了什么。她整晚都看着真嗣，
-           但什么都没说。"
-        3. inject_intent 给 rei:
-           "明日香今天怪怪的。也许我应该问问她。但...我从来不主动开口。我应该开口吗？"
+        绫波丽今天透支太多。傍晚回家路上她在广场晕倒。
+        明日香和真嗣几乎同时赶到。真嗣解开她大衣想让她透气，
+        诊断书从内袋掉出来 — 真嗣捡起来看到，整个人僵住。
+        他这才知道：他的未婚妻只剩半年。
 
-  # ═══════════════════ Day 3: Climax ═══════════════════
+        director 必须:
+        1. add_unresolved_event id="rei_collapse_diagnosis_revealed"
+           summary="绫波丽在广场晕倒。真嗣捡到她大衣里的诊断书 — 绝症，最多半年。
+                   真嗣在所有人面前看完，没说一个字。明日香也看到了。"
+           involved=[asuka, shinji, rei] visible_to=*
+        2. set_observable_state 给 shinji:
+           "手里捏着那张纸，指节发白，眼睛失焦"
+        3. inject_observation 给 asuka:
+           "你看到真嗣的脸 — 你 10 年没看到那种表情了。他不知道凉。他不知道一夜情。
+           他什么都不知道。但他现在以为自己马上要失去绫波丽。
+           你站在原地，手伸进口袋摸到那张照片，又抽回来。"
 
-  - id: d3_morning_confrontation
-    description: "Day 3 早晨 — 末班船启航当天，明日香戳穿真嗣"
+  # ═══════════════════ Day 3: Climax + Deadline ═══════════════════
+
+  - id: d3_morning_shinji_must_choose
+    description: "Day 3 早晨 — 真嗣彻夜未眠，明日香决定告诉他全部"
     preconditions:
       all:
         - "world.day == 3"
@@ -110,44 +173,53 @@ beats:
     priority: 100
     on_trigger:
       hint: |
-        【关键 climax beat — 必须发生】
+        【climax 第一波 — 必须发生】
 
-        今天傍晚 18:00 末班船就要走了。明日香知道真相，再不说就来不及了。
-        她必须戳穿真嗣的谎言——不是为了羞辱他，是为了让他和她一起走。
+        末班船今晚 18:00 启航。真嗣彻夜没睡，坐在家里看着诊断书。
+        明日香知道再不说就来不及。她带着照片去找真嗣。
+        她不是为了把他抢回来 — 是为了让他知道凉的存在，让他自己选。
 
         director 必须:
-        1. inject_intent 给 asuka (高紧迫感):
-           "今天必须说出来。我知道你的'墓'是假的，真嗣。你跟我一起走。
-           Anta baka，我不会让你一个人留在这个空岛上的。"
-        2. set_observable_state 给 asuka:
-           "眼睛通红，手在颤抖，但姿态笔直"
-        3. add_unresolved_event id="climax_confrontation":
-           summary="末班船倒计时 8 小时。明日香准备摊牌。"
-           involved=[asuka, shinji, rei] visible_to=*
+        1. inject_intent 给 asuka (高紧迫):
+           "今天必须说。不是为了赢绫波丽 — 她已经在告别了。
+           是为了让真嗣知道有个 9 岁的孩子在大陆等着他，眼睛和他一模一样。
+           然后让他自己选。Anta baka, 这次我不替你选。"
+        2. inject_intent 给 shinji:
+           "绫波丽要死了。我刚知道。我应该陪她走完最后半年。
+           可是明日香回来了。可是她要走了。
+           我这一辈子从来没替自己选过任何东西，今天必须选一次。"
+        3. add_unresolved_event id="asuka_brings_photo_to_shinji"
+           summary="明日香拿着凉的照片去真嗣家。她要告诉他孩子的事。"
+           involved=[asuka, shinji] visible_to=*
 
-  - id: d3_afternoon_rei_breaks_silence
-    description: "Day 3 下午 — 摊牌之后，绫波丽第一次主动开口"
+  - id: d3_noon_rei_sets_them_free
+    description: "Day 3 中午 — 绫波丽主动退婚，把真嗣还给明日香"
     preconditions:
       all:
         - "world.day == 3"
-        - "world.hour >= 13"
+        - "world.hour >= 11"
     fallback_deadline_day: 3
-    priority: 90
+    priority: 95
     on_trigger:
       hint: |
-        摊牌已经发生（无论真嗣承认与否）。三个人坐在那里，沉默。
-        绫波丽这一辈子从未主动说过自己想要什么。但今天必须。
+        绫波丽听说明日香带着照片去了真嗣家。她拖着身体追过去。
+        她在门口停住，然后做了她一辈子里最主动的一件事：
+        她推开门，把订婚戒指放在桌上，对真嗣说"我退婚。你欠我的，去陪那个孩子还。"
+        然后她转身往诊所方向走。
 
-        director 应该:
+        director 必须:
         1. inject_intent 给 rei (打破角色一刻):
-           "我想说话。我从来没说过我想要什么。但今天...如果我不说，真嗣可能会一个人留下，
-           或者跟明日香走。两种我都不想。我应该告诉他...我喜欢他。
-           哪怕他选择走。哪怕他选择留。我至少要让他知道。"
+           "我要去退婚。我从来没主动要过任何东西，所以今天我也只能用主动'放手'的方式存在一次。
+           我要在他们三个的故事里，自己写完最后一句台词。
+           真嗣，你不欠我半年的陪伴。你欠那个孩子 9 年的爸爸。"
         2. set_observable_state 给 rei:
-           "嘴唇微微动着，像是在练习什么台词"
+           "嘴唇颤抖但腰杆挺直，像第一次走自己的路"
+        3. add_unresolved_event id="rei_breaks_engagement"
+           summary="绫波丽退婚。她把戒指留在桌上，独自往诊所方向走。"
+           involved=[asuka, shinji, rei] visible_to=*
 
   - id: d3_evening_ferry_horn
-    description: "Day 3 18:00 — 末班船汽笛响起"
+    description: "Day 3 18:00 — 末班船汽笛，三人各自的最后选择"
     preconditions:
       all:
         - "world.day == 3"
@@ -156,20 +228,25 @@ beats:
     priority: 100
     on_trigger:
       hint: |
-        【最后 deadline beat — 必须发生】
+        【最终 deadline beat — 必须发生】
 
-        末班船的汽笛响彻整个港口。这是最后通牒。
-        三人在码头。每个人都必须做最终选择：上船 or 留下。
+        末班船的汽笛响彻港口。还有 30 分钟启航。
+        码头上：明日香拿着两张船票，一张是她自己的，一张是临时为真嗣买的。
+        真嗣站在码头入口，手里捏着照片。
+        绫波丽在码头另一头远远站着，没靠近，只是想最后看一眼。
+        每个人都必须现在做选择。
 
         director 必须:
-        1. add_unresolved_event id="ferry_horn_blowing":
-           summary="末班船汽笛长鸣 — 还有 30 分钟启航。每个人都必须现在做决定。"
+        1. add_unresolved_event id="ferry_horn_blowing"
+           summary="末班船汽笛长鸣 — 还有 30 分钟启航。三人都在码头。"
            involved=[asuka, shinji, rei] visible_to=*
         2. inject_observation 给所有 3 人:
-           "汽笛声传遍整个码头。你能感觉到地面的震动。这是最后通牒。"
-        3. set_observable_state 给 asuka: "站在码头边，行李在脚边，眼睛盯着船"
-        4. mark_beat_resolved beat_id="d3_evening_ferry_horn"
-           outcome="末班船启航。三人的选择各自落定。"
+           "汽笛声穿过整个码头。地面在震。这是 10 年所有秘密最后的截止时间。"
+        3. set_observable_state 给 asuka: "握着两张船票，眼睛盯着真嗣"
+        4. set_observable_state 给 shinji: "一只手照片一只手戒指，站在码头入口动不了"
+        5. set_observable_state 给 rei: "远远站着，嘴角有种平静的微笑"
+        6. mark_beat_resolved beat_id="d3_evening_ferry_horn"
+           outcome="末班船启航。三个人的选择各自落定。"
 
   # ═══════════════════ Director 兜底 ═══════════════════
 
@@ -183,5 +260,5 @@ beats:
     on_trigger:
       hint: |
         Day 2 中午世界仍然太平淡。注入一个推动剧情的扰动:
-        - 让 asuka 偶遇某个旧邻居，对方说出"真嗣的爸不在这里葬"的证据
-        - 或让 rei 在花田边遇到 shinji，看到他空洞地望着山上
+        - 让明日香的钱包掉在咖啡馆，绫波丽再次看到照片
+        - 或让真嗣无意中听到镇上最后一个老人提起"绫波丽最近常去诊所"
