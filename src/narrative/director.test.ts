@@ -266,22 +266,30 @@ describe("Director", () => {
     expect(director.getAgendaStore()).toBeUndefined();
   });
 
-  it("D1: write call cap blocks excessive writes across steps", async () => {
-    // Step 1: 一次塞 2 个写
+  it("D1: write call cap (3) blocks excessive writes across steps", async () => {
+    // Step 1: 读一下
+    mockLLM.enqueueResponse("", [
+      { name: "read_character", arguments: { character_id: "alice" } },
+    ]);
+    // Step 2: 塞 2 个写（累计 2）
     mockLLM.enqueueResponse("", [
       { name: "inject_intent", arguments: { character_id: "alice", summary: "x", target_character_id: "bob" } },
       { name: "inject_intent", arguments: { character_id: "bob", summary: "y", target_character_id: "alice" } },
     ]);
-    // Step 2 不应该被调用，因为已达写上限
+    // Step 3: 再塞 1 个写（累计 3，达上限）
     mockLLM.enqueueResponse("", [
-      { name: "inject_intent", arguments: { character_id: "alice", summary: "z", target_character_id: "bob" } },
+      { name: "inject_observation", arguments: { observer_id: "alice", observation: "z" } },
+    ]);
+    // Step 4: 不应被触发
+    mockLLM.enqueueResponse("", [
+      { name: "inject_intent", arguments: { character_id: "alice", summary: "overflow", target_character_id: "bob" } },
     ]);
 
     const log = await director.handleBeatReady(fakeBeatReady, world);
-    const writeCalls = log!.toolCalls.filter((c) => c.name === "inject_intent");
-    expect(writeCalls.length).toBe(2);
-    // 第二步不应被触发
-    expect(mockLLM.calls.length).toBe(1);
+    const writeCalls = log!.toolCalls.filter((c) =>
+      c.name.startsWith("inject_") && c.result.ok,
+    );
+    expect(writeCalls.length).toBe(3); // cap=3
   });
 
   it("logs are capped at 50 entries", async () => {

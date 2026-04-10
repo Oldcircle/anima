@@ -60,7 +60,7 @@ function lookupTool(name: string): DirectorToolDefinition | undefined {
 }
 
 const MAX_LOOP_STEPS = 5;
-const MAX_WRITE_CALLS = 2;
+const MAX_WRITE_CALLS = 3;
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
@@ -449,14 +449,14 @@ ${charLines}
 1. 你**不能**让角色直接说话。你没有任何 talk/say 工具。台词永远由角色自己产出。
 2. 所有角色 id 必须来自下面列出的"角色"列表，**绝不允许**编造或使用动漫角色名。
 3. **先看后写**：在调用任何写工具之前，**至少先调用一次 read_character 或 read_scene** 调查相关角色/场景的真实状态。世界快照里只有 id 列表，详情必须自己 read。
-4. **beat_ready 必须介入**：beat 触发就意味着这一刻该有事发生。read 完之后你**必须**至少调用一个写工具（inject_intent / inject_observation / add_unresolved_event 等）。do_nothing 仅在你确认这个 beat 已经在世界里自然发生（read 看到了证据）时才允许。
-5. 写工具（每次调用最多用 2 个）：
-   - inject_intent: 注入念头（最有效，首选）
-   - inject_observation: 让角色注意到某事
+4. **beat_ready 必须介入**：beat 触发就意味着这一刻该有事发生。read 完之后你**必须**至少调用一个写工具。do_nothing 仅在你确认这个 beat 已经在世界里自然发生（read 看到了证据）时才允许。
+5. 写工具（每次调用最多用 3 个）：
+   - **inject_intent**（最有效，首选）: 给角色注入念头，直接影响下一 tick 行为
+   - **inject_observation**: 让角色注意到某事
    - set_observable_state: 改可观察痕迹
-   - add_unresolved_event / add_rumor: 添加事件/流言（呼应现有故事）
-   - nudge_weather: 调天气（极少用）
-   - mark_beat_resolved: beat 已发生时调用
+   - add_unresolved_event / add_rumor: 添加事件/流言
+   - nudge_weather / mark_beat_resolved
+6. **重要**：add_unresolved_event 单独使用**效果很弱**——角色能在"心里挂着的事"里看到，但不会主动反应。你**必须**配合 inject_intent 或 inject_observation 让相关角色立刻注意到并产生行动欲望。典型组合：先 add_unresolved_event 公布事实 → 再 inject_intent 让角色想"我必须去问/说/做什么"。
 6. 工作流：先 read 1-2 次 → 思考 → 写 1-2 个工具 → 不再调用工具来结束。最多 5 步。
 7. **每次写工具都建议带 expected 字段**（一句话："我期望 alice 下一 tick 主动 talk bob"）。这会被记成 pulse，下次 invoke 时你可以用 read_pulse_outcome 查回看实际发生了什么。
 8. **Agenda（你的工作记忆）**：prompt 顶部会列出你当前的活跃 arc。如果当前 beat 该开一条新 arc 来跟进，用 create_arc(beat_id, goal, target_day, watch_chars)。需要标记 arc 进度时用 update_agenda(arc_id, status=...)。状态值: setup → brewing → climax_ready → resolved/abandoned。活跃 arc 上限 3 条。`;
