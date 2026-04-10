@@ -228,14 +228,23 @@ export class Simulation {
     return tracked;
   }
 
+  /** 同一对角色连续对话超过此轮数时，强制冷却让他们去做别的事 */
+  private static MAX_CONVERSATION_TURNS = 8;
+
   private _getTalkCooldownTargets(characterId: string, tick: number): string[] {
     const state = this.world.getCharacter(characterId);
     if (!state) return [];
     return this.world.getCharactersAtLocation(state.locationId)
       .filter((id) => id !== characterId)
       .filter((otherId) => {
+        // 原有的短暂冷却（连续 talk 后 2 tick 内不能再 talk 同一人）
         const cooldownTick = this._conversationCooldown.get([characterId, otherId].sort().join(":"));
-        return cooldownTick !== undefined && (tick - cooldownTick) < 2;
+        if (cooldownTick !== undefined && (tick - cooldownTick) < 2) return true;
+        // 对话轮数上限：同一对角色连续聊了太久，强制停下
+        const history = this.conversations.getHistory(characterId, otherId);
+        const recentTurns = history.filter((e) => tick - e.tick <= 10).length;
+        if (recentTurns >= Simulation.MAX_CONVERSATION_TURNS) return true;
+        return false;
       });
   }
 

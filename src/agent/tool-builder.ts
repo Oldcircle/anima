@@ -244,7 +244,7 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
       const rawLoc = args.location as string;
       // 支持 ID、中文名、描述文本：LLM 可能传 "cafe"、"咖啡馆"、"海风面包坊——买面包、吃东西（你的工作地点）。"
       const resolveLocation = (input: string) => {
-        if (input === "家" || input === "回家") return ctx.allLocations.find(l => l.id === myHome);
+        if (input === "家" || input === "回家" || input === "home") return ctx.allLocations.find(l => l.id === myHome);
         // 1. 精确匹配 ID 或名字
         const exact = ctx.allLocations.find(l => l.id === input || l.name === input);
         if (exact) return exact;
