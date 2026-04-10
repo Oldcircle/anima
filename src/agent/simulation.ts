@@ -301,8 +301,9 @@ export class Simulation {
     this.world.setTick(gameTime.tick);
     // 1.0a 叙事张力（N2）：每 tick 末更新 tension_index
     updateWorldTension(this.world);
-    // 1.0b BeatEngine 扫描（N3）：每天 22:00 一次，daily cadence
-    if (gameTime.hour === 22 && gameTime.minute === 0) {
+    // 1.0b BeatEngine 扫描（N3）：每 4 tick（每游戏小时）扫一次
+    // 原设计只在 22:00 扫，但有时间条件的 beat（如 hour >= 11）会被错过
+    if (gameTime.tick % 4 === 0) {
       this.runBeatScan(gameTime);
     }
     // 1.0c LLM Director 日节奏检查（N4）：每天 06:00 一次
@@ -901,10 +902,9 @@ export class Simulation {
   runBeatScan(gameTime: GameTime): BeatReadyEvent[] {
     if (this.beatEngine.getBeats().length === 0) return [];
 
-    // 同一天扫描幂等：若本 game day 已扫过则跳过
-    const day = Math.floor(gameTime.tick / 96) + 1;
-    if (this._lastBeatScanDay === day) return [];
-    this._lastBeatScanDay = day;
+    // 幂等：最少间隔 4 tick（1 游戏小时）
+    if (this._lastBeatScanDay !== undefined && gameTime.tick - this._lastBeatScanDay < 4) return [];
+    this._lastBeatScanDay = gameTime.tick;
 
     // 构建上下文
     const allChars = this.world.getAllCharacters();
@@ -939,7 +939,8 @@ export class Simulation {
 
     if (ready.length === 0) return [];
 
-    console.log(`🎬 [beat] scan @ day ${day}: ${ready.length} beat(s) ready`);
+    const scanDay = Math.floor(gameTime.tick / 96) + 1;
+    console.log(`🎬 [beat] scan @ day ${scanDay} tick ${gameTime.tick}: ${ready.length} beat(s) ready`);
     for (const ev of ready) {
       console.log(`   → ${ev.beatId} (${ev.reason}) ${ev.description ?? ""}`);
       this.world.narrative.markBeatTriggered(ev.beatId);

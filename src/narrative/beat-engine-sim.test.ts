@@ -60,13 +60,12 @@ describe("BeatEngine + Simulation integration", () => {
     });
   });
 
-  it("loadBeats + runOneTick 在 22:00 自动触发 scan", async () => {
+  it("loadBeats + runOneTick 自动触发 scan", async () => {
     sim.loadBeats([
       { id: "always_fire", preconditions: ["true"] },
     ]);
 
-    // 跑到 22:00（tick 88 → game time 22:00 第一天）
-    // tick = day * 96 + hour * 4 + minute_quarter; day=0, hour=22, q=0 → 88
+    // 任意 4 的倍数 tick 都会触发 scan
     await sim.runOneTick(tickToGameTime(88));
 
     expect(beatEvents.length).toBe(1);
@@ -74,11 +73,12 @@ describe("BeatEngine + Simulation integration", () => {
     expect(world.narrative.getWorld().triggeredBeats).toContain("always_fire");
   });
 
-  it("非 22:00 tick 不触发 scan", async () => {
+  it("scan 每 4 tick（每游戏小时）触发一次", async () => {
     sim.loadBeats([{ id: "x", preconditions: ["true"] }]);
-    await sim.runOneTick(tickToGameTime(40)); // 16:00
-    expect(beatEvents.length).toBe(0);
-    expect(world.narrative.getWorld().triggeredBeats).toEqual([]);
+    // tick 40 是 4 的倍数，会触发 scan
+    await sim.runOneTick(tickToGameTime(40)); // 10:00
+    expect(beatEvents.length).toBe(1);
+    expect(world.narrative.getWorld().triggeredBeats).toContain("x");
   });
 
   it("一个 beat 不会跨天重复触发", async () => {
