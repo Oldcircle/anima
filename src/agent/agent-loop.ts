@@ -238,39 +238,57 @@ export async function runAgentTick(params: {
   if (!availableNames.includes(toolCall.name)) {
     console.log(`[${card.id}] ⚠️ 不存在的工具: ${toolCall.name}`);
   }
-  // 字面重复拦截 (Bug #4): 如果 LLM 生成的 talk 和最近说过的话一字不差，
-  // 强行降级为 sit/journal，避免角色卡死。
+  // 重复拦截 (Bug #4 + semantic repeat fix):
+  // 1. 字面重复：和最近说过的话一模一样
+  // 2. 语义重复：连续 3+ 次 talk 同一人（即使措辞不同，说明对话已陷入循环）
   if (toolCall.name === "talk" && params.memory) {
     const newMessage = (toolCall.arguments.message as string ?? "").trim();
     const newTarget = (toolCall.arguments.target as string ?? "").trim();
     if (newMessage && newTarget) {
-      const recent = params.memory.getRecent(card.id, 8);
-      let isLiteralRepeat = false;
+      const recent = params.memory.getRecent(card.id, 12);
+      let isRepeat = false;
+
+      // 检查 1：字面重复（前 60 字相同）
       for (let i = recent.length - 1; i >= 0; i--) {
         const e = recent[i]!;
-        if (e.type !== "event") continue;
-        if (e.relatedCharacterId !== newTarget) continue;
+        if (e.type !== "event" || e.relatedCharacterId !== newTarget) continue;
         const m = e.content.match(/^对.+?说：「(.+?)」$/);
         if (m && m[1]) {
-          // 比较前 100 字（避免微小字符差异；80% 以上重叠也算重复）
-          const oldHead = m[1].slice(0, 100);
-          const newHead = newMessage.slice(0, 100);
+          const oldHead = m[1].slice(0, 60);
+          const newHead = newMessage.slice(0, 60);
           if (oldHead === newHead) {
-            isLiteralRepeat = true;
-            console.warn(`[${card.id}] ⚠️ 字面重复拦截: 对 ${newTarget} 重复了刚说过的话「${newHead.slice(0,40)}…」`);
+            isRepeat = true;
+            console.warn(`[${card.id}] ⚠️ 字面重复拦截: 对 ${newTarget}「${newHead.slice(0, 30)}…」`);
             break;
           }
         }
       }
-      if (isLiteralRepeat) {
-        // 降级为 sit（如果工具列表里有），否则 stroll，否则什么都不做
-        const fallback = dynamicActions.find((a) => ["sit", "stroll", "journal", "use_toilet"].includes(a.tool.name));
+
+      // 检查 2：连续 talk 同一人 3+ 次（语义重复，对话卡住了）
+      if (!isRepeat) {
+        let consecutive = 0;
+        for (let i = recent.length - 1; i >= 0; i--) {
+          const e = recent[i]!;
+          if (e.type !== "event") continue;
+          if (e.relatedCharacterId === newTarget && e.content.match(/^对.+?说：/)) {
+            consecutive++;
+          } else {
+            break; // 中间有其他行为，打断计数
+          }
+        }
+        if (consecutive >= 3) {
+          isRepeat = true;
+          console.warn(`[${card.id}] ⚠️ 语义重复拦截: 已连续 ${consecutive} 次 talk ${newTarget}，强制换行为`);
+        }
+      }
+
+      if (isRepeat) {
+        const fallback = dynamicActions.find((a) => ["go_to", "sit", "stroll", "journal", "use_toilet"].includes(a.tool.name));
         if (fallback) {
           toolCall.name = fallback.tool.name;
-          toolCall.arguments = {};
+          toolCall.arguments = fallback.tool.name === "go_to" ? { location: "家", thought: "聊得差不多了，该做点别的了" } : {};
         } else {
-          // 没合适的降级工具：返回 skip
-          return { characterId: card.id, thought: thought + "（觉得自己刚才已经说过这句了，决定先不说话）", skipped: true, skipReason: "literal_talk_repeat" };
+          return { characterId: card.id, thought: thought + "（觉得这个话题已经聊完了，决定先做点别的）", skipped: true, skipReason: "semantic_talk_repeat" };
         }
       }
     }

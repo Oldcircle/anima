@@ -23,7 +23,7 @@ export const gossipAction: ActionDefinition = {
       return { description: `想和${target}聊八卦，但对方不在这里`, effects: [], success: false };
     }
     return {
-      description: `和${target}聊八卦：${args.about}`,
+      description: `和${target}聊八卦：${args.about ?? "一些小道消息"}`,
       effects: [
         { type: "need_change", targetId: ctx.characterId, field: "social", delta: 20 },
         { type: "need_change", targetId: target, field: "social", delta: 15 },
@@ -62,16 +62,16 @@ export const giveGiftAction: ActionDefinition = {
       return { description: `想送礼物给${target}，但对方不在这里`, effects: [], success: false };
     }
     if (ctx.gold < 20) {
-      return { description: `想送${args.item}给${target}，但买不起（需要20金币，只有${ctx.gold}）`, effects: [], success: false };
+      return { description: `想送${args.item ?? "礼物"}给${target}，但买不起（需要20金币，只有${ctx.gold}）`, effects: [], success: false };
     }
     return {
-      description: `送了${args.item}给${target}`,
+      description: `送了${args.item ?? "礼物"}给${target}`,
       effects: [
         { type: "relationship_change", targetId: ctx.characterId, field: target, delta: 5 },
         { type: "need_change", targetId: target, field: "social", delta: 8 },
       ],
       duration: 1,
-      observableState: `正把${args.item}递给${target}。`,
+      observableState: `正把${args.item ?? "礼物"}递给${target}。`,
     };
   },
 };

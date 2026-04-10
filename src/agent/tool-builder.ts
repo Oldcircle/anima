@@ -641,7 +641,10 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
       },
     },
     handler: (args, actx): ActionResult => {
-      const rawItem = args.item as string;
+      const rawItem = (args.item as string | undefined)?.trim();
+      if (!rawItem || rawItem === "undefined") {
+        return { description: "想买东西但没想好买什么", effects: [], success: false };
+      }
       // 支持 ID 和中文名：LLM 可能传 "notebook" 或 "笔记本"
       const resolved = resolveItem(rawItem);
       const shopItem = shop.find(s => s.id === rawItem || s.name === rawItem || (resolved && s.id === resolved.id));
@@ -701,7 +704,10 @@ function buildEatTool(
       },
     },
     handler: (args, actx): ActionResult => {
-      const rawItem = args.item as string;
+      const rawItem = (args.item as string | undefined)?.trim();
+      if (!rawItem || rawItem === "undefined") {
+        return { description: "想吃东西但没想好吃什么", effects: [], success: false };
+      }
       // 支持 ID 和中文名
       const def = resolveItem(rawItem);
       if (!def) {
