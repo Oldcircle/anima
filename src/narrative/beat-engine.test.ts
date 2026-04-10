@@ -66,8 +66,22 @@ describe("BeatEngine", () => {
         fallback_deadline_day: 3,
       },
     ]);
+    // day 2: 没到 deadline，不触发
     expect(engine.scan(ctx({ day: 2 })).length).toBe(0);
-    const ready = engine.scan(ctx({ day: 3 }));
+    // day 3 早晨 (hour < 20): deadline 当天但还没到晚间，不触发
+    expect(engine.scan(ctx({ day: 3, tick: 96 * 2 })).length).toBe(0); // tick=192 → hour=0
+    // day 3 晚间 (hour >= 20): deadline 当天晚间，触发
+    const ready = engine.scan(ctx({ day: 3, tick: 96 * 2 + 80 })); // tick=272 → hour=20
+    expect(ready.length).toBe(1);
+    expect(ready[0]!.reason).toBe("fallback_deadline");
+  });
+
+  it("fallback fires immediately when past deadline day", () => {
+    const engine = new BeatEngine([
+      { id: "overdue", preconditions: ["false"], fallback_deadline_day: 2 },
+    ]);
+    // day 3 任何时间（超过 deadline day 2）都触发
+    const ready = engine.scan(ctx({ day: 3, tick: 96 * 2 }));
     expect(ready.length).toBe(1);
     expect(ready[0]!.reason).toBe("fallback_deadline");
   });

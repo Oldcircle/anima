@@ -118,13 +118,16 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 
 ## 当前迭代焦点
 
-**N0-N6 完成，N7 收尾中**：叙事系统已完整接入。
-- 规则导演 (BeatEngine) + LLM 导演 (Director) 双层架构
-- scenario pack 抽象支持任意剧本切换
-- koukou-judgment（魔法少女监狱审判）作为完整旗舰剧本
-- 玩家通过 web 叙事面板可塞纸条、注入事件、触发 director
+**叙事系统 N0-N6 + Director Agent 化 D1/D2/D4 全部完成并合并 main。**
 
-完整规划见 PLAN-narrative.md，当前进度见 STATUS.md。
+- 规则导演 (BeatEngine) + LLM 导演 (Director) 双层架构
+- Director Agent 化：4 个 read 工具 + tool loop (先看后写) + pulse 反馈闭环 + agenda 跨 invoke 工作记忆
+- scenario pack 支持 5 个剧本切换（default / mygo-seaside / koukou-judgment / last-ferry / seaside-trio）
+- last-ferry 狗血版（3 角色 + 3 重 climax）可用于低成本验证完整叙事链路
+- 玩家通过 web 叙事面板可塞纸条、注入事件、触发 director
+- D3 软档位工具（amplify_event / seed_topic）YAGNI 搁置
+
+完整规划见 PLAN-narrative.md / PLAN-director-agent.md，当前进度见 STATUS.md。
 
 ## 环境配置
 

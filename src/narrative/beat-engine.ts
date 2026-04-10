@@ -121,11 +121,16 @@ export class BeatEngine {
     if (preconditionsMet) return "preconditions_met";
 
     // 2. fallback deadline 路径
-    if (
-      beat.fallback_deadline_day !== undefined &&
-      context.world.day >= beat.fallback_deadline_day
-    ) {
-      return "fallback_deadline";
+    // 当天内只在晚间（tick 换算 hour >= 20）才 fallback，给正常 precondition 足够时间
+    // 过了 deadline day 则立即 fallback
+    if (beat.fallback_deadline_day !== undefined) {
+      const hour = Math.floor((context.world.tick % 96) / 4);
+      if (
+        context.world.day > beat.fallback_deadline_day ||
+        (context.world.day === beat.fallback_deadline_day && hour >= 20)
+      ) {
+        return "fallback_deadline";
+      }
     }
 
     return null;
