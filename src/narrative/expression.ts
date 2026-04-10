@@ -26,6 +26,7 @@ export interface BeatContext {
   /** 世界级状态（来自 narrative_state.world）+ 便捷字段 */
   world: {
     day: number;            // 当前 game day（由 tick 派生）
+    hour: number;           // 当前游戏内小时 0-23
     tick: number;
     activePhase?: string;
     tensionIndex: number;
@@ -142,6 +143,7 @@ export function buildBeatContext(params: {
 }): BeatContext {
   const { narrative, tick } = params;
   const day = Math.floor(tick / 96) + 1; // 1 game day = 96 ticks (15 min/tick)
+  const hour = Math.floor((tick % 96) / 4); // 0-23
 
   const characters: Record<string, BeatCharacterContext> = {};
   const allCharIds = new Set<string>([
@@ -165,6 +167,7 @@ export function buildBeatContext(params: {
   return {
     world: {
       day,
+      hour,
       tick,
       activePhase: narrative.world.activePhase,
       tensionIndex: narrative.world.tensionIndex,
