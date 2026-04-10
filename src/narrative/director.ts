@@ -235,13 +235,20 @@ export class Director {
 
     for (let step = 0; step < maxSteps; step++) {
       stepsUsed = step + 1;
+
+      // beat_ready 且还没写过工具时，从 tool list 移除 do_nothing 防止 LLM 逃避
+      const isBeatMustWrite = params.trigger === "beat_ready" && writeCallCount === 0;
+      const stepTools = isBeatMustWrite
+        ? tools.filter((t) => t.tool.name !== "do_nothing")
+        : tools;
+
       let response;
       try {
         response = await this.provider.chat(
           {
             system: params.promptContext.system,
             messages,
-            tools: tools.map((t) => t.tool),
+            tools: stepTools.map((t) => t.tool),
             temperature: 0.7,
             maxTokens: 800,
           },
