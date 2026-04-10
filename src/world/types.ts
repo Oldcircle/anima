@@ -106,6 +106,16 @@ export interface CharacterObservableState {
   expiresAt: number;
 }
 
+/** D3: director 通过 seed_topic 注入的"想聊的话题" */
+export interface WantToDiscuss {
+  topic: string;
+  urgency: "low" | "med" | "high";
+  /** 只有和这个角色聊天时才提起（不填 = 和任何人都会提） */
+  targetChar?: string;
+  createdTick: number;
+  expiresAt: number;
+}
+
 export interface CharacterState {
   id: string;
   name: string;
@@ -124,6 +134,8 @@ export interface CharacterState {
   currentIntent?: CharacterIntent;
   /** 当前留在外界可被旁人观察到的生活痕迹 */
   observableState?: CharacterObservableState;
+  /** D3: director 注入的"想聊的话题"，角色 talk 时 prompt 会引导围绕这些话题展开 */
+  wantToDiscuss?: WantToDiscuss[];
   /** 消息信箱：其他角色发来的消息 */
   inbox: InboxMessage[];
   /** 随身物品 */

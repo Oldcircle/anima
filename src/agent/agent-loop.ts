@@ -179,6 +179,7 @@ export async function runAgentTick(params: {
     activePhase: world.narrative.getWorld().activePhase,
     lastSelfTalk,
     recentThoughts: recentThoughts.map((t) => ({ tick: t.tick, content: t.content })),
+    wantToDiscuss: world.getWantToDiscuss(card.id, gameTime.tick),
   });
 
   // 对话模式：如果提供了 conversationRequest，使用它替代标准 prompt

@@ -121,6 +121,8 @@ export interface ConversationPromptParams {
   impressionText?: string;
   /** 角色最近记忆 */
   recentMemories?: string;
+  /** D3: director 注入的"想聊的话题" */
+  wantToDiscuss?: Array<{ topic: string; urgency: "low" | "med" | "high"; targetChar?: string }>;
 }
 
 /**
@@ -206,6 +208,17 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     }
   }
 
+  // 4b. D3: seed_topic 注入的"你心里有些话想说"
+  if (params.wantToDiscuss && params.wantToDiscuss.length > 0) {
+    const urgencyLabel = { high: "【必须说】", med: "【找机会说】", low: "【有空就说】" };
+    const topicLines = params.wantToDiscuss
+      .filter((w) => !w.targetChar || w.targetChar === partnerCard.id)
+      .map((w) => `- ${urgencyLabel[w.urgency]} ${w.topic}`);
+    if (topicLines.length > 0) {
+      parts.push(`\n## 你心里有些话想说\n${topicLines.join("\n")}\n（请围绕这些话题展开对话。【必须说】的话题必须在这次对话中提到。）`);
+    }
+  }
+
   // 5. 对话轮次提示
   const exchangeCount = history.length;
   if (exchangeCount >= 8) {
@@ -270,6 +283,8 @@ export function buildConversationRequest(params: {
   actions: ActionDefinition[];
   workplaceName?: string;
   colleagueNames?: string[];
+  /** D3: director 注入的"想聊的话题" */
+  wantToDiscuss?: Array<{ topic: string; urgency: "low" | "med" | "high"; targetChar?: string }>;
 }): LLMRequest {
   const systemPrompt = buildSystemPrompt(params.card, params.workplaceName, params.colleagueNames);
   const userPrompt = buildConversationPrompt({
@@ -285,6 +300,7 @@ export function buildConversationRequest(params: {
     relationship: params.relationship,
     impressionText: params.impressionText,
     recentMemories: params.recentMemories,
+    wantToDiscuss: params.wantToDiscuss,
   });
 
   return {

@@ -243,6 +243,44 @@ export class World {
     character.observableState = undefined;
   }
 
+  /** D3: 给角色塞一个"想聊的话题"，talk prompt 会引导围绕它展开 */
+  addWantToDiscuss(
+    characterId: string,
+    topic: string,
+    urgency: "low" | "med" | "high",
+    targetChar: string | undefined,
+    tick: number,
+    expiresIn = 12,
+  ): boolean {
+    const character = this._characters.get(characterId);
+    if (!character) return false;
+    if (!character.wantToDiscuss) character.wantToDiscuss = [];
+    // 上限 3 个话题
+    if (character.wantToDiscuss.length >= 3) character.wantToDiscuss.shift();
+    character.wantToDiscuss.push({
+      topic,
+      urgency,
+      targetChar,
+      createdTick: tick,
+      expiresAt: tick + expiresIn,
+    });
+    return true;
+  }
+
+  /** D3: 获取仍有效的话题列表（自动清理过期的） */
+  getWantToDiscuss(
+    characterId: string,
+    tick = this._state.tick,
+    talkingTo?: string,
+  ): import("./types.js").WantToDiscuss[] {
+    const character = this._characters.get(characterId);
+    if (!character?.wantToDiscuss) return [];
+    character.wantToDiscuss = character.wantToDiscuss.filter((w) => w.expiresAt >= tick);
+    return character.wantToDiscuss.filter(
+      (w) => !w.targetChar || w.targetChar === talkingTo,
+    );
+  }
+
   // --- 信箱 ---
 
   /** 向角色信箱投递消息 */

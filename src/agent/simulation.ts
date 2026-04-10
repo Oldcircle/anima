@@ -396,6 +396,7 @@ export class Simulation {
               .filter((r) => r.relationship.bond === "colleague")
               .map((r) => this.world.getCharacter(r.otherId)?.name)
               .filter((n): n is string => !!n),
+            wantToDiscuss: this.world.getWantToDiscuss(id, gameTime.tick, activePartnerId),
           });
         }
       }
@@ -521,6 +522,7 @@ export class Simulation {
                 .filter((r) => r.relationship.bond === "colleague")
                 .map((r) => this.world.getCharacter(r.otherId)?.name)
                 .filter((n): n is string => !!n),
+              wantToDiscuss: this.world.getWantToDiscuss(id, gameTime.tick, partnerId),
             });
             r = await runAgentTick({
               config,
@@ -957,9 +959,22 @@ export class Simulation {
       });
     }
 
+    // D3: beat 触发时自动应用 auto_seeds（机械保证核心话题进入角色 prompt）
+    const beats = this.beatEngine.getBeats();
+    for (const ev of ready) {
+      const def = beats.find((b) => b.id === ev.beatId);
+      if (def?.auto_seeds) {
+        for (const seed of def.auto_seeds) {
+          const ok = this.world.addWantToDiscuss(seed.char, seed.topic, seed.urgency, seed.target, gameTime.tick);
+          if (ok) {
+            console.log(`🌱 [auto_seed] ${seed.char}: [${seed.urgency}] ${seed.topic.slice(0, 50)}`);
+          }
+        }
+      }
+    }
+
     // N4: 异步派给 LLM Director（不阻塞 tick）
     if (this.director?.isEnabled()) {
-      const beats = this.beatEngine.getBeats();
       for (const ev of ready) {
         const def = beats.find((b) => b.id === ev.beatId);
         const task = this.director.handleBeatReady(ev, this.world, def).catch((err) => {

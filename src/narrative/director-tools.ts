@@ -408,6 +408,55 @@ export const updateAgendaTool: DirectorToolDefinition = {
   },
 };
 
+// ── 11. seed_topic (D3) ──
+// 给角色塞一个"想聊的话题"。角色下次 talk 时 prompt 会引导围绕这个话题展开。
+// 比 inject_intent 更精准——intent 只是"想找谁谈谈"，seed_topic 指定"谈什么"。
+
+export const seedTopicTool: DirectorToolDefinition = {
+  tool: {
+    name: "seed_topic",
+    description:
+      "给某角色塞一个'想聊的话题'。效果：角色下次 talk 时，prompt 会提示 TA '你心里有些话想说'并列出这个话题。比 inject_intent 更精准——intent 只能让角色'想找某人谈谈'，seed_topic 能指定'谈什么'。典型用法：seed_topic + inject_intent 组合——先用 seed_topic 指定话题，再用 inject_intent 给角色动力去找人。",
+    parameters: {
+      type: "object",
+      properties: {
+        character_id: { type: "string", description: "角色 id" },
+        topic: { type: "string", description: "话题内容（角色视角，如'你必须告诉真嗣订婚的消息'）" },
+        urgency: {
+          type: "string",
+          enum: ["low", "med", "high"],
+          description: "紧迫度。high = 下次开口必须提，med = 找机会提，low = 有空就提",
+        },
+        target_char: {
+          type: "string",
+          description: "（可选）只有和这个角色聊天时才提起。不填 = 和任何人都会提。",
+        },
+      },
+      required: ["character_id", "topic", "urgency"],
+    },
+  },
+  handler: (args, ctx): DirectorToolResult => {
+    const charId = args.character_id as string;
+    const topic = args.topic as string;
+    const urgency = (args.urgency as "low" | "med" | "high") ?? "med";
+    const targetChar = args.target_char as string | undefined;
+
+    if (!charId || !topic) {
+      return { ok: false, description: "缺少 character_id 或 topic", error: "missing_arg" };
+    }
+    const ok = ctx.world.addWantToDiscuss(charId, topic, urgency, targetChar, ctx.tick);
+    if (!ok) {
+      return { ok: false, description: `角色 ${charId} 不存在`, error: "unknown_character" };
+    }
+    const targetNote = targetChar ? `（仅对 ${targetChar}）` : "";
+    return {
+      ok: true,
+      description: `给 ${charId} 塞话题${targetNote}[${urgency}]: ${topic}`,
+      changed: { seed_topic: charId },
+    };
+  },
+};
+
 export const ALL_DIRECTOR_TOOLS: DirectorToolDefinition[] = [
   injectIntentTool,
   injectObservationTool,
@@ -419,6 +468,7 @@ export const ALL_DIRECTOR_TOOLS: DirectorToolDefinition[] = [
   doNothingTool,
   createArcTool,
   updateAgendaTool,
+  seedTopicTool,
 ];
 
 export function getDirectorToolByName(name: string): DirectorToolDefinition | undefined {

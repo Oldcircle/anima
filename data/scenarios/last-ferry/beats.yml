@@ -14,6 +14,17 @@ beats:
       all:
         - "world.day == 1"
     priority: 10
+    auto_seeds:
+      - char: asuka
+        topic: "10 年没见真嗣了。听说他还在这个破岛上。我才不在乎他...但如果碰到了，也许可以问问他这些年过得怎么样。"
+        urgency: med
+      - char: shinji
+        topic: "明日香回来了。10 年没见。我现在有未婚妻了...如果碰到明日香，我该怎么面对她？"
+        urgency: med
+      - char: rei
+        topic: "明日香回来了。我必须在她从别人嘴里听到之前，亲口告诉她我和真嗣订婚的事。"
+        urgency: high
+        target: asuka
     on_trigger:
       hint: |
         开场 beat。10 年没见。镇子已经空了，3 天后末班船启航。
@@ -43,6 +54,18 @@ beats:
         - "world.hour >= 11"
     fallback_deadline_day: 1
     priority: 9
+    auto_seeds:
+      - char: rei
+        topic: "我必须现在就告诉明日香：我和真嗣下个月要结婚了。不能再拖了。"
+        urgency: high
+        target: asuka
+      - char: asuka
+        topic: "绫波丽看起来好像有话要跟我说。她的表情很奇怪...和真嗣有关系吗？"
+        urgency: med
+        target: rei
+      - char: shinji
+        topic: "绫波丽会不会告诉明日香我们订婚的事？我该怎么面对她的反应..."
+        urgency: high
     on_trigger:
       hint: |
         三人在酒馆碰面。寒暄两句之后，绫波丽鼓起勇气说"我和真嗣下个月要结婚"。
@@ -66,6 +89,13 @@ beats:
         - "world.hour >= 17"
     fallback_deadline_day: 2
     priority: 9
+    auto_seeds:
+      - char: asuka
+        topic: "今天得到的消息太多了...真嗣居然要和绫波丽结婚。我需要一个人待着。钱包里凉的照片...我好想他。"
+        urgency: high
+      - char: rei
+        topic: "我看到了明日香钱包里的照片...那个孩子的眼睛，和真嗣一模一样。这意味着什么？"
+        urgency: high
     on_trigger:
       hint: |
         傍晚明日香一个人坐在海边，从钱包里拿出照片看。
@@ -94,6 +124,11 @@ beats:
         - "world.day == 2"
     fallback_deadline_day: 2
     priority: 9
+    auto_seeds:
+      - char: rei
+        topic: "昨晚那张照片...那个孩子是真嗣的。我必须去找明日香，告诉她10年前那个晚上的事——我喝醉了去找了真嗣。然后问她那个孩子是不是真嗣的。"
+        urgency: high
+        target: asuka
     on_trigger:
       hint: |
         昨晚那张照片让绫波丽一夜没睡。她想通了：那孩子是真嗣的。
@@ -116,6 +151,15 @@ beats:
         - "world.hour >= 11"
     fallback_deadline_day: 2
     priority: 10
+    auto_seeds:
+      - char: rei
+        topic: "我必须告诉明日香：10年前的那个晚上，我喝醉了去找了真嗣，我们发生了关系。第二天真嗣什么都不记得。我背着这个秘密10年。"
+        urgency: high
+        target: asuka
+      - char: asuka
+        topic: "绫波丽，我要让你看一样东西。这是凉的照片，他今年9岁。是真嗣的孩子。10年前我看见你从真嗣家后门出来才离开的。"
+        urgency: high
+        target: rei
     on_trigger:
       hint: |
         两个女人 10 年来第一次单独面对面。
@@ -141,6 +185,13 @@ beats:
         - "world.hour >= 17"
     fallback_deadline_day: 2
     priority: 100
+    auto_seeds:
+      - char: shinji
+        topic: "绫波丽的诊断书...绝症...最多半年。我的未婚妻要死了。我什么都不知道。"
+        urgency: high
+      - char: asuka
+        topic: "绫波丽晕倒了...诊断书写着绝症。她答应嫁给真嗣，是因为想在走之前给他留个'被爱过'的印象。天哪。"
+        urgency: high
     on_trigger:
       hint: |
         【关键 climax 前置 — 必须发生】
@@ -171,6 +222,14 @@ beats:
         - "world.day == 3"
     fallback_deadline_day: 3
     priority: 100
+    auto_seeds:
+      - char: asuka
+        topic: "今天必须告诉真嗣：你有一个9岁的儿子叫凉，在大陆等着你。然后让他自己选——跟我走还是留下陪绫波丽。"
+        urgency: high
+        target: shinji
+      - char: shinji
+        topic: "绫波丽要死了。明日香回来了。末班船今晚启航。我必须做一个选择。"
+        urgency: high
     on_trigger:
       hint: |
         【climax 第一波 — 必须发生】
@@ -200,6 +259,11 @@ beats:
         - "world.hour >= 11"
     fallback_deadline_day: 3
     priority: 95
+    auto_seeds:
+      - char: rei
+        topic: "我要退婚。真嗣不欠我半年的陪伴，他欠那个孩子9年的爸爸。我把戒指留在桌上。"
+        urgency: high
+        target: shinji
     on_trigger:
       hint: |
         绫波丽听说明日香带着照片去了真嗣家。她拖着身体追过去。

@@ -31,6 +31,13 @@ export interface BeatDefinition {
   fallback_deadline_day?: number;
   /** 任意 payload，emit 给监听器使用（N4 director 会读 director_hint） */
   on_trigger?: Record<string, unknown>;
+  /** D3: beat 触发时自动注入的话题种子——机械保证核心剧情进入角色 prompt */
+  auto_seeds?: Array<{
+    char: string;
+    topic: string;
+    urgency: "low" | "med" | "high";
+    target?: string;
+  }>;
 }
 
 export interface BeatReadyEvent {
@@ -186,6 +193,7 @@ export function parseBeatsConfig(parsed: unknown): BeatDefinition[] {
     if (typeof obj.priority === "number") def.priority = obj.priority;
     if (typeof obj.fallback_deadline_day === "number") def.fallback_deadline_day = obj.fallback_deadline_day;
     if (obj.on_trigger !== undefined) def.on_trigger = obj.on_trigger as Record<string, unknown>;
+    if (Array.isArray(obj.auto_seeds)) def.auto_seeds = obj.auto_seeds as BeatDefinition["auto_seeds"];
     out.push(def);
   }
   return out;

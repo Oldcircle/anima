@@ -316,6 +316,8 @@ export function buildUserPrompt(params: {
   lastSelfTalk?: { target: string; message: string; tick: number };
   /** 角色最近的想法（单独成段渲染，让模型看到自己想过什么） */
   recentThoughts?: Array<{ tick: number; content: string }>;
+  /** D3: director 注入的"想聊的话题" */
+  wantToDiscuss?: Array<{ topic: string; urgency: "low" | "med" | "high"; targetChar?: string }>;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
@@ -489,6 +491,16 @@ export function buildUserPrompt(params: {
     for (const e of recentEvents.slice(-5)) {
       parts.push(`- ${e.description}`);
     }
+  }
+
+  // ── D3: seed_topic 注入的"你心里有些话想说" ──
+  if (params.wantToDiscuss && params.wantToDiscuss.length > 0) {
+    const urgencyLabel = { high: "【必须说】", med: "【找机会说】", low: "【有空就说】" };
+    const topicLines = params.wantToDiscuss.map((w) => {
+      const target = w.targetChar ? `（对${params.characterNames?.get(w.targetChar) ?? w.targetChar}）` : "";
+      return `- ${urgencyLabel[w.urgency]}${target} ${w.topic}`;
+    });
+    parts.push(`\n## 你心里有些话想说\n${topicLines.join("\n")}\n（如果你选择 talk，请围绕这些话题展开。【必须说】的话题必须在这次对话中提到。）`);
   }
 
   // ── 叙事线索（N2）：注入未解决事件，给角色提供"心里挂着的事" ──

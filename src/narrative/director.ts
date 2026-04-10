@@ -473,7 +473,11 @@ ${charLines}
    - set_observable_state: 改可观察痕迹
    - add_unresolved_event / add_rumor: 添加事件/流言
    - nudge_weather / mark_beat_resolved
-6. **重要**：add_unresolved_event 单独使用**效果很弱**——角色能在"心里挂着的事"里看到，但不会主动反应。你**必须**配合 inject_intent 或 inject_observation 让相关角色立刻注意到并产生行动欲望。典型组合：先 add_unresolved_event 公布事实 → 再 inject_intent 让角色想"我必须去问/说/做什么"。
+6. **推剧情的最佳组合**：
+   - **seed_topic**（最精准）: 指定角色"和谁聊天时必须聊什么话题"，直接影响对话内容
+   - **inject_intent**: 给角色动力"去找某人"
+   - **add_unresolved_event**: 只是背景信息，角色不会主动反应，效果最弱
+   - 推荐组合：seed_topic(角色, 话题) + inject_intent(角色, 动力) → 角色会主动去找人，对话围绕指定话题展开。
 6. 工作流：先 read 1-2 次 → 思考 → 写 1-2 个工具 → 不再调用工具来结束。最多 5 步。
 7. **每次写工具都建议带 expected 字段**（一句话："我期望 alice 下一 tick 主动 talk bob"）。这会被记成 pulse，下次 invoke 时你可以用 read_pulse_outcome 查回看实际发生了什么。
 8. **Agenda（你的工作记忆）**：prompt 顶部会列出你当前的活跃 arc。如果当前 beat 该开一条新 arc 来跟进，用 create_arc(beat_id, goal, target_day, watch_chars)。需要标记 arc 进度时用 update_agenda(arc_id, status=...)。状态值: setup → brewing → climax_ready → resolved/abandoned。活跃 arc 上限 3 条。`;
