@@ -73,9 +73,13 @@ function formatSkillLevel(skill: string, level: number): string {
 function formatLifeContext(life: LifeState, workplaceName?: string): string {
   const parts: string[] = [];
 
-  // 工作认知
-  const wpName = workplaceName ?? life.workplace;
-  parts.push(`你在${wpName}当${life.occupation}。`);
+  // 工作认知：只有当 workplace 确实存在于当前世界时才注入具体地名
+  // 否则 LLM 会试图去一个不存在的地点（P0 fix）
+  if (workplaceName) {
+    parts.push(`你在${workplaceName}当${life.occupation}。`);
+  } else if (life.occupation) {
+    parts.push(`你的职业是${life.occupation}。`);
+  }
 
   // 技能认知
   const skillEntries = Object.entries(life.skills).filter(([, v]) => v > 0);

@@ -138,6 +138,17 @@ export function loadScenario(
   const beats = loadBeats(scenariosRoot, scenarioId);
   const seeds = loadSeeds(scenariosRoot, scenarioId);
 
+  // P5: 校验角色 workplace 是否在当前 scenario 的 locations 列表中
+  const locationIds = new Set(locations.map((l) => l.id));
+  for (const char of characters) {
+    const wp = char.life?.workplace;
+    if (wp && !locationIds.has(wp)) {
+      console.warn(
+        `⚠️ [scenario ${scenarioId}] 角色 ${char.id} 的 workplace "${wp}" 不在当前 scenario 的地点列表中，prompt 将不会注入具体工作地点`,
+      );
+    }
+  }
+
   return { manifest, characters, locations, beats, seeds };
 }
 

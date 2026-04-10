@@ -398,7 +398,10 @@ async function executeAction(
         break;
       case "location_change":
         if (effect.value) {
-          world.moveCharacter(effect.targetId, effect.value);
+          const moved = world.moveCharacter(effect.targetId, effect.value);
+          if (!moved) {
+            console.warn(`[${card.id}] ⚠️ moveCharacter 失败: 目标地点 "${effect.value}" 不存在`);
+          }
         }
         break;
       case "inbox_message":
