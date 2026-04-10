@@ -121,11 +121,11 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 **叙事系统 N0-N6 + Director Agent 化 D1/D2/D4 全部完成并合并 main。**
 
 - 规则导演 (BeatEngine) + LLM 导演 (Director) 双层架构
-- Director Agent 化：4 个 read 工具 + tool loop (先看后写) + pulse 反馈闭环 + agenda 跨 invoke 工作记忆
+- Director Agent 化：4 个 read 工具 + tool loop (先看后写) + pulse 反馈闭环 + agenda 跨 invoke 工作记忆 + seed_topic 话题注入
+- seed_topic + auto_seeds：beat 触发时自动把核心剧情话题注入角色 prompt，high urgency 自动注入 intent 让角色主动找人对话
 - scenario pack 支持 5 个剧本切换（default / mygo-seaside / koukou-judgment / last-ferry / seaside-trio）
-- last-ferry 狗血版（3 角色 + 3 重 climax）可用于低成本验证完整叙事链路
+- last-ferry 狗血版（3 角色 + 3 重 climax + 全 beat auto_seeds 配置）
 - 玩家通过 web 叙事面板可塞纸条、注入事件、触发 director
-- D3 软档位工具（amplify_event / seed_topic）YAGNI 搁置
 
 完整规划见 PLAN-narrative.md / PLAN-director-agent.md，当前进度见 STATUS.md。
 
