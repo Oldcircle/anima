@@ -969,6 +969,19 @@ export class Simulation {
           if (ok) {
             console.log(`🌱 [auto_seed] ${seed.char}: [${seed.urgency}] ${seed.topic.slice(0, 50)}`);
           }
+          // high urgency + targetChar → 自动注入 intent 让角色去找人
+          if (seed.urgency === "high" && seed.target) {
+            const targetName = this.world.getCharacter(seed.target)?.name ?? seed.target;
+            this.world.setIntent(seed.char, {
+              kind: "plan",
+              summary: `必须找${targetName}谈谈——${seed.topic.slice(0, 40)}`,
+              source: "action",
+              targetId: seed.target,
+              createdTick: gameTime.tick,
+              expiresAt: gameTime.tick + 16,
+            });
+            console.log(`💡 [auto_intent] ${seed.char}: 必须找${targetName}谈谈`);
+          }
         }
       }
     }
