@@ -268,7 +268,17 @@ export class Director {
 
       const toolCalls = response.toolCalls ?? [];
       if (toolCalls.length === 0) {
-        // 没工具调用 = 想结束。如果还没动过手，强制 do_nothing 记录一下
+        // beat_ready 且没写过工具：不让 LLM 逃避，强制再给一轮
+        if (isBeatMustWrite && step < maxSteps - 1) {
+          messages.push(
+            { role: "assistant", content: response.content || "(无)" },
+            {
+              role: "user",
+              content: "你没有调用任何工具。这是一个 beat_ready 触发——你**必须**调用至少一个写工具（inject_intent 是最有效的选择）让这个 beat 在世界里发生。请现在调用。",
+            },
+          );
+          continue;
+        }
         break;
       }
 
