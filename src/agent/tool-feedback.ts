@@ -23,6 +23,15 @@ export interface ToolFailureContext {
 export function buildToolFailureHint(ctx: ToolFailureContext): string {
   const { toolName, description, availableTools, currentLocationName } = ctx;
 
+  // 模式 0：调用了不存在的工具——最常见是 talk 在没人时被乱叫。直接列可用工具。
+  if (/不在当前可用列表|不存在的工具|未知行为/.test(description)) {
+    const others = availableTools.filter((n) => n !== toolName);
+    if (others.length > 0) {
+      return `工具 "${toolName}" 现在用不了。当前可用的工具只有：${others.join(", ")}。从这个列表里挑一个，不要再调用 "${toolName}" 或其他未列出的工具。`;
+    }
+    return `工具 "${toolName}" 现在用不了，且当前没有其他可用工具。调用 do_nothing 跳过这一拍。`;
+  }
+
   // 模式 1：go_to 到当前位置
   if (toolName === "go_to" && /已经在/.test(description)) {
     const others = availableTools.filter((n) => n !== "go_to" && n !== "do_nothing");

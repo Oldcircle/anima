@@ -244,16 +244,19 @@ describe("Simulation", () => {
   });
 
   it("runTicks 运行多个 tick", async () => {
-    mockLLM.setDefaultResponse("想想...", [
-      { name: "work", arguments: {} },
+    // 用 do_nothing（永远可用、duration=1）让每 tick 角色都做一次决策
+    mockLLM.setDefaultResponse("发呆", [
+      { name: "do_nothing", arguments: { thought: "" } },
     ]);
 
     const summaries = await sim.runTicks(3, 32);
 
     expect(summaries).toHaveLength(3);
-    // 第一个 tick：两人都 work（8 tick duration）
-    // 第二第三个 tick：跳过（还在工作中）
-    expect(summaries[1]!.results.every((r) => r.skipped)).toBe(true);
+    // 每 tick 两个角色都跑了决策（不是 skipped）
+    for (const s of summaries) {
+      expect(s.results.length).toBeGreaterThanOrEqual(2);
+      expect(s.results.every((r) => r.action?.name === "do_nothing")).toBe(true);
+    }
   });
 
   it("onTick 监听器被调用", async () => {

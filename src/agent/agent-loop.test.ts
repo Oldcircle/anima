@@ -288,19 +288,20 @@ describe("Agent Loop", () => {
   });
 
   it("LLM 收到正确的 prompt 结构", async () => {
+    // 用永远可用的 do_nothing 避免触发 retry（旧版用了不存在的 hobby 而能依赖早退）
     mockLLM.enqueueResponse("想想...", [
-      { name: "hobby", arguments: {} },
+      { name: "do_nothing", arguments: { thought: "" } },
     ]);
 
     await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(32) });
 
-    // 检查 LLM 收到的请求
+    // 检查 LLM 收到的请求（成功路径只调一次）
     expect(mockLLM.calls).toHaveLength(1);
     const req = mockLLM.calls[0]!.request;
     expect(req.system).toContain("高松灯");
     expect(req.system).toContain("面包店学徒");
     expect(req.messages[0]!.content).toContain("你现在看到的");
-    expect(req.tools!.length).toBeGreaterThanOrEqual(2); // 至少 go_to + hobby
+    expect(req.tools!.length).toBeGreaterThanOrEqual(2); // 至少 go_to + do_nothing
   });
 
   it("有认识的人在场吃饭 → 社交修正自动生效，社交需求额外增加", async () => {

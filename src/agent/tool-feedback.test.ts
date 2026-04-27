@@ -38,6 +38,29 @@ const anonCard: CharacterCard = {
 };
 
 describe("buildToolFailureHint", () => {
+  it("不存在的工具 → 列出可用工具，警告别再调", () => {
+    const hint = buildToolFailureHint({
+      toolName: "talk",
+      args: {},
+      description: '工具 "talk" 不在当前可用列表里',
+      availableTools: ["go_to", "do_nothing"],
+    });
+    expect(hint).toContain("用不了");
+    expect(hint).toContain("go_to");
+    expect(hint).toContain("do_nothing");
+    expect(hint).toContain("不要再调用");
+  });
+
+  it("不存在的工具 + 没有其他工具 → 提示 do_nothing", () => {
+    const hint = buildToolFailureHint({
+      toolName: "talk",
+      args: {},
+      description: "工具 talk 不在当前可用列表里",
+      availableTools: [],
+    });
+    expect(hint).toContain("do_nothing");
+  });
+
   it("go_to 当前位置 → 提示换其他工具或 do_nothing", () => {
     const hint = buildToolFailureHint({
       toolName: "go_to",
@@ -175,6 +198,26 @@ describe("agent-loop tick 内 retry（Layer D）", () => {
 
     await sim.runOneTick(tickToGameTime(48));
     expect(mockLLM.calls.length).toBeLessThan(10);
+  });
+
+  it("不存在的工具触发 retry，第二次给合法工具成功", async () => {
+    world.moveCharacter("tomori", "plaza");
+    world.moveCharacter("anon", "plaza");
+    // 第 1 次：调一个不存在的工具
+    mockLLM.enqueueResponse("乱叫", [
+      { name: "fly", arguments: { thought: "我要飞" } },
+    ]);
+    // 重试：do_nothing
+    mockLLM.enqueueResponse("发会儿呆", [
+      { name: "do_nothing", arguments: { thought: "飞不了，发呆吧" } },
+    ]);
+    mockLLM.setDefaultResponse("默认", [
+      { name: "do_nothing", arguments: { thought: "" } },
+    ]);
+    const summary = await sim.runOneTick(tickToGameTime(48));
+    const tomoriResult = summary.results.find((r) => r.characterId === "tomori");
+    // 重试成功：最终行动是 do_nothing
+    expect(tomoriResult?.action?.name).toBe("do_nothing");
   });
 
   it("成功的工具不触发重试（最常见路径）", async () => {

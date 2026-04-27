@@ -237,9 +237,6 @@ export async function runAgentTick(params: {
   const toolCall = response.toolCalls[0]!;
   const availableNames = dynamicActions.map(a => a.tool.name);
   console.log(`[${card.id}] 工具=${toolCall.name} | 可用=${availableNames.join(",")}`);
-  if (!availableNames.includes(toolCall.name)) {
-    console.log(`[${card.id}] ⚠️ 不存在的工具: ${toolCall.name}`);
-  }
   // 重复拦截 (Bug #4 + semantic repeat fix):
   // 1. 字面重复：和最近说过的话一模一样
   // 2. 语义重复：连续 3+ 次 talk 同一人（即使措辞不同，说明对话已陷入循环）
@@ -296,7 +293,24 @@ export async function runAgentTick(params: {
     }
   }
 
-  let result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought, params.relationships);
+  // 不存在的工具：合成 failure 结果，让下面的 retry loop 喂回 LLM 自纠错。
+  // 不预先早退，避免 LLM 反复给出相同的不存在工具浪费 tick。
+  let result: AgentTickResult;
+  if (!availableNames.includes(toolCall.name)) {
+    console.log(`[${card.id}] ⚠️ 不存在的工具: ${toolCall.name}（合成 failure 走 retry）`);
+    result = {
+      characterId: card.id,
+      thought,
+      action: { name: toolCall.name, args: toolCall.arguments },
+      result: {
+        success: false,
+        description: `工具 "${toolCall.name}" 不在当前可用列表里`,
+        effects: [],
+      },
+    };
+  } else {
+    result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought, params.relationships);
+  }
 
   // ── Layer D: tick 内 ToolResult 反馈循环（参考 Claude Code 的 is_error 模式）──
   // 失败时把失败结果 + 可执行 hint 同 turn 喂回 LLM 让其 self-correct。
