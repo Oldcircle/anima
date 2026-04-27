@@ -314,8 +314,9 @@ export async function runAgentTick(params: {
 
   // ── Layer D: tick 内 ToolResult 反馈循环（参考 Claude Code 的 is_error 模式）──
   // 失败时把失败结果 + 可执行 hint 同 turn 喂回 LLM 让其 self-correct。
-  // 上限 1 次：单 tick 最多 2 次 LLM 调用，避免雪崩 + 控制成本。
-  const MAX_TOOL_RETRY = 1;
+  // 上限 2 次：覆盖"unknown tool → 改 go_to → location 也错"这种级联失败。
+  // 单 tick 最多 3 次 LLM 调用——比 Claude Code 自由 turn loop 保守，但够用。
+  const MAX_TOOL_RETRY = 2;
   let retries = 0;
   while (result.result?.success === false && retries < MAX_TOOL_RETRY) {
     retries++;

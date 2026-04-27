@@ -51,6 +51,23 @@ describe("buildToolFailureHint", () => {
     expect(hint).toContain("不要再调用");
   });
 
+  it("不存在的工具 + go_to 在备选 → 一并喂可去地点 id（级联防御）", () => {
+    const hint = buildToolFailureHint({
+      toolName: "talk",
+      args: {},
+      description: '工具 "talk" 不在当前可用列表里',
+      availableTools: ["go_to", "do_nothing"],
+      validLocations: [
+        { id: "cafe", name: "咖啡馆" },
+        { id: "library", name: "图书馆" },
+      ],
+    });
+    expect(hint).toContain("go_to");
+    expect(hint).toContain("cafe");
+    expect(hint).toContain("library");
+    expect(hint).toContain("参数提示");
+  });
+
   it("不存在的工具 + 没有其他工具 → 提示 do_nothing", () => {
     const hint = buildToolFailureHint({
       toolName: "talk",

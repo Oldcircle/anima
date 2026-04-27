@@ -28,12 +28,23 @@ export function buildToolFailureHint(ctx: ToolFailureContext): string {
   const { toolName, description, availableTools, currentLocationName } = ctx;
 
   // 模式 0：调用了不存在的工具——最常见是 talk 在没人时被乱叫。直接列可用工具。
+  // 如果 go_to / buy / eat 在备选里，把它们的合法参数 id 也喂上，避免级联失败。
   if (/不在当前可用列表|不存在的工具|未知行为/.test(description)) {
     const others = availableTools.filter((n) => n !== toolName);
-    if (others.length > 0) {
-      return `工具 "${toolName}" 现在用不了。当前可用的工具只有：${others.join(", ")}。从这个列表里挑一个，不要再调用 "${toolName}" 或其他未列出的工具。`;
+    if (others.length === 0) {
+      return `工具 "${toolName}" 现在用不了，且当前没有其他可用工具。调用 do_nothing 跳过这一拍。`;
     }
-    return `工具 "${toolName}" 现在用不了，且当前没有其他可用工具。调用 do_nothing 跳过这一拍。`;
+    const detail: string[] = [];
+    if (others.includes("go_to") && ctx.validLocations && ctx.validLocations.length > 0) {
+      const list = ctx.validLocations.map((l) => `${l.name}(id=${l.id})`).join(", ");
+      detail.push(`go_to 可去：${list}`);
+    }
+    if ((others.includes("buy") || others.includes("eat")) && ctx.validShopItems && ctx.validShopItems.length > 0) {
+      const list = ctx.validShopItems.map((i) => `${i.name}(id=${i.id})`).join(", ");
+      detail.push(`buy/eat 可选：${list}`);
+    }
+    const detailStr = detail.length > 0 ? `\n参数提示：${detail.join("；")}。` : "";
+    return `工具 "${toolName}" 现在用不了。当前可用的工具只有：${others.join(", ")}。从这个列表里挑一个，不要再调用 "${toolName}" 或其他未列出的工具。${detailStr}`;
   }
 
   // 模式 1：go_to 到当前位置
