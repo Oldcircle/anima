@@ -9,7 +9,8 @@ import type { CharacterState } from "../world/types.js";
 import type { World } from "../world/world.js";
 import type { EventBus, WorldEvent } from "../core/event-bus.js";
 import type { GameTime } from "../core/tick-engine.js";
-import type { LLMProvider, LLMRequest, ToolCall } from "../providers/types.js";
+import type { LLMProvider, LLMRequest, LLMMessage, ToolCall } from "../providers/types.js";
+import { buildToolFailureHint } from "./tool-feedback.js";
 import type { ActionDefinition, ActionResult } from "../actions/types.js";
 import type { RelationshipManager } from "../world/relationships.js";
 import type { ShortTermMemory } from "../memory/short-term.js";
@@ -295,7 +296,77 @@ export async function runAgentTick(params: {
     }
   }
 
-  const result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought, params.relationships);
+  let result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought, params.relationships);
+
+  // ── Layer D: tick 内 ToolResult 反馈循环（参考 Claude Code 的 is_error 模式）──
+  // 失败时把失败结果 + 可执行 hint 同 turn 喂回 LLM 让其 self-correct。
+  // 上限 1 次：单 tick 最多 2 次 LLM 调用，避免雪崩 + 控制成本。
+  const MAX_TOOL_RETRY = 1;
+  let retries = 0;
+  while (result.result?.success === false && retries < MAX_TOOL_RETRY) {
+    retries++;
+    const failedDesc = result.result.description ?? "（无描述）";
+    const callId = toolCall.id ?? `call_${gameTime.tick}_${card.id}_${retries}`;
+    const hint = buildToolFailureHint({
+      toolName: toolCall.name,
+      args: toolCall.arguments,
+      description: failedDesc,
+      availableTools: dynamicActions.map((a) => a.tool.name),
+      currentLocationName: world.getLocation(state.locationId)?.name,
+    });
+    console.log(`[${card.id}] 🔁 重试 ${retries}/${MAX_TOOL_RETRY}: ${toolCall.name} 失败 → ${failedDesc}`);
+
+    const retryMessages: LLMMessage[] = [
+      ...request.messages,
+      {
+        role: "assistant",
+        content: thought,
+        tool_calls: [{
+          id: callId,
+          type: "function",
+          function: { name: toolCall.name, arguments: JSON.stringify(toolCall.arguments) },
+        }],
+      },
+      {
+        role: "tool",
+        tool_call_id: callId,
+        content: `✗ ${failedDesc}\n\n💡 ${hint}`,
+      },
+    ];
+
+    let retryResponse;
+    try {
+      retryResponse = await provider.chat({ ...request, messages: retryMessages, prefill: undefined }, modelId);
+    } catch (err: any) {
+      console.warn(`[${card.id}] 🔁 重试 LLM 调用失败:`, err?.message ?? err);
+      break;
+    }
+
+    if (retryResponse.toolCalls.length === 0) {
+      console.log(`[${card.id}] 🔁 重试无工具调用，保留原失败结果`);
+      break;
+    }
+
+    const retryCall = retryResponse.toolCalls[0]!;
+    if (!dynamicActions.some((a) => a.tool.name === retryCall.name)) {
+      console.log(`[${card.id}] 🔁 重试给了不存在的工具 ${retryCall.name}，停手`);
+      break;
+    }
+
+    // 同一 tick 不允许 LLM 第二次还选同一个失败的工具+参数（避免死循环）
+    if (retryCall.name === toolCall.name && JSON.stringify(retryCall.arguments) === JSON.stringify(toolCall.arguments)) {
+      console.log(`[${card.id}] 🔁 重试给了完全相同的调用，跳过`);
+      break;
+    }
+
+    // 接受重试：mutate 原 toolCall 让下游 narrate/memory 写入正确的工具
+    toolCall.id = retryCall.id ?? callId;
+    toolCall.name = retryCall.name;
+    toolCall.arguments = retryCall.arguments;
+    result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, retryResponse.content || thought, params.relationships);
+    const ok = result.result?.success === false ? "✗" : "✓";
+    console.log(`[${card.id}] ${ok} 重试后 ${toolCall.name} → ${result.result?.description?.slice(0, 60) ?? "(无描述)"}`);
+  }
 
   // 收到的信箱消息存入记忆，并给读信者加社交
   persistInboxContext({ world, characterId: card.id, inboxMessages, memory: params.memory });

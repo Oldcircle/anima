@@ -184,6 +184,11 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     }
   }
 
+  // 6. do_nothing 兜底（永远可用）
+  // 当工具池贫瘠（如自家房间只有 go_to）或前一次行动失败时，让 LLM 总有"什么都不做"的出路，
+  // 避免被迫反复 go_to 兜圈子。参考 Claude Code 的 "stay where you are" 容错思路。
+  tools.push(buildDoNothingTool());
+
   // 去重（防止地点工具和通用工具同名）
   const seen = new Set<string>();
   const uniqueTools: ActionDefinition[] = [];
@@ -194,6 +199,29 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     }
   }
   return uniqueTools;
+}
+
+// ── do_nothing 工具 ──
+
+function buildDoNothingTool(): ActionDefinition {
+  return {
+    tool: {
+      name: "do_nothing",
+      description: "什么都不做，发会儿呆/等一等。当你不知道做什么、周围没什么合适的事可做、或刚刚行动失败暂时缓一下时，选这个比胡乱重试好。",
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么" },
+        },
+      },
+    },
+    handler: (_args, _actx): ActionResult => ({
+      description: "发了一会儿呆",
+      effects: [],
+      duration: 1,
+      observableState: "若有所思地停了下来，没特别在做什么。",
+    }),
+  };
 }
 
 // ── go_to 工具 ──
@@ -222,19 +250,21 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
     })
     .join("。");
 
+  // 当前位置锚点：让 LLM 在 token 级看到自己在哪，覆盖"误调当前地点"。
+  const currentAnchor = `你当前在【${ctx.location.name}】(id=${ctx.location.id})。不要 go_to 到当前地点，也不要传"家"作为同义词——在家就直接做想做的事。`;
   return {
     tool: {
       name: "go_to",
       description: (ctx.state.needs.energy ?? 100) < 20
-        ? "去别的地方。你很累了，也许该回家休息了。"
-        : "去别的地方。走路要花一点力气。",
+        ? `${currentAnchor} 去别的地方。你很累了，也许该回家休息了。`
+        : `${currentAnchor} 去别的地方。走路要花一点力气。`,
       parameters: {
         type: "object",
         properties: {
           thought: { type: "string", description: "你在想什么" },
           location: {
             type: "string",
-            description: otherLocations,
+            description: `可去的地点（不要传你当前所在的【${ctx.location.name}】）：${otherLocations}`,
           },
         },
         required: ["location"],
@@ -244,7 +274,11 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
       const rawLoc = args.location as string;
       // 支持 ID、中文名、描述文本：LLM 可能传 "cafe"、"咖啡馆"、"海风面包坊——买面包、吃东西（你的工作地点）。"
       const resolveLocation = (input: string) => {
-        if (input === "家" || input === "回家" || input === "home") return ctx.allLocations.find(l => l.id === myHome);
+        // "家"/"回家"/"home"：在家时不再映射到当前位置（避免软提示被忽略），让上层报 unknown_location 硬错误
+        if (input === "家" || input === "回家" || input === "home") {
+          if (myHome === ctx.state.locationId) return undefined;
+          return ctx.allLocations.find(l => l.id === myHome);
+        }
         // 1. 精确匹配 ID 或名字
         const exact = ctx.allLocations.find(l => l.id === input || l.name === input);
         if (exact) return exact;

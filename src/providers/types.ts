@@ -32,14 +32,36 @@ export interface ToolDefinition {
 
 /** LLM 返回的工具调用 */
 export interface ToolCall {
+  /** OpenAI tool_calls[i].id；可选，仅当下一轮要把 tool_result 喂回时需要 */
+  id?: string;
   name: string;
   arguments: Record<string, unknown>;
 }
 
+/** LLM 请求消息（OpenAI 多轮 tool-calling 协议）。 */
+export type LLMMessage =
+  | { role: "user" | "assistant"; content: string }
+  | {
+      /** assistant 发起工具调用：content 可空，tool_calls 必填。 */
+      role: "assistant";
+      content?: string;
+      tool_calls: Array<{
+        id: string;
+        type: "function";
+        function: { name: string; arguments: string };
+      }>;
+    }
+  | {
+      /** 工具执行结果：必须紧跟在对应 tool_calls 之后，tool_call_id 对齐。 */
+      role: "tool";
+      tool_call_id: string;
+      content: string;
+    };
+
 /** LLM 请求 */
 export interface LLMRequest {
   system: string;
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  messages: LLMMessage[];
   tools?: ToolDefinition[];
   maxTokens?: number;
   temperature?: number;

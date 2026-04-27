@@ -128,6 +128,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         message: {
           content?: string | null;
           tool_calls?: Array<{
+            id?: string;
             function: { name: string; arguments: string };
           }>;
         };
@@ -146,6 +147,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
     const content = choice.message.content ?? "";
     const toolCalls: ToolCall[] = (choice.message.tool_calls ?? []).map((tc) => ({
+      id: tc.id,
       name: tc.function.name,
       arguments: JSON.parse(tc.function.arguments),
     }));

@@ -87,8 +87,8 @@ describe("Simulation", () => {
       { name: "talk", arguments: { target: "anon", message: "你、你好……" } },
     ]);
     // Anon 正常决策
-    mockLLM.enqueueResponse("吃点东西", [
-      { name: "eat", arguments: { location: "cafe" } },
+    mockLLM.enqueueResponse("发会儿呆", [
+      { name: "do_nothing", arguments: { thought: "刚到，先看看" } },
     ]);
     // Anon 反应轮（收到 Tomori 消息后被触发）
     mockLLM.enqueueResponse("回应", [
