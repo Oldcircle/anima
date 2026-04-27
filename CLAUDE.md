@@ -133,5 +133,35 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 # .env 文件
 DEEPSEEK_API_KEY=sk-xxx          # DeepSeek API key
 DEEPSEEK_BASE_URL=https://api.deepseek.com  # 可选，默认值
+DEEPSEEK_THINKING=disabled        # 思考模式（auto/disabled/enabled），仅 deepseek-v4-* 生效
 PORT=3001                         # Web 服务端口，可选
 ```
+
+## DeepSeek V4 思考模式适配
+
+默认模型为 `deepseek-v4-flash`（1M context，tool_use 友好）。V4 系列默认开启思考链——
+对 anima 这种"工具调用 + 角色扮演 + 项目自带内心独白"的场景纯属浪费 token + 增加延迟。
+
+实现要点（`src/providers/openai-compatible.ts`）：
+
+- `OpenAICompatibleConfig.thinking?: "enabled" | "disabled" | "auto"`，默认 `auto`
+- `auto`：模型名匹配 `deepseek-v4` 时自动加 `thinking: {type: "disabled"}`，其他模型不发参数（向后兼容 deepseek-chat / OpenAI / OpenRouter / Ollama 等）
+- `disabled`：始终发 `{type: "disabled"}`
+- `enabled`：发 `{type: "enabled"}`，并主动**不发** `temperature`（DeepSeek 文档：思考模式下 temperature/top_p/presence_penalty/frequency_penalty 会被服务端忽略）
+- `data/settings.json` 的 `llm.thinking` 字段（前端 Settings 页可设）优先级高于 env
+
+如果将来切回 `deepseek-reasoner` 或 OpenAI o1 之类原生 reasoning 模型，这套机制不会干扰它们（auto 模式只识别 v4 前缀）。
+
+## 首次运行记录
+
+- **日期**: 2026-04-27
+- **机器**: macOS Apple Silicon, Node 24.14.0, pnpm 10.32.1
+- **状态**: 成功
+- **耗时**: `pnpm install` ~3s（lockfile 命中），`better-sqlite3` 原生模块编译 ~30s，单元测试 1.2s
+- **测试结果**: `pnpm test` → 40 文件 / 406 用例全通过（README 上写的 266 已过期）
+- **启动**: `pnpm dev` → http://localhost:3001 ，加载 18 个地点 + 7 个角色（默认 scenario）+ 5 个 beats，LLM Director 启用（每天 5 次预算），WebSocket 实时推送
+- **踩坑点**:
+  - `pnpm install` 默认会拒绝执行 `better-sqlite3` 和 `esbuild` 的 install 脚本（pnpm 10+ 安全策略），出现 `Ignored build scripts` 警告。手动到 `node_modules/.pnpm/better-sqlite3@12.8.0/node_modules/better-sqlite3` 跑 `npm run install` 才能编译出 `better_sqlite3.node`。或者用 `pnpm approve-builds`（交互式）。
+- **已知现象**:
+  - 启动时 dotenv 提示 "🔐 prevent building .env in docker" 是正常营销文案
+  - tick 启动后会立即 scan beats，例如 `🎬 [beat] scan @ day 1 tick 24: 1 beat(s) ready` 是预期行为

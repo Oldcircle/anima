@@ -107,6 +107,7 @@ export interface LLMSettingsPayload {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  thinking?: "enabled" | "disabled" | "auto";
 }
 
 export function validateLLMSettings(input: unknown): ValidationResult<LLMSettingsPayload> {
@@ -123,6 +124,13 @@ export function validateLLMSettings(input: unknown): ValidationResult<LLMSetting
   if (!isString(input.model) || input.model.length === 0) {
     return { ok: false, error: "model is required" };
   }
+  let thinking: "enabled" | "disabled" | "auto" | undefined;
+  if (input.thinking !== undefined) {
+    if (input.thinking !== "enabled" && input.thinking !== "disabled" && input.thinking !== "auto") {
+      return { ok: false, error: "thinking must be one of: enabled, disabled, auto" };
+    }
+    thinking = input.thinking;
+  }
   return {
     ok: true,
     value: {
@@ -132,6 +140,7 @@ export function validateLLMSettings(input: unknown): ValidationResult<LLMSetting
       model: input.model,
       temperature: typeof input.temperature === "number" ? input.temperature : undefined,
       maxTokens: typeof input.maxTokens === "number" ? input.maxTokens : undefined,
+      thinking,
     },
   };
 }

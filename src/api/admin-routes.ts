@@ -252,6 +252,7 @@ export function registerAdminRoutes(config: AdminRoutesConfig): void {
           baseUrl: next.baseUrl,
           apiKey: next.apiKey,
           defaultModel: next.model,
+          thinking: next.thinking,
         });
         simulation.setProvider(provider, next.model);
       });

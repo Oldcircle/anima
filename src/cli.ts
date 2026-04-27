@@ -49,11 +49,16 @@ import { SettingsStore } from "./api/settings-store.js";
 const SETTINGS_FILE = join(DATA_DIR, "settings.json");
 const settingsStore = new SettingsStore(SETTINGS_FILE);
 const persistedLLM = settingsStore.load().llm;
+// 思考模式：仅对 deepseek-v4-* 起作用。env 写 enabled/disabled/auto；不设默认 auto（v4 自动 disabled）
+const thinkingEnv = (process.env.DEEPSEEK_THINKING ?? "auto").toLowerCase();
+const thinkingMode: "enabled" | "disabled" | "auto" =
+  thinkingEnv === "enabled" || thinkingEnv === "disabled" ? thinkingEnv : "auto";
 const provider = new OpenAICompatibleProvider({
   id: persistedLLM?.provider ?? "deepseek",
   baseUrl: persistedLLM?.baseUrl ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
   apiKey: persistedLLM?.apiKey ?? process.env.DEEPSEEK_API_KEY ?? "",
-  defaultModel: persistedLLM?.model ?? "deepseek-chat",
+  defaultModel: persistedLLM?.model ?? "deepseek-v4-flash",
+  thinking: persistedLLM?.thinking ?? thinkingMode,
 });
 
 // --- 角色已由 scenario 加载 ---
@@ -80,7 +85,7 @@ const simulation = new Simulation(world, eventBus, {
   characters,
   actions: ALL_BASIC_ACTIONS,
   provider,
-  modelId: persistedLLM?.model ?? "deepseek-chat",
+  modelId: persistedLLM?.model ?? "deepseek-v4-flash",
 });
 
 // 加载剧本的 beats（N3）
@@ -110,7 +115,7 @@ const directorEnabled = process.env.ANIMA_DIRECTOR !== "off" && Boolean(persiste
 if (directorEnabled) {
   simulation.enableDirector({
     provider,
-    modelId: persistedLLM?.model ?? "deepseek-chat",
+    modelId: persistedLLM?.model ?? "deepseek-v4-flash",
     dailyBudget: parseInt(process.env.ANIMA_DIRECTOR_BUDGET ?? "5", 10),
   });
   console.log(`🎬 LLM 导演已启用 (预算: ${process.env.ANIMA_DIRECTOR_BUDGET ?? "5"} 调用/天)`);

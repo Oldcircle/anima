@@ -14,6 +14,8 @@ export interface PersistedLLMSettings {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  /** 思考模式开关（仅 deepseek-v4-* 生效）；未设置等价 "auto" */
+  thinking?: "enabled" | "disabled" | "auto";
 }
 
 export interface PersistedSettings {
