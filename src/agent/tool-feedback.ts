@@ -14,6 +14,10 @@ export interface ToolFailureContext {
   description: string;
   availableTools: string[];
   currentLocationName?: string;
+  /** 当前可去的地点 [{id, name}]——给 go_to 失败时直接喂 hint，避免 LLM 再瞎猜 id */
+  validLocations?: Array<{ id: string; name: string }>;
+  /** 当前可买的商品 [{id, name}]——给 buy/eat 失败时直接喂 hint */
+  validShopItems?: Array<{ id: string; name: string }>;
 }
 
 /**
@@ -41,14 +45,31 @@ export function buildToolFailureHint(ctx: ToolFailureContext): string {
     return "你已经到了，不需要再 go_to。这里没什么事可做时调用 do_nothing 发会儿呆。";
   }
 
-  // 模式 2：go_to 到不存在的地方
+  // 模式 2：go_to 到不存在的地方——直接喂可去地点 id+name，避免 LLM 重试时再瞎猜
   if (toolName === "go_to" && /没有这个地方|unknown_location/.test(description)) {
+    if (ctx.validLocations && ctx.validLocations.length > 0) {
+      const list = ctx.validLocations.map((l) => `${l.name}(id=${l.id})`).join(", ");
+      return `你传的 location="${ctx.args.location}" 不存在。location 参数必须从这个列表里选一个 id：${list}。也可以调用 do_nothing 跳过。`;
+    }
     return `你传的地点不存在。看 location 参数描述里列出的地点名，挑一个真实存在的；或者调用 do_nothing。`;
   }
 
-  // 模式 3：eat 没指定食物
+  // 模式 3：eat 没指定食物——喂可吃的物品
   if (toolName === "eat" && /没想好吃什么|没有食物/.test(description)) {
+    if (ctx.validShopItems && ctx.validShopItems.length > 0) {
+      const list = ctx.validShopItems.map((i) => `${i.name}(id=${i.id})`).join(", ");
+      return `调用 eat 时 item_id 必填。当前可吃：${list}（id 用括号里的）。如果都不想吃，调用 do_nothing。`;
+    }
     return "调用 eat 时必须在 args 里指定 item_id（你包里或当前商店的食物）。如果没有食物，先 buy 或 go_to 到有食物的地方。";
+  }
+
+  // 模式 3.5：buy 物品不存在
+  if (toolName === "buy" && /这里没有卖|没有这个物品/.test(description)) {
+    if (ctx.validShopItems && ctx.validShopItems.length > 0) {
+      const list = ctx.validShopItems.map((i) => `${i.name}(id=${i.id})`).join(", ");
+      return `这里没卖你要的东西。当前店里只卖：${list}。换一个 item_id，或 go_to 别的店。`;
+    }
+    return "这里没你要的物品。换 item_id 或 go_to 别的店。";
   }
 
   // 模式 4：talk 没附近的人

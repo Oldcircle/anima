@@ -94,6 +94,38 @@ describe("buildToolFailureHint", () => {
     expect(hint).toContain("不存在");
   });
 
+  it("go_to 不存在 + 提供 validLocations → 直接列出 id+name 对", () => {
+    const hint = buildToolFailureHint({
+      toolName: "go_to",
+      args: { location: "home" },
+      description: "想去home，但你知道镇上并没有这个地方",
+      availableTools: ["go_to", "do_nothing"],
+      validLocations: [
+        { id: "cafe", name: "咖啡馆" },
+        { id: "library", name: "图书馆" },
+      ],
+    });
+    expect(hint).toContain("cafe");
+    expect(hint).toContain("library");
+    expect(hint).toContain("咖啡馆");
+    expect(hint).toContain('"home"'); // 引用了 LLM 错误的输入
+  });
+
+  it("buy 没卖 + 提供 validShopItems → 列出店里的 id", () => {
+    const hint = buildToolFailureHint({
+      toolName: "buy",
+      args: { item_id: "草莓蛋糕" },
+      description: "这里没有卖草莓蛋糕",
+      availableTools: ["buy", "go_to"],
+      validShopItems: [
+        { id: "coffee_latte", name: "拿铁" },
+        { id: "sandwich", name: "三明治" },
+      ],
+    });
+    expect(hint).toContain("拿铁");
+    expect(hint).toContain("coffee_latte");
+  });
+
   it("eat 没指定食物 → 提示填 item_id", () => {
     const hint = buildToolFailureHint({
       toolName: "eat",

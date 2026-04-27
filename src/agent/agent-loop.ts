@@ -321,12 +321,22 @@ export async function runAgentTick(params: {
     retries++;
     const failedDesc = result.result.description ?? "（无描述）";
     const callId = toolCall.id ?? `call_${gameTime.tick}_${card.id}_${retries}`;
+    // 给 hint 喂具体的可用 ID 列表，让 LLM 重试时不用再瞎猜
+    const card_home = card.home;
+    const validLocations = world.getAllLocations()
+      .filter((l) => l.id !== state.locationId)
+      .filter((l) => l.type !== "residential" || l.id === card_home)
+      .map((l) => ({ id: l.id, name: l.name }));
+    const currentLoc = world.getLocation(state.locationId);
+    const validShopItems = currentLoc?.shop?.map((s) => ({ id: s.id, name: s.name ?? s.id })) ?? [];
     const hint = buildToolFailureHint({
       toolName: toolCall.name,
       args: toolCall.arguments,
       description: failedDesc,
       availableTools: dynamicActions.map((a) => a.tool.name),
-      currentLocationName: world.getLocation(state.locationId)?.name,
+      currentLocationName: currentLoc?.name,
+      validLocations,
+      validShopItems,
     });
     console.log(`[${card.id}] 🔁 重试 ${retries}/${MAX_TOOL_RETRY}: ${toolCall.name} 失败 → ${failedDesc}`);
 
