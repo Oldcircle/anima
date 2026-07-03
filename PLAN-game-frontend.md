@@ -26,8 +26,17 @@
     **P4 调速面板**（暂停/1x/2x/5x，speed_changed 回执高亮）
   - **图集经验（重要）**：图集里建筑/道具紧挨着排，任何新 region 必须先用 PIL 裁片放大
     人工确认边界再用；"看起来半截"的两种成因 = ①区域坐标裁到邻居 ②贴图本身是组合件的碎块
-  - 待办：叙事控制（塞纸条/注入事件/触发 director，HTTP 接口做成 JRPG 菜单）、
-    live 对真后端回归一遍、mygo-seaside / koukou-judgment 剧本的皮肤与地图布局
+  - **同日第四轮（live 回归 + P4 收官 + 行为可视化 + 剧本适配）**：
+    - live 回归通过（12 真实 tick / 零 SCRIPT ERROR / `--probe` 探针每 30s 自动截图）；
+      据此把徽章移出地名标签、时钟改「春 第1天 · 清晨 06:15」格式
+    - P4 叙事干预面板（N 键：塞纸条/散布流言/注入事件/推进导演，HTTP，接口已 curl 冒烟）
+    - **行为可视化**：talk/gossip/comfort/argue/share_secret/invite_out/give_gift 触发
+      "凑近对方 + 面对面"；give_gift 飞包裹 + 对方冒爱心 + 底部对话框播报；argue 怒/心碎；
+      sleep/nap 困；skipped 冒"…"
+    - **mygo-seaside 适配 + 通用住宅槽位**：未知 home_* 自动复用默认七宅空位（含室内/徽章），
+      海边小镇类剧本零配置可用；MyGO 5 人皮肤入库
+    - 修复：`godot --import` 必须搭配 `--path`，此前 BGM/新素材从未真正导入（M 键音乐是哑的）
+  - 待办：koukou-judgment 监狱地图（25 专属地点，独立场景设计，另行立项）
 - **决策基线**（2026-07-03 与用户确认；美术项已按用户"要日式 RPG 像素风"更新）：
   1. 美术：~~先纯 Tinyswords 出原型~~ → **Ninja Adventure（CC0）**，2026-07-03 已落地
   2. 地理：**Godot 自己造地图**，后端不加坐标

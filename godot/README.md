@@ -68,6 +68,7 @@ ESC = 关面板/返回小镇 · M = 音乐开关 · N = 叙事干预（塞纸条
 | `world/Town.gd` | 世界：72x40 地形 + 建筑/树木 + 13 间室内 + AStarGrid2D 寻路 + 占位徽章 |
 | `world/CharacterView.gd` | 角色：四方向动画精灵 + 沿途径点行走 + 名牌 + JRPG 气泡 + emote |
 | `ui/DetailPanel.gd` | 详情面板（像素头像 + 属性/记忆/关系，离线用 tick 缓存） |
+| `ui/NarrativePanel.gd` | 叙事干预面板（塞纸条/流言/事件/推进导演，HTTP） |
 | `assets/ninja_adventure/` | 美术素材子集（CC0，见 assets/README.md） |
 | `assets/fonts/` | 缝合像素字体 12px 简中（OFL） |
 

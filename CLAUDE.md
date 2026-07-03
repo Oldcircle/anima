@@ -108,7 +108,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 
 - [STATUS.md](./STATUS.md) — **会话交接文档**（当前进度 + 下次入口 + 跨会话教训），进项目先读这个
 - [PLAN-tool-feedback.md](./PLAN-tool-feedback.md) — Tool Feedback Loop 改造（对齐 Claude Code is_error + system-reminder 思想，治"✗ 你已经在 X 了"反复刷屏）
-- [PLAN-game-frontend.md](./PLAN-game-frontend.md) — Godot 游戏前端（日式 RPG 像素小镇）。世界 2.0：P0~P4 主干完成（大地图/室内/寻路/相机/BGM/天气/调速，2026-07-03）；运行见 godot/README.md
+- [PLAN-game-frontend.md](./PLAN-game-frontend.md) — Godot 游戏前端（日式 RPG 像素小镇）。P0~P4 全部完成 + 行为可视化（对话凑近/送礼飞道具）+ mygo 剧本适配（2026-07-03，live 回归通过）；运行见 godot/README.md
 
 > ⚠️ 教训：叙事系统(N0-N6) 与 Director Agent(D1-D4) 的旧规划文档曾因 gitignore 未入仓而永久丢失。
 > **2026-07-03 起 PLAN/STATUS/DESIGN/IMPORT 系列全部入仓**（仓库已转 private）。
