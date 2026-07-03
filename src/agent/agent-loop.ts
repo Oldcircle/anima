@@ -107,7 +107,7 @@ export async function runAgentTick(params: {
     });
 
   const recentEvents = eventBus.query({ actorId: card.id, limit: 5 });
-  const recentMemories = params.memory?.formatForPrompt(card.id, 12) ?? "";
+  const recentMemories = params.memory?.formatForPrompt(card.id, 12, gameTime.tick) ?? "";
 
   // 单独提取最近 5 条想法，prompt 会拎出来单独成段（让 LLM 清楚看到自己最近想过什么）
   const recentThoughts = params.memory?.getRecentThoughts(card.id, 5) ?? [];
@@ -158,6 +158,17 @@ export async function runAgentTick(params: {
       }
     }
   }
+  // 约定提醒：把该角色未结算的约定翻译成 prompt 可用的形式
+  const upcomingAppointments = world.getUpcomingAppointments(card.id, gameTime.tick).map((a) => {
+    const otherId = a.proposerId === card.id ? a.targetId : a.proposerId;
+    return {
+      appointment: a,
+      otherName: world.getCharacter(otherId)?.name ?? otherId,
+      locationName: world.getLocation(a.locationId)?.name ?? a.locationId,
+      atLocation: state.locationId === a.locationId,
+    };
+  });
+
   const systemPrompt = buildSystemPrompt(card, workplaceName, colleagueNames);
   const userPrompt = buildUserPrompt({
     card,
@@ -181,10 +192,17 @@ export async function runAgentTick(params: {
     lastSelfTalk,
     recentThoughts: recentThoughts.map((t) => ({ tick: t.tick, content: t.content })),
     wantToDiscuss: world.getWantToDiscuss(card.id, gameTime.tick),
+    upcomingAppointments,
+    todayPlan: state.todayPlan?.day === gameTime.day ? state.todayPlan.items : undefined,
   });
 
-  // 对话模式：如果提供了 conversationRequest，使用它替代标准 prompt
-  const request: LLMRequest = params.conversationRequest ?? (() => {
+  // 对话模式：如果提供了 conversationRequest，使用它替代标准 prompt。
+  // 但 tools 必须换成本 tick 的情境工具表——此前会话模式给模型看的是静态 ALL_BASIC_ACTIONS，
+  // 执行时却按 dynamicActions 验证：模型会选中"看得到但执行不了"的工具（报不存在、烧重试），
+  // 而真正可用的情境工具（sit/buy/read/物品工具）它根本看不见。见 = 可执行，一致性是底线。
+  const request: LLMRequest = params.conversationRequest
+    ? { ...params.conversationRequest, tools: dynamicActions.map((a) => a.tool) }
+    : (() => {
     const isSocialScene = nearbyCharacters.length > 0 || inboxMessages.length > 0;
     return {
       system: systemPrompt,
@@ -218,6 +236,29 @@ export async function runAgentTick(params: {
   // 检测 token 截断
   if (response.finishReason === "length") {
     console.warn(`[${card.id}] ⚠️ LLM 输出被截断 (finish_reason=length)，maxTokens 可能不够`);
+  }
+
+  // "只想不做"救回：模型写了内心戏/台词但没调用工具时，同 turn 追加提示让它把想法变成行动。
+  // 对话模式下尤其常见（模型顺着 prefill 直接写台词当回复）——此前这些 tick 直接作废，
+  // 角色"想好了要说的话"却永远没说出口，对话就此卡住。半天模拟实测 ~8% 的调用浪费在这里。
+  if (response.toolCalls.length === 0 && thought.trim().length > 0) {
+    const nudgeMessages: LLMMessage[] = [
+      ...request.messages,
+      { role: "assistant", content: thought },
+      {
+        role: "user",
+        content: "（你刚才只写了想法，没有采取任何行动。现在把它变成行动：必须调用一个工具——想说的话用 talk 说出口（message 填台词），不想说话就选 go_to / do_nothing 等其他行为。不要再重复写想法。）",
+      },
+    ];
+    try {
+      const nudge = await provider.chat({ ...request, messages: nudgeMessages, prefill: undefined }, modelId);
+      if (nudge.toolCalls.length > 0) {
+        console.log(`[${card.id}] 💬 只想不做救回 → ${nudge.toolCalls[0]!.name}`);
+        response = nudge;
+      }
+    } catch (err: any) {
+      console.warn(`[${card.id}] 只想不做救回失败:`, err?.message ?? err);
+    }
   }
 
   // 如果没有工具调用，也回退
@@ -606,6 +647,24 @@ async function executeAction(
       }
     }
   }
+  // 约定落库（arrange_meet 工具）
+  const appointmentPayload = (result as any)?._appointment;
+  if (appointmentPayload && typeof appointmentPayload === "object") {
+    const ok = world.addAppointment({
+      id: uuid(),
+      proposerId: card.id,
+      targetId: appointmentPayload.targetId,
+      locationId: appointmentPayload.locationId,
+      atTick: appointmentPayload.atTick,
+      activity: appointmentPayload.activity,
+      status: "pending",
+      createdTick: gameTime.tick,
+    });
+    if (ok) {
+      console.log(`📅 [约定] ${card.id} ↔ ${appointmentPayload.targetId} @ tick ${appointmentPayload.atTick} in ${appointmentPayload.locationId}`);
+    }
+  }
+
   const giveItem = (result as any)?._giveItem;
   if (giveItem && typeof giveItem === "object") {
     const { removeFromInventory, addToInventory } = await import("../world/item-registry.js");
@@ -874,6 +933,7 @@ function fallbackObservableState(toolName: string, description: string, message?
     shelve_books: "抱着一摞书在整理书架。",
     help_reader: "正耐心给读者指路。",
     rest: "安静地坐着休息。",
+    tidy_up: "在收拾屋子。",
   };
   if (generic[toolName]) return generic[toolName];
   if (toolName === "talk" && message) return `刚说了句：「${truncateLine(message, 18)}」`;

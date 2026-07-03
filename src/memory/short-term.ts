@@ -7,10 +7,14 @@
 
 import { tickToGameTime } from "../core/tick-engine.js";
 
-/** tick → "HH:MM" */
-function _tickTime(tick: number): string {
+/** tick → "HH:MM"；传入 currentTick 时跨天记忆加"昨天"/"N天前"前缀，让模型分得清昨晚和刚才 */
+function _tickTime(tick: number, currentTick?: number): string {
   const gt = tickToGameTime(tick);
-  return `${String(gt.hour).padStart(2, "0")}:${String(gt.minute).padStart(2, "0")}`;
+  const hhmm = `${String(gt.hour).padStart(2, "0")}:${String(gt.minute).padStart(2, "0")}`;
+  if (currentTick === undefined) return hhmm;
+  const dayDiff = tickToGameTime(currentTick).day - gt.day;
+  if (dayDiff <= 0) return hhmm;
+  return dayDiff === 1 ? `昨天${hhmm}` : `${dayDiff}天前${hhmm}`;
 }
 
 export interface MemoryEntry {
@@ -38,10 +42,31 @@ export class ShortTermMemory {
       this._memories.set(characterId, entries);
     }
     entries.push(entry);
-    // 滑动窗口
-    if (entries.length > this._maxEntries) {
-      this._memories.set(characterId, entries.slice(-this._maxEntries));
+    // 窗口满时按重要性淘汰：琐事先忘，反思/冲突/约定留得更久
+    while (entries.length > this._maxEntries) {
+      this._evictOne(entries, entry.tick);
     }
+  }
+
+  /**
+   * 淘汰一条记忆，让 importance 真正参与保留（此前是纯 FIFO，反思和路过琐事同速蒸发）：
+   * 1. 超过 2 个游戏天的旧记忆无条件先走——再重要的事也会淡；
+   * 2. 否则在最旧的一半里挑重要性最低的丢，平分时丢更旧的。
+   * 效果：反思(9)/失败与冲突(8)/对话(7) 能活过一晚，琐事(3-4)先被挤出。
+   */
+  private _evictOne(entries: MemoryEntry[], currentTick: number): void {
+    const HARD_EXPIRE_TICKS = 192; // 2 个游戏天
+    const expiredIdx = entries.findIndex((e) => currentTick - e.tick > HARD_EXPIRE_TICKS);
+    if (expiredIdx >= 0) {
+      entries.splice(expiredIdx, 1);
+      return;
+    }
+    const candidateEnd = Math.max(1, Math.floor(entries.length / 2));
+    let evictIdx = 0;
+    for (let i = 1; i < candidateEnd; i++) {
+      if (entries[i]!.importance < entries[evictIdx]!.importance) evictIdx = i;
+    }
+    entries.splice(evictIdx, 1);
   }
 
   /** 获取角色最近的记忆 */
@@ -69,8 +94,9 @@ export class ShortTermMemory {
   /**
    * 格式化为 prompt 文本（含时间戳、连续压缩、对话标注）
    * 注意：thought 类型已被 prompt-builder 单独成段，这里跳过它们避免重复。
+   * @param currentTick 当前游戏 tick；传入时跨天记忆会带"昨天"/"N天前"前缀
    */
-  formatForPrompt(characterId: string, count = 10): string {
+  formatForPrompt(characterId: string, count = 10, currentTick?: number): string {
     const allEntries = this.getRecent(characterId, count * 2);
     const entries = allEntries.filter((e) => e.type !== "thought").slice(-count);
     if (entries.length === 0) return "";
@@ -98,8 +124,8 @@ export class ShortTermMemory {
 
     const flushRepeat = () => {
       if (repeatCount > 1) {
-        const startTime = _tickTime(repeatStartTick);
-        const endTime = _tickTime(entries[lines.length + repeatCount - 1]?.tick ?? repeatStartTick);
+        const startTime = _tickTime(repeatStartTick, currentTick);
+        const endTime = _tickTime(entries[lines.length + repeatCount - 1]?.tick ?? repeatStartTick, currentTick);
         lines.push(`📌 [${startTime}-${endTime}] ${prevContent}（连续${repeatCount}次，考虑换个事做）`);
       }
       repeatCount = 0;
@@ -109,7 +135,7 @@ export class ShortTermMemory {
 
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i]!;
-      const time = _tickTime(e.tick);
+      const time = _tickTime(e.tick, currentTick);
       const prefix = e.type === "conversation" ? "💬" : e.type === "thought" ? "💭" : "📌";
 
       // 连续相同行为压缩（只压缩 event 类型）
@@ -121,7 +147,7 @@ export class ShortTermMemory {
 
       // 输出之前的重复
       if (repeatCount > 1) {
-        const startTime = _tickTime(repeatStartTick);
+        const startTime = _tickTime(repeatStartTick, currentTick);
         lines.push(`📌 [${startTime}-${time}] ${prevContent}（连续${repeatCount}次，考虑换个事做）`);
         repeatCount = 0;
       } else if (repeatCount === 1) {
@@ -147,8 +173,8 @@ export class ShortTermMemory {
 
     // 最后一组重复
     if (repeatCount > 1) {
-      const startTime = _tickTime(repeatStartTick);
-      const endTime = _tickTime(entries[entries.length - 1]?.tick ?? repeatStartTick);
+      const startTime = _tickTime(repeatStartTick, currentTick);
+      const endTime = _tickTime(entries[entries.length - 1]?.tick ?? repeatStartTick, currentTick);
       lines.push(`📌 [${startTime}-${endTime}] ${prevContent}（连续${repeatCount}次，考虑换个事做）`);
     }
 

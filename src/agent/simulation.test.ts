@@ -77,6 +77,99 @@ describe("Simulation", () => {
     expect(world.getCharacter("tomori")!.needs.hunger).toBe(tomoriBefore.hunger - 1);
   });
 
+  it("晨间打算：06:00 生成并写入 state.todayPlan", async () => {
+    // 所有 LLM 调用都返回打算格式的文本（agent 决策会 skip，无妨）
+    mockLLM.setDefaultResponse("- 把面团揉完\n- 傍晚去海边走走", []);
+
+    await sim.runOneTick(tickToGameTime(24)); // day 0, 06:00
+    await sim.waitForBackgroundTasks();
+
+    const plan = world.getCharacter("tomori")!.todayPlan;
+    expect(plan?.day).toBe(0);
+    expect(plan?.items).toContain("把面团揉完");
+  });
+
+  it("晨间打算：非 06:00 不触发", async () => {
+    mockLLM.setDefaultResponse("- 什么打算", []);
+
+    await sim.runOneTick(tickToGameTime(48)); // 12:00
+    await sim.waitForBackgroundTasks();
+
+    expect(world.getCharacter("tomori")!.todayPlan).toBeUndefined();
+  });
+
+  it("约定结算：双方到场 → kept + 记忆 + 关系提升", async () => {
+    world.moveCharacter("tomori", "cafe");
+    world.moveCharacter("anon", "cafe");
+    world.addAppointment({
+      id: "ap1", proposerId: "tomori", targetId: "anon",
+      locationId: "cafe", atTick: 32, status: "pending", createdTick: 20,
+    });
+    mockLLM.setDefaultResponse("", [{ name: "do_nothing", arguments: {} }]);
+
+    await sim.runOneTick(tickToGameTime(32));
+
+    expect(world.getAllAppointments()[0]!.status).toBe("kept");
+    expect(sim.relationships.get("tomori", "anon").level).toBeGreaterThan(0);
+    const memText = sim.memory.getRecent("tomori", 5).map((e) => e.content).join("");
+    expect(memText).toContain("如约");
+  });
+
+  it("约定结算：一方缺席 → missed + 双方记忆 + 愧疚 intent + 关系下降", async () => {
+    world.moveCharacter("tomori", "cafe");   // tomori 在等
+    world.moveCharacter("anon", "beach");    // anon 爽约
+    world.addAppointment({
+      id: "ap1", proposerId: "anon", targetId: "tomori",
+      locationId: "cafe", atTick: 32, status: "pending", createdTick: 20,
+    });
+    mockLLM.setDefaultResponse("", [{ name: "do_nothing", arguments: {} }]);
+
+    // 宽限窗（32+2）之后才结算为爽约
+    await sim.runOneTick(tickToGameTime(35));
+
+    expect(world.getAllAppointments()[0]!.status).toBe("missed");
+    expect(sim.relationships.get("tomori", "anon").level).toBeLessThan(0);
+    // 等的人：被放鸽子的记忆 + intent
+    expect(sim.memory.getRecent("tomori", 5).map((e) => e.content).join("")).toContain("一直没来");
+    expect(world.getCurrentIntent("tomori", 35)?.summary).toContain("鸽子");
+    // 爽约的人：愧疚记忆 + intent（道歉钩子）
+    expect(sim.memory.getRecent("anon", 5).map((e) => e.content).join("")).toContain("你没去");
+    expect(world.getCurrentIntent("anon", 35)?.summary).toContain("过意不去");
+  });
+
+  it("约定结算：宽限窗内不判爽约", async () => {
+    world.moveCharacter("tomori", "cafe");
+    world.moveCharacter("anon", "beach");
+    world.addAppointment({
+      id: "ap1", proposerId: "tomori", targetId: "anon",
+      locationId: "cafe", atTick: 32, status: "pending", createdTick: 20,
+    });
+    mockLLM.setDefaultResponse("", [{ name: "do_nothing", arguments: {} }]);
+
+    await sim.runOneTick(tickToGameTime(33)); // 32+1，仍在宽限窗
+
+    expect(world.getAllAppointments()[0]!.status).toBe("pending");
+  });
+
+  it("对话对象离开后不再进入会话模式", async () => {
+    // 双方在 cafe 且 3 tick 内 ≥2 次交换 → 满足"活跃对话"的时间窗条件
+    world.moveCharacter("tomori", "cafe");
+    world.moveCharacter("anon", "cafe");
+    sim.conversations.recordTalk("tomori", "高松灯", "anon", "你好", 30);
+    sim.conversations.recordTalk("anon", "千早爱音", "tomori", "嗨", 31);
+
+    // 但 anon 已经离开了 —— 对话物理上结束
+    world.moveCharacter("anon", "beach");
+
+    mockLLM.setDefaultResponse("发呆", [{ name: "do_nothing", arguments: {} }]);
+    await sim.runOneTick(tickToGameTime(32));
+
+    // tomori 的请求不应是会话模式（会话 prompt 含"然后调用 talk 工具"指令段）
+    const tomoriCall = mockLLM.calls[0]!;
+    const userContent = (tomoriCall.request.messages[0] as { content: string }).content;
+    expect(userContent).not.toContain("然后调用 talk 工具");
+  });
+
   it("talk 通过信箱发送消息并触发反应轮", async () => {
     // 把两人放到同一地点
     world.moveCharacter("tomori", "cafe");

@@ -2,6 +2,17 @@
 # 如果需要个性化，可以为每个 home 创建独立文件
 
 _residential_tools: &home_tools
+  # rest / tidy_up 无条件可用：状态良好的角色在家也得有事可做。
+  # 此前家里全部工具都条件门控，白天在家 = 只有 go_to + do_nothing，
+  # 模型想"在家歇着"没有出口，实测会病急乱投医（go_to 家、幻觉 talk）。
+  - name: rest
+    description: "窝在家里歇一会儿，什么也不干"
+    effects: { energy: 8, fun: 2 }
+    duration: 2
+  - name: tidy_up
+    description: "收拾收拾屋子，把东西归回原位"
+    effects: { fun: 4, hygiene: 3, energy: -3 }
+    duration: 2
   - name: sleep
     description: "睡觉休息"
     effects: { energy: 100 }

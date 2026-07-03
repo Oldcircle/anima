@@ -1,6 +1,9 @@
 # PLAN — Tool Feedback Loop 改造
 
-> **状态**: 设计完成，待实施
+> **状态**: ✅ 已全部实施（2026-07-03 核查确认）
+> Layer B（go_to 位置锚点）/ C（resolveLocation 收紧）/ E（do_nothing 兜底）在 `src/agent/tool-builder.ts`；
+> Layer D（tick 内 ToolResult 重试循环）在 `src/agent/agent-loop.ts`，实际 `MAX_TOOL_RETRY = 2`（比本文设计的 1 更宽），
+> hint 生成在 `src/agent/tool-feedback.ts`。本文档保留作设计依据。
 > **目标**: 让 LLM agent 失败后能立即自纠错，参考 Claude Code 的 ToolResult `is_error` + `<system-reminder>` 设计
 
 ---

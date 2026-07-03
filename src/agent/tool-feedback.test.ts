@@ -189,9 +189,10 @@ describe("agent-loop tick 内 retry（Layer D）", () => {
     // tomori 在自家
     world.moveCharacter("tomori", "home_tomori");
     world.moveCharacter("anon", "home_anon");
-    // tomori 第 1 次：go_to "家"（在家应失败 - Layer C）
-    mockLLM.enqueueResponse("回家", [
-      { name: "go_to", arguments: { location: "家", thought: "我要回家" } },
+    // tomori 第 1 次：go_to 不存在的地点（失败触发重试）
+    // 注：原用"在家 go_to 家"触发，该场景已优雅降级为原地停留（不再是失败）
+    mockLLM.enqueueResponse("出去逛逛", [
+      { name: "go_to", arguments: { location: "月球基地", thought: "想去个新地方" } },
     ]);
     // tomori 重试：do_nothing（成功）
     mockLLM.enqueueResponse("发会儿呆", [

@@ -106,6 +106,25 @@ export interface CharacterObservableState {
   expiresAt: number;
 }
 
+/**
+ * 约定系统：两个角色说定的"什么时候在哪见面"。
+ * 约定是世界状态不是对话内容——说定了就记录，时间到了就结算，谁没来世界都知道。
+ * 没有接受/拒绝状态机：不想去可以不去，爽约本身就是活人行为。
+ */
+export interface Appointment {
+  id: string;
+  proposerId: string;
+  targetId: string;
+  /** 约定地点（限公共地点） */
+  locationId: string;
+  /** 约定时间 */
+  atTick: number;
+  /** 约好做什么（可选） */
+  activity?: string;
+  status: "pending" | "kept" | "missed";
+  createdTick: number;
+}
+
 /** D3: director 通过 seed_topic 注入的"想聊的话题" */
 export interface WantToDiscuss {
   topic: string;
@@ -132,6 +151,11 @@ export interface CharacterState {
   currentAction?: { name: string; remainingTicks: number };
   /** 当前还挂在心上的短期意图/未完事务，会自然过期 */
   currentIntent?: CharacterIntent;
+  /**
+   * 今天的打算（晨间计划）：每天早上基于昨日反思/今日约定/天气生成的 1-3 件想做的事。
+   * 不是任务清单——是"心里有数"，行为从纯需求反应变成有主线的生活。跨天自动失效。
+   */
+  todayPlan?: { day: number; items: string[] };
   /** 当前留在外界可被旁人观察到的生活痕迹 */
   observableState?: CharacterObservableState;
   /** D3: director 注入的"想聊的话题"，角色 talk 时 prompt 会引导围绕这些话题展开 */

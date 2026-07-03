@@ -34,7 +34,7 @@ export interface GameTime {
   year: number;
 }
 
-const TICKS_PER_DAY = 96;
+export const TICKS_PER_DAY = 96;
 const TICKS_PER_HOUR = 4;
 const DAYS_PER_SEASON = 28;
 const SEASONS: GameTime["season"][] = ["spring", "summer", "autumn", "winter"];

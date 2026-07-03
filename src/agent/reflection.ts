@@ -28,6 +28,8 @@ export async function runReflection(params: {
   modelId: string;
   dayStartTick: number;
   dayEndTick: number;
+  /** 今天早上的打算（晨间计划），反思时回顾完成情况 */
+  todayPlan?: string[];
 }): Promise<ReflectionResult> {
   const { card, memory, relationships, provider, modelId } = params;
 
@@ -76,7 +78,10 @@ export async function runReflection(params: {
 愿望: ...
 担忧: ...`;
 
-  const user = `## 今天发生的事\n${memorySummary}\n\n## 我的人际关系\n${relSummary || "暂无特别关系"}`;
+  const planReview = params.todayPlan && params.todayPlan.length > 0
+    ? `\n\n## 今天早上你的打算\n${params.todayPlan.map((p) => `- ${p}`).join("\n")}\n（回顾一下：做成了吗？没做成的还想做吗？想做的可以体现在"愿望"里。）`
+    : "";
+  const user = `## 今天发生的事\n${memorySummary}${planReview}\n\n## 我的人际关系\n${relSummary || "暂无特别关系"}`;
 
   try {
     const response = await provider.chat(

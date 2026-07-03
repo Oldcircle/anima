@@ -73,6 +73,11 @@ describe("loadLocationsFromDir", () => {
     expect(homeL!.type).toBe("residential");
     expect(homeL!.atmosphere).toBeDefined();
 
+    // 居家可供性：rest / tidy_up 必须无条件可用（否则状态良好的角色在家无事可做，
+    // 实测会病急乱投医选 go_to 家 / 幻觉 talk）
+    expect(homeL!.tools?.some((t) => t.name === "rest" && !t.condition)).toBe(true);
+    expect(homeL!.tools?.some((t) => t.name === "tidy_up" && !t.condition)).toBe(true);
+
     // Check nature location
     const beach = locations.find((l) => l.id === "beach");
     expect(beach).toBeDefined();

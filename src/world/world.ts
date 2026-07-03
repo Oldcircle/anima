@@ -11,6 +11,7 @@ import type {
   InboxMessage,
   CharacterIntent,
   CharacterObservableState,
+  Appointment,
 } from "./types.js";
 import type { LifeState } from "../character/types.js";
 import { tickToGameTime, type GameTime } from "../core/tick-engine.js";
@@ -279,6 +280,53 @@ export class World {
     return character.wantToDiscuss.filter(
       (w) => !w.targetChar || w.targetChar === talkingTo,
     );
+  }
+
+  // --- 约定系统 ---
+
+  private _appointments: Appointment[] = [];
+
+  /**
+   * 记录一个约定。同一对角色只保留最新的 pending（新约替换旧约）；
+   * 每人最多 3 个 pending（防工具滥用堆积）。
+   */
+  addAppointment(a: Appointment): boolean {
+    const pendingCount = this._appointments.filter(
+      (x) => x.status === "pending" && (x.proposerId === a.proposerId || x.targetId === a.proposerId),
+    ).length;
+    if (pendingCount >= 3) return false;
+    // 同一对角色的旧 pending 被新约替换
+    const pairKey = (x: { proposerId: string; targetId: string }) =>
+      [x.proposerId, x.targetId].sort().join(":");
+    this._appointments = this._appointments.filter(
+      (x) => !(x.status === "pending" && pairKey(x) === pairKey(a)),
+    );
+    this._appointments.push(a);
+    return true;
+  }
+
+  /** 该角色参与的、还没结算的约定（prompt 注入用），按时间先后排序 */
+  getUpcomingAppointments(characterId: string, tick = this._state.tick): Appointment[] {
+    return this._appointments
+      .filter((a) => a.status === "pending")
+      .filter((a) => a.proposerId === characterId || a.targetId === characterId)
+      .filter((a) => a.atTick + 2 >= tick) // 宽限窗内仍提醒
+      .sort((a, b) => a.atTick - b.atTick);
+  }
+
+  /** 到点需要结算的约定（含宽限窗内的） */
+  getDueAppointments(tick = this._state.tick): Appointment[] {
+    return this._appointments.filter((a) => a.status === "pending" && tick >= a.atTick);
+  }
+
+  markAppointment(id: string, status: "kept" | "missed"): void {
+    const a = this._appointments.find((x) => x.id === id);
+    if (a) a.status = status;
+  }
+
+  /** 全部约定（测试/面板用） */
+  getAllAppointments(): ReadonlyArray<Appointment> {
+    return this._appointments;
   }
 
   // --- 信箱 ---

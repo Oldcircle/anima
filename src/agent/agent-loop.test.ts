@@ -89,7 +89,7 @@ describe("Agent Loop", () => {
     expect(world.getCharacter("tomori")!.locationId).toBe("home_tomori");
   });
 
-  it("LLM 调用 go_to 去当前地点 → 明确提示已经在这里", async () => {
+  it("LLM 调用 go_to 去当前地点 → 优雅降级为原地停留（不报错不烧重试）", async () => {
     mockLLM.enqueueResponse("还是去家里吧", [
       { name: "go_to", arguments: { location: "home_tomori" } },
     ]);
@@ -97,9 +97,12 @@ describe("Agent Loop", () => {
     const result = await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
 
     expect(result.action?.name).toBe("go_to");
-    expect(result.result?.success).toBe(false);
-    expect(result.result?.description).toContain("已经在");
+    // 不是失败：就地待着，自然叙事进记忆
+    expect(result.result?.success).not.toBe(false);
+    expect(result.result?.description).toContain("就在这儿");
     expect(world.getCharacter("tomori")!.locationId).toBe("home_tomori");
+    // 没有触发失败重试（只有 1 次 LLM 调用）
+    expect(mockLLM.calls).toHaveLength(1);
   });
 
   it("多 tick 行为：sleep 持续多个 tick", async () => {
@@ -128,6 +131,142 @@ describe("Agent Loop", () => {
     expect(result.skipped).toBe(true);
     expect(result.skipReason).toContain("未调用工具");
   });
+
+  it("arrange_meet：约定落库 + 对方收到信箱确认", async () => {
+    world.moveCharacter("anon", "home_tomori"); // anon 来串门，两人同地点
+    // 当前 tick 48 = 12:00，约"明天12:00"
+    mockLLM.enqueueResponse("想约爱音明天见面", [
+      { name: "arrange_meet", arguments: { target: "anon", location: "咖啡馆", when: "明天12:00", activity: "一起喝咖啡" } },
+    ]);
+
+    const result = await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    expect(result.result?.success).not.toBe(false);
+    expect(result.result?.description).toContain("约好");
+
+    const appointments = world.getAllAppointments();
+    expect(appointments).toHaveLength(1);
+    expect(appointments[0]!.atTick).toBe(144); // 明天 12:00
+    expect(appointments[0]!.locationId).toBe("cafe");
+    expect(appointments[0]!.status).toBe("pending");
+
+    // 对方信箱收到确认（下 tick 会进入其记忆）
+    const anonInbox = world.getCharacter("anon")!.inbox;
+    expect(anonInbox.some((m) => m.content.includes("说定了"))).toBe(true);
+  });
+
+  it("有当天晨间打算时 prompt 注入「你今天的打算」", async () => {
+    world.getCharacter("tomori")!.todayPlan = { day: 0, items: ["把面团揉完", "傍晚去海边"] };
+    mockLLM.enqueueResponse("嗯", [{ name: "do_nothing", arguments: {} }]);
+
+    await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) }); // day 0
+
+    const content = (mockLLM.calls[0]!.request.messages[0] as { content: string }).content;
+    expect(content).toContain("你今天的打算");
+    expect(content).toContain("把面团揉完");
+  });
+
+  it("过期（昨天）的打算不注入", async () => {
+    world.getCharacter("tomori")!.todayPlan = { day: 0, items: ["昨天的打算"] };
+    mockLLM.enqueueResponse("嗯", [{ name: "do_nothing", arguments: {} }]);
+
+    await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48 + 96) }); // day 1
+
+    const content = (mockLLM.calls[0]!.request.messages[0] as { content: string }).content;
+    expect(content).not.toContain("昨天的打算");
+  });
+
+  it("有未结算约定时 prompt 注入「你心里挂着的事」提醒", async () => {
+    world.addAppointment({
+      id: "ap1", proposerId: "tomori", targetId: "anon",
+      locationId: "cafe", atTick: 60, status: "pending", createdTick: 40,
+    });
+    mockLLM.enqueueResponse("嗯", [{ name: "do_nothing", arguments: {} }]);
+
+    await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    const content = (mockLLM.calls[0]!.request.messages[0] as { content: string }).content;
+    expect(content).toContain("你心里挂着的事");
+    expect(content).toContain("约好");
+    expect(content).toContain("咖啡馆");
+    expect(content).toContain("千早爱音");
+  });
+
+  it("会话模式下 request.tools 被替换为情境工具表（见=可执行）", async () => {
+    mockLLM.enqueueResponse("嗯", [{ name: "do_nothing", arguments: {} }]);
+
+    await runAgentTick({
+      config, world, eventBus, gameTime: tickToGameTime(48),
+      conversationRequest: {
+        system: "sys",
+        messages: [{ role: "user", content: "对话中" }],
+        tools: [{ name: "ghost_tool", description: "静态表里的幽灵工具", parameters: { type: "object", properties: {} } }],
+      },
+    });
+
+    // 模型看到的必须是本 tick 可执行的情境工具，而不是会话模式自带的静态表
+    const sentTools = mockLLM.calls[0]!.request.tools!.map((t) => t.name);
+    expect(sentTools).not.toContain("ghost_tool");
+    expect(sentTools).toContain("go_to");
+    expect(sentTools).toContain("do_nothing");
+  });
+
+  it("eat 不带 item 参数时默认吃背包里第一个食物（不再失败）", async () => {
+    const { addToInventory } = await import("../world/item-registry.js");
+    addToInventory(world.getCharacter("tomori")!.inventory, "bread_plain");
+
+    mockLLM.enqueueResponse("随便吃点什么吧", [{ name: "eat", arguments: {} }]);
+
+    const result = await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    expect(result.action?.name).toBe("eat");
+    expect(result.result?.success).not.toBe(false);
+    expect(result.result?.description).toContain("白面包");
+    // 只有 1 次 LLM 调用（没烧重试）
+    expect(mockLLM.calls).toHaveLength(1);
+  });
+
+  it("LLM 只写想法没调用工具时，追加提示救回为行动", async () => {
+    // 第一次：只有内心戏没有工具调用；第二次（救回）：给出 go_to
+    mockLLM.enqueueResponse("（她低头想了想，还是决定去咖啡馆走走）", []);
+    mockLLM.enqueueResponse("", [{ name: "go_to", arguments: { location: "cafe" } }]);
+
+    const result = await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    expect(result.skipped).toBeFalsy();
+    expect(result.action?.name).toBe("go_to");
+    // 原始内心戏保留为 thought（那才是角色真实想法）
+    expect(result.thought).toContain("咖啡馆走走");
+    // 确实发生了第二次调用，且带上了"变成行动"的提示
+    expect(mockLLM.calls).toHaveLength(2);
+    const nudgeMsgs = mockLLM.calls[1]!.request.messages;
+    const lastMsg = nudgeMsgs[nudgeMsgs.length - 1]!;
+    expect((lastMsg as { content: string }).content).toContain("把它变成行动");
+  });
+
+  it("救回也没给出工具调用时，仍然 skipped（不无限重试）", async () => {
+    mockLLM.enqueueResponse("（想了很多，但什么都没做）", []);
+    mockLLM.enqueueResponse("还是在想", []);
+
+    const result = await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+    expect(result.skipped).toBe(true);
+    expect(result.skipReason).toContain("未调用工具");
+    expect(mockLLM.calls).toHaveLength(2);
+  });
+
+  it("在家时 go_to 家 → 优雅降级为原地停留，不报错不烧重试", async () => {
+    mockLLM.enqueueResponse("想回家休息", [{ name: "go_to", arguments: { location: "家" } }]);
+
+    const result = await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
+
+    // 不是失败：就地歇会儿，自然叙事进记忆
+    expect(result.result?.success).not.toBe(false);
+    expect(result.result?.description).toContain("就在家里");
+    // 位置不变，且没有触发失败重试（只有 1 次 LLM 调用）
+    expect(world.getCharacter("tomori")!.locationId).toBe("home_tomori");
+    expect(mockLLM.calls).toHaveLength(1);
+  });
+
 
   it("事件被广播到 EventBus", async () => {
     mockLLM.enqueueResponse("去散个步", [

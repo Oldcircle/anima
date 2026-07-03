@@ -16,7 +16,10 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **Tool-based Agent**：每个角色的行为空间由工具定义（talk/eat/work/go_to 等），LLM 自主选择
 - **零预设关系**：角色卡不包含任何跨角色引用，所有关系从零涌现
 - **五层活人感**：环境感知 + 印象系统 + 内心独白分级 + 对话模式 + 观察推理
-- **当前攻坚方向**：生活惯性（currentIntent）+ 可观察生活痕迹（observableState）
+- **生活主线（2026-07-03）**：晨间打算（每天 06:00 基于昨日反思定今日打算）+ 约定系统
+  （arrange_meet 说定→分级提醒→赴约/爽约结算）——反思→打算→行动→回顾的日循环闭环
+- **生活节律（2026-07-03）**：饭点感知、上班节律、居家可供性（rest/tidy_up）、
+  重要性感知记忆（反思比琐事活得久）、跨天时间标注（"昨天23:00"）
 - **思考持久化**：LLM 每次决策的内心独白存入记忆，念头能跨 tick 延续
 - **时间系统**：Tick 驱动（1 tick = 游戏 15 分钟），支持加速/暂停
 
@@ -33,13 +36,14 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 ```
 anima/
 ├── CLAUDE.md           # 本文件（项目说明书）
-├── PLAN-tool-feedback.md   # 分期：Tool Feedback Loop
+├── PLAN-appointments.md    # 分期：约定系统（已实施）
+├── PLAN-tool-feedback.md   # 分期：Tool Feedback Loop（已实施）
 ├── PLAN-game-frontend.md   # 分期：Godot 夜景前端
 ├── src/
 │   ├── core/           # 时间系统（tick-engine）、事件总线
-│   ├── world/          # 世界状态、地点、关系、经济、天气
+│   ├── world/          # 世界状态、地点、关系、经济、天气、约定（appointments）
 │   ├── character/      # 角色卡类型、YAML 加载器
-│   ├── agent/          # LLM agent 循环、prompt 构建、对话模式、印象、观察推理、反思
+│   ├── agent/          # LLM agent 循环、prompt 构建、对话模式、印象、观察推理、反思、晨间打算
 │   ├── memory/         # 短期记忆、印象存储、时间衰减、MMR
 │   ├── actions/        # 行为工具（basic/social/leisure/gray）
 │   ├── providers/      # LLM provider 抽象（OpenAI 兼容、failover）
@@ -61,7 +65,7 @@ anima/
 ```bash
 pnpm dev              # 启动模拟 + Web 服务 (http://localhost:3001)
 pnpm build            # TypeScript 编译
-pnpm test             # 单元测试（~242 tests，几秒完成）
+pnpm test             # 单元测试（~469 tests，几秒完成）
 pnpm test:watch       # 开发时 watch 模式
 pnpm test:live        # Live 测试（需要 DEEPSEEK_API_KEY）
 pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
@@ -70,8 +74,8 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 ## 测试说明
 
 ### 单元测试（pnpm test）
-- 242 个测试，26 个文件，不需要 API key
-- 覆盖：时间系统、世界状态、需求衰减、关系、记忆、印象、对话追踪、观察推理、prompt 构建、约束检查、数据库
+- ~469 个测试，44 个文件，不需要 API key（数字会随开发增长，以实际运行为准）
+- 覆盖：时间系统、世界状态、需求衰减、关系、记忆、印象、对话追踪、观察推理、prompt 构建、约束检查、数据库、约定系统、晨间打算
 
 ### Live 测试（pnpm test:live）
 - 需要 `.env` 中配置 `DEEPSEEK_API_KEY`
@@ -107,7 +111,8 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 ## 活跃文档
 
 - [STATUS.md](./STATUS.md) — **会话交接文档**（当前进度 + 下次入口 + 跨会话教训），进项目先读这个
-- [PLAN-tool-feedback.md](./PLAN-tool-feedback.md) — Tool Feedback Loop 改造（对齐 Claude Code is_error + system-reminder 思想，治"✗ 你已经在 X 了"反复刷屏）
+- [PLAN-appointments.md](./PLAN-appointments.md) — 约定系统（arrange_meet 工具 + 到点结算赴约/爽约 + 记挂/愧疚钩子），2026-07-03 实现
+- [PLAN-tool-feedback.md](./PLAN-tool-feedback.md) — Tool Feedback Loop 改造（✅ 已实施，保留作设计依据）
 - [PLAN-game-frontend.md](./PLAN-game-frontend.md) — Godot 游戏前端（日式 RPG 像素小镇）。P0~P4 全部完成 + 行为可视化（对话凑近/送礼飞道具）+ mygo 剧本适配（2026-07-03，live 回归通过）；运行见 godot/README.md
 
 > ⚠️ 教训：叙事系统(N0-N6) 与 Director Agent(D1-D4) 的旧规划文档曾因 gitignore 未入仓而永久丢失。

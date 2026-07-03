@@ -19,6 +19,7 @@ import { getWorkIncome } from "../world/economy.js";
 import { inviteOutAction, shareSecretAction } from "../actions/relationship-actions.js";
 import { getItemDef, hasItem, resolveItem } from "../world/item-registry.js";
 import type { ShopItem } from "../world/item-types.js";
+import { parseAppointmentTime, describeAppointmentTime } from "../world/appointments.js";
 
 export interface ToolBuildContext {
   state: CharacterState;
@@ -140,6 +141,7 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
   if (ctx.nearbyCharacters.length > 0) {
     tools.push(buildTalkTool(ctx, talkableCharacters));
     tools.push(buildComfortTool(ctx));
+    tools.push(buildArrangeMeetTool(ctx));
 
     // argue 只在负面情绪或 fun 极低时浮现
     const dominantMood = ctx.state.moodlets?.length
@@ -272,6 +274,19 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
     },
     handler: (args, actx): ActionResult => {
       const rawLoc = args.location as string;
+      // "家"/"home" 且已在家：优雅降级为"原地歇会儿"而不是报错。
+      // 半天模拟实测（2026-07-03 两轮）：报错版（无论"没有这个地方"还是"你就在家里"）
+      // 都教不会模型——重试仍会再选 go_to 家，白烧 1-2 次 LLM 调用。
+      // 参考 Claude Code 的 stay-where-you-are 容错：模型想"回家歇着"，那就让它就地歇着，
+      // 记忆里留下自然叙事，重复倾向交给 recentActions streak 提示去纠。
+      if ((rawLoc === "家" || rawLoc === "回家" || rawLoc === "home") && myHome === ctx.state.locationId) {
+        return {
+          description: "本来想着回家，回过神来发现自己就在家里，索性就近歇了会儿",
+          effects: [],
+          duration: 1,
+          observableState: "在家里慢悠悠地待着，没什么特别要做的。",
+        };
+      }
       // 支持 ID、中文名、描述文本：LLM 可能传 "cafe"、"咖啡馆"、"海风面包坊——买面包、吃东西（你的工作地点）。"
       const resolveLocation = (input: string) => {
         // "家"/"回家"/"home"：在家时不再映射到当前位置（避免软提示被忽略），让上层报 unknown_location 硬错误
@@ -293,10 +308,12 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
       };
       const target = resolveLocation(rawLoc);
       if (target && target.id === ctx.state.locationId) {
+        // 同上：go_to 当前位置不再报错，降级为原地停留
         return {
-          description: `你已经在${ctx.location.name}了，不用再特地过去`,
+          description: `本来想去${ctx.location.name}，回过神来发现自己就在这儿，索性就地待了会儿`,
           effects: [],
-          success: false,
+          duration: 1,
+          observableState: "在原地慢悠悠地待着，像在想接下来做什么。",
         };
       }
       if (!target || !allowedLocations.some(l => l.id === target.id)) {
@@ -348,6 +365,7 @@ function describeLocationObservableState(lt: LocationTool, ctx: ToolBuildContext
         : "在附近慢慢散步，没有急着去哪里。";
     case "sit": return "找了个地方坐下，安静地发着呆。";
     case "rest": return "安静地坐在一边休息，不太想被打扰。";
+    case "tidy_up": return "正在屋里收拾东西，把散落的物件一件件归回原位。";
     case "swim": return "在海水里来回游着，动作舒展开来。";
     case "stargaze": return "抬头望着天，像是把注意力都放远了。";
     case "collect_shells": return "弯着腰在沙地上认真挑拣贝壳。";
@@ -424,6 +442,70 @@ function buildTalkTool(ctx: ToolBuildContext, _talkableCharacters: Array<{ id: s
         ],
         observableState: `${manner ? `${manner}，` : ""}正和${nearbyDisplayName(ctx, target)}说话${message ? `，像是提到「${truncateVisibleText(message, 14)}」` : ""}。`,
       };
+    },
+  };
+}
+
+// ── arrange_meet 工具（约定系统）──
+
+function buildArrangeMeetTool(ctx: ToolBuildContext): ActionDefinition {
+  const who = nearbyNames(ctx);
+  // 只能约在公共地点（不能约在别人家）
+  const publicLocations = ctx.allLocations.filter((l) => l.type !== "residential");
+  const locationList = publicLocations.map((l) => l.name).join("、");
+
+  return {
+    tool: {
+      name: "arrange_meet",
+      description: `和在场的人约个时间地点见面（比如"明天中午在咖啡馆见"）。说定了就是承诺——到时候不去，对方会记住的。在场：${who}。`,
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么，为什么想约" },
+          target: { type: "string", description: `约谁（角色 ID）：${who}` },
+          location: { type: "string", description: `约在哪（公共地点）：${locationList}` },
+          when: { type: "string", description: `什么时候。用"今天18:00"、"明天12:00"或"明天中午"这样的说法` },
+          activity: { type: "string", description: "约好做什么（可选，如'一起吃午饭'）" },
+        },
+        required: ["target", "location", "when"],
+      },
+    },
+    handler: (args, actx): ActionResult => {
+      const target = args.target as string;
+      const rawLocation = (args.location as string | undefined)?.trim() ?? "";
+      const when = (args.when as string | undefined)?.trim() ?? "";
+      const activity = (args.activity as string | undefined)?.trim() || undefined;
+
+      if (!actx.nearbyCharacters.includes(target)) {
+        return { description: `想和${target}约时间，但对方不在这里`, effects: [], success: false };
+      }
+      // 地点宽容匹配（复用 go_to 的思路：ID、名字、包含关系）
+      const loc = publicLocations.find((l) => l.id === rawLocation || l.name === rawLocation)
+        ?? publicLocations.find((l) => rawLocation.includes(l.name) || l.name.includes(rawLocation));
+      if (!loc) {
+        return { description: `想约在${rawLocation || "（没说地方）"}，但那不是个能约见面的地方`, effects: [], success: false };
+      }
+      const atTick = parseAppointmentTime(when, actx.tick);
+      if (atTick === undefined) {
+        return {
+          description: `想和${nearbyDisplayName(ctx, target)}约见面，但没说清什么时候（用"明天中午"或"今天18:00"这样的说法）`,
+          effects: [],
+          success: false,
+        };
+      }
+      const timeText = describeAppointmentTime(atTick, actx.tick);
+      const activityText = activity ? `，${activity}` : "";
+      return {
+        description: `和${nearbyDisplayName(ctx, target)}约好了${timeText}在${loc.name}见面${activityText}`,
+        effects: [
+          { type: "need_change", targetId: actx.characterId, field: "social", delta: 5 },
+          { type: "need_change", targetId: target, field: "social", delta: 5 },
+          { type: "inbox_message", targetId: target, fromName: actx.characterId, message: `那说定了，${timeText}在${loc.name}见${activityText}。` },
+        ],
+        duration: 1,
+        observableState: `正和${nearbyDisplayName(ctx, target)}商量着什么时候碰面。`,
+        _appointment: { targetId: target, locationId: loc.id, atTick, activity },
+      } as ActionResult & { _appointment: { targetId: string; locationId: string; atTick: number; activity?: string } };
     },
   };
 }
@@ -738,9 +820,15 @@ function buildEatTool(
       },
     },
     handler: (args, actx): ActionResult => {
-      const rawItem = (args.item as string | undefined)?.trim();
+      let rawItem = (args.item as string | undefined)?.trim();
+      // 没说吃什么就随手拿最顺手的：背包第一个食物 > 店里最便宜的。
+      // 真人饿了不会因为"没想好吃什么"而吃不上饭——此前这里直接失败白烧一次重试。
       if (!rawItem || rawItem === "undefined") {
-        return { description: "想吃东西但没想好吃什么", effects: [], success: false };
+        const fallbackId = bagFood[0]?.defId ?? [...shopFood].sort((a, b) => a.price - b.price)[0]?.id;
+        if (!fallbackId) {
+          return { description: "想吃东西但手边什么吃的都没有", effects: [], success: false };
+        }
+        rawItem = fallbackId;
       }
       // 支持 ID 和中文名
       const def = resolveItem(rawItem);

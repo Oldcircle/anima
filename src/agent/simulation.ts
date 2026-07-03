@@ -24,6 +24,8 @@ import { ImpressionStore } from "../memory/impressions.js";
 import { updateImpressionsBidirectional } from "./impression-updater.js";
 import { shouldObserve, generateObservation, type ObservationResult } from "./observation-reasoning.js";
 import { tickMoodlets, generateNeedMoodlets, addMoodlet } from "../world/moodlets.js";
+import { APPOINTMENT_GRACE_TICKS, describeAppointmentTime } from "../world/appointments.js";
+import { generateMorningPlan } from "./morning-plan.js";
 import { checkPromotion, applyPromotion, type PromotionResult } from "../world/career.js";
 import { detectBehaviorPatterns } from "../world/behavior-chains.js";
 import { updateWorldTension } from "../narrative/tension.js";
@@ -310,6 +312,13 @@ export class Simulation {
     if (gameTime.hour === 6 && gameTime.minute === 0) {
       this.runDailyPacingCheck(gameTime);
     }
+    // 1.0d 约定结算：到点检查赴约/爽约，产生记忆/情绪/关系变化（在角色决策前，
+    // 让"被放鸽子"的记忆和情绪能进入本 tick 的 prompt）
+    this.resolveAppointments(gameTime);
+    // 1.0e 晨间打算：每天 06:00 各角色给自己定今天想做的 1-3 件事（fire-and-forget）
+    if (gameTime.hour === 6 && gameTime.minute === 0) {
+      this.runMorningPlans(gameTime);
+    }
     for (const c of this.world.getAllCharacters()) {
       tickMoodlets(c, gameTime.tick);
       generateNeedMoodlets(c, gameTime.tick);
@@ -373,7 +382,7 @@ export class Simulation {
         if (partnerConfig && partnerState) {
           const location = this.world.getLocation(state.locationId);
           const rel = this.relationships.get(id, activePartnerId);
-          const recentMemoriesText = this.memory.formatForPrompt(id, 12);
+          const recentMemoriesText = this.memory.formatForPrompt(id, 12, gameTime.tick);
           const impressionText = this.impressions.formatForPrompt(id, activePartnerId);
           const wpId = state.life?.workplace ?? config.card.life?.workplace;
           const wpName = wpId ? this.world.getLocation(wpId)?.name : undefined;
@@ -492,14 +501,16 @@ export class Simulation {
         const partnerId = lastMsg ? this._resolveCharacterId(lastMsg.fromId) : undefined;
 
         let r: AgentTickResult;
-        // 检测是否有活跃对话
-        if (partnerId && this.conversations.isActiveConversation(id, partnerId, gameTime.tick)) {
+        // 检测是否有活跃对话（对方必须还在同一地点，理由同 _findActiveConversationPartner）
+        const partnerStillHere = partnerId
+          && this.world.getCharacter(partnerId)?.locationId === state.locationId;
+        if (partnerId && partnerStillHere && this.conversations.isActiveConversation(id, partnerId, gameTime.tick)) {
           const partnerConfig = this._configs.get(partnerId);
           const partnerState = this.world.getCharacter(partnerId);
           if (partnerConfig && partnerState) {
             const location = this.world.getLocation(state.locationId);
             const rel = this.relationships.get(id, partnerId);
-            const recentMemories = this.memory.formatForPrompt(id, 12);
+            const recentMemories = this.memory.formatForPrompt(id, 12, gameTime.tick);
             const impressionText = this.impressions.formatForPrompt(id, partnerId);
             const wpId = state.life?.workplace ?? config.card.life?.workplace;
             const wpName = wpId ? this.world.getLocation(wpId)?.name : undefined;
@@ -707,8 +718,9 @@ export class Simulation {
     if (gameTime.hour === 23 && gameTime.minute === 0) {
       const dayStartTick = gameTime.tick - 92; // 当天 00:00 起
       reflections = [];
-      const reflectionPromises = Array.from(this._configs.values()).map((config) =>
-        runReflection({
+      const reflectionPromises = Array.from(this._configs.values()).map((config) => {
+        const planState = this.world.getCharacter(config.card.id);
+        return runReflection({
           card: config.card,
           memory: this.memory,
           relationships: this.relationships,
@@ -716,8 +728,9 @@ export class Simulation {
           modelId: config.modelId,
           dayStartTick,
           dayEndTick: gameTime.tick,
-        }),
-      );
+          todayPlan: planState?.todayPlan?.day === gameTime.day ? planState.todayPlan.items : undefined,
+        });
+      });
       reflections = await Promise.all(reflectionPromises);
 
       // 反思结果回写 life state（愿望/担忧）
@@ -834,8 +847,13 @@ export class Simulation {
   private _findActiveConversationPartner(charId: string, currentTick: number): string | undefined {
     let bestPartner: string | undefined;
     let bestTick = -1;
+    const myLocation = this.world.getCharacter(charId)?.locationId;
     for (const other of this._configs.keys()) {
       if (other === charId) continue;
+      // 对方已经不在同一地点 → 对话已经物理上结束了，不能再进会话模式。
+      // 此前只看 3-tick 时间窗：B 离开后 A 仍被喂"请回应对方"的 prompt，
+      // 模型自然选 talk，然后撞上"talk 不在可用列表"（人都走了哪来的 talk）。
+      if (this.world.getCharacter(other)?.locationId !== myLocation) continue;
       if (this.conversations.isActiveConversation(charId, other, currentTick)) {
         // 找最近一次 talk 的 partner
         const history = this.conversations.getHistory(charId, other);
@@ -1000,6 +1018,146 @@ export class Simulation {
     }
 
     return ready;
+  }
+
+  /**
+   * 约定结算（约定系统）：
+   * - 宽限窗（到点后 2 tick）内双方同时在场 → kept：双方记忆 + happy + 关系 +3
+   * - 窗口过后：在场者被放鸽子（记忆/sad/关系 −5/recover intent），
+   *   缺席者留愧疚记忆 + intent（道歉行为的涌现钩子）；双方都没到则扯平
+   * 已知简化：结算时刻才看在场，"等了一会儿先走了"会被判为没来（v1 接受）。
+   */
+  private resolveAppointments(gameTime: GameTime): void {
+    for (const a of this.world.getDueAppointments(gameTime.tick)) {
+      const proposer = this.world.getCharacter(a.proposerId);
+      const target = this.world.getCharacter(a.targetId);
+      if (!proposer || !target) {
+        this.world.markAppointment(a.id, "missed");
+        continue;
+      }
+      const locName = this.world.getLocation(a.locationId)?.name ?? a.locationId;
+      const pHere = proposer.locationId === a.locationId;
+      const tHere = target.locationId === a.locationId;
+
+      if (pHere && tHere) {
+        this.world.markAppointment(a.id, "kept");
+        this.relationships.modify(a.proposerId, a.targetId, 3, gameTime.tick, "如约见面");
+        for (const [me, other] of [[proposer, target], [target, proposer]] as const) {
+          this.memory.add(me.id, {
+            tick: gameTime.tick,
+            type: "event",
+            content: `你和${other.name}如约在${locName}碰了面`,
+            importance: 7,
+            relatedCharacterId: other.id,
+          });
+          addMoodlet(me, "happy", 3, "赴约见到了人", 12, "social", gameTime.tick);
+        }
+        console.log(`📅 [约定] 兑现: ${a.proposerId} ↔ ${a.targetId} @ ${locName}`);
+        continue;
+      }
+
+      // 宽限窗内：再等等（人可能在路上）
+      if (gameTime.tick <= a.atTick + APPOINTMENT_GRACE_TICKS) continue;
+
+      // 窗口过了 → 爽约结算
+      this.world.markAppointment(a.id, "missed");
+      const waiter = pHere ? proposer : tHere ? target : undefined;
+      const absentee = pHere ? target : tHere ? proposer : undefined;
+      if (waiter && absentee) {
+        this.relationships.modify(waiter.id, absentee.id, -5, gameTime.tick, "被放了鸽子");
+        this.memory.add(waiter.id, {
+          tick: gameTime.tick,
+          type: "event",
+          content: `你在${locName}等${absentee.name}，说好的时间过了，对方一直没来`,
+          importance: 8,
+          relatedCharacterId: absentee.id,
+        });
+        addMoodlet(waiter, "sad", 4, "被放了鸽子", 16, "social", gameTime.tick);
+        this.world.setIntent(waiter.id, {
+          kind: "recover",
+          source: "action",
+          targetId: absentee.id,
+          summary: `${absentee.name}放了你鸽子，这事挂在心上。`,
+          createdTick: gameTime.tick,
+          expiresAt: gameTime.tick + 8,
+        });
+        this.memory.add(absentee.id, {
+          tick: gameTime.tick,
+          type: "event",
+          content: `你想起来你和${waiter.name}约了在${locName}见面，结果你没去`,
+          importance: 8,
+          relatedCharacterId: waiter.id,
+        });
+        this.world.setIntent(absentee.id, {
+          kind: "recover",
+          source: "action",
+          targetId: waiter.id,
+          summary: `你放了${waiter.name}的鸽子，心里有点过意不去。`,
+          createdTick: gameTime.tick,
+          expiresAt: gameTime.tick + 8,
+        });
+        console.log(`📅 [约定] 爽约: ${absentee.id} 放了 ${waiter.id} 鸽子 @ ${locName}`);
+      } else {
+        for (const [me, other] of [[proposer, target], [target, proposer]] as const) {
+          this.memory.add(me.id, {
+            tick: gameTime.tick,
+            type: "event",
+            content: `你和${other.name}约了在${locName}见面，结果你们俩都没去`,
+            importance: 5,
+            relatedCharacterId: other.id,
+          });
+        }
+        console.log(`📅 [约定] 双方爽约: ${a.proposerId} ↔ ${a.targetId}`);
+      }
+    }
+  }
+
+  /**
+   * 晨间打算（fire-and-forget）：昨日反思的愿望/担忧 + 今日约定 + 天气 → 今天想做的 1-3 件事，
+   * 写入 state.todayPlan 全天注入 prompt。反思(昨晚)→打算(早上)→行动(全天)→反思回顾(今晚) 闭环。
+   */
+  private runMorningPlans(gameTime: GameTime): void {
+    for (const [id, config] of this._configs) {
+      const state = this.world.getCharacter(id);
+      if (!state) continue;
+      if (state.todayPlan?.day === gameTime.day) continue; // 幂等
+      const life = state.life ?? config.card.life;
+      const wpName = life?.workplace ? this.world.getLocation(life.workplace)?.name : undefined;
+      const todayEnd = (gameTime.day + 1) * 96;
+      const todayAppointments = this.world.getUpcomingAppointments(id, gameTime.tick)
+        .filter((a) => a.atTick < todayEnd)
+        .map((a) => {
+          const otherId = a.proposerId === id ? a.targetId : a.proposerId;
+          const otherName = this.world.getCharacter(otherId)?.name ?? otherId;
+          const locName = this.world.getLocation(a.locationId)?.name ?? a.locationId;
+          return `${describeAppointmentTime(a.atTick, gameTime.tick)}在${locName}和${otherName}见面`;
+        });
+      const insights = this.memory.getRecentThoughts(id, 6)
+        .filter((t) => t.content.startsWith("[反思]"))
+        .map((t) => t.content.replace(/^\[反思\]\s*/, ""));
+
+      const task = generateMorningPlan({
+        card: config.card,
+        state,
+        provider: this._provider,
+        modelId: config.modelId,
+        yesterdayWish: state.life?.currentGoal,
+        yesterdayConcern: state.life?.currentConcern,
+        yesterdayInsights: insights,
+        todayAppointments,
+        weather: this.world.weather,
+        workplaceName: wpName,
+      }).then((result) => {
+        const s = this.world.getCharacter(id);
+        if (s && result.items.length > 0) {
+          s.todayPlan = { day: gameTime.day, items: result.items };
+          console.log(`🌅 [晨间打算] ${id}: ${result.items.join(" / ")}`);
+        }
+      }).catch((err: any) => {
+        console.warn(`🌅 [晨间打算] ${id} 失败:`, err?.message ?? err);
+      });
+      this._trackBackgroundTask(task);
+    }
   }
 
   /** 每天 06:00 触发 LLM 导演的节奏检查（N4） */

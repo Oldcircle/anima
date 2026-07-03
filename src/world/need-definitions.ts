@@ -198,6 +198,20 @@ export function formatBodyFeelings(needs: Record<string, number>, gold: number, 
     feelings.push("好几件事都在拉警报，得先处理最难受的。");
   }
 
+  // 生活节律：饭点。吃饭是节律不是应激——肚子不满时到点就会惦记，而不是饿到低血糖才想起来
+  if (hour !== undefined) {
+    const hunger = needs.hunger ?? 100;
+    if (hunger < 65) {
+      if (hour >= 6 && hour < 9) {
+        feelings.push("早上还没正经吃东西，想找点早饭垫垫。");
+      } else if (hour >= 11 && hour < 13) {
+        feelings.push("到饭点了，肚子开始惦记午饭。");
+      } else if (hour >= 17 && hour < 20) {
+        feelings.push("天色暗下来了，差不多该吃晚饭了。");
+      }
+    }
+  }
+
   // 深夜生物钟
   if (hour !== undefined) {
     if (hour >= 0 && hour < 5) {

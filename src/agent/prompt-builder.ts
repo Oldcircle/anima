@@ -8,7 +8,7 @@
 import type { CharacterCard, LifeState } from "../character/types.js";
 import type { CharacterState, CharacterNeeds, Weather, InboxMessage, LocationAtmosphere, CharacterIntent } from "../world/types.js";
 import type { GameTime } from "../core/tick-engine.js";
-import { formatGameTime } from "../core/tick-engine.js";
+import { formatGameTime, tickToGameTime } from "../core/tick-engine.js";
 import type { WorldEvent } from "../core/event-bus.js";
 import { weatherDescription, weatherHint } from "../world/weather.js";
 import { formatMoodlets } from "../world/moodlets.js";
@@ -16,6 +16,7 @@ import { getAtmosphereText } from "../world/location-loader.js";
 import type { ImpressionStore } from "../memory/impressions.js";
 import { formatBodyFeelings } from "../world/need-definitions.js";
 import { formatInventory as _formatInventory } from "../world/item-registry.js";
+import { formatAppointmentReminder } from "../world/appointments.js";
 
 /**
  * 把 gender 值翻译成"自我描述"用的中文短语，注入到 system prompt 开头。
@@ -76,7 +77,7 @@ function formatLifeContext(life: LifeState, workplaceName?: string): string {
   // 工作认知：只有当 workplace 确实存在于当前世界时才注入具体地名
   // 否则 LLM 会试图去一个不存在的地点（P0 fix）
   if (workplaceName) {
-    parts.push(`你在${workplaceName}当${life.occupation}。`);
+    parts.push(`你在${workplaceName}当${life.occupation}。按点去店里上工是你生活的节律——该干活的时段无缘无故不去，你心里会不踏实。`);
   } else if (life.occupation) {
     parts.push(`你的职业是${life.occupation}。`);
   }
@@ -318,6 +319,15 @@ export function buildUserPrompt(params: {
   recentThoughts?: Array<{ tick: number; content: string }>;
   /** D3: director 注入的"想聊的话题" */
   wantToDiscuss?: Array<{ topic: string; urgency: "low" | "med" | "high"; targetChar?: string }>;
+  /** 约定系统：该角色未结算的约定（含显示名和到场状态） */
+  upcomingAppointments?: Array<{
+    appointment: import("../world/types.js").Appointment;
+    otherName: string;
+    locationName: string;
+    atLocation: boolean;
+  }>;
+  /** 晨间打算：今天想做的 1-3 件事（morning-plan 生成） */
+  todayPlan?: string[];
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
@@ -401,20 +411,34 @@ export function buildUserPrompt(params: {
     parts.push(`\n## 有人对你说\n${msgs}\n（这些话刚刚在你耳边发生。你可以用 talk 回应，也可以无视或转身离开。）`);
   }
 
-  // 生活目标/担忧（从反思涌现的内在驱动力）
-  const life = state.life ?? card.life;
-  if (life) {
+  // 晨间打算：给一天一条主线，但措辞刻意松弛避免变成 todo 执行机器
+  if (params.todayPlan && params.todayPlan.length > 0) {
+    parts.push(`\n## 你今天的打算\n早上你心里想着今天要：\n${params.todayPlan.map((p) => `- ${p}`).join("\n")}\n（不是必须完成的清单——顺其自然，但心里记着这些。）`);
+  }
+
+  // 生活目标/担忧/约定（内在驱动力 + 承诺）
+  {
     const lifeHints: string[] = [];
+    // 约定放最前——承诺优先级高于模糊的愿望
+    for (const ua of params.upcomingAppointments ?? []) {
+      const line = formatAppointmentReminder({
+        appointment: ua.appointment,
+        currentTick: gameTime.tick,
+        otherName: ua.otherName,
+        locationName: ua.locationName,
+        atLocation: ua.atLocation,
+      });
+      if (line) lifeHints.push(line);
+    }
     if (params.currentIntent) {
       lifeHints.push(`你现在还挂着的事：${params.currentIntent.summary}`);
     }
-    if (life.currentGoal) lifeHints.push(`你最近想做的事：${life.currentGoal}`);
-    if (life.currentConcern) lifeHints.push(`你有点担心的事：${life.currentConcern}`);
+    const life = state.life ?? card.life;
+    if (life?.currentGoal) lifeHints.push(`你最近想做的事：${life.currentGoal}`);
+    if (life?.currentConcern) lifeHints.push(`你有点担心的事：${life.currentConcern}`);
     if (lifeHints.length > 0) {
       parts.push(`\n## 你心里挂着的事\n${lifeHints.join("\n")}`);
     }
-  } else if (params.currentIntent) {
-    parts.push(`\n## 你心里挂着的事\n你现在还挂着的事：${params.currentIntent.summary}`);
   }
 
   // 随身物品
@@ -473,9 +497,10 @@ export function buildUserPrompt(params: {
   if (params.recentThoughts && params.recentThoughts.length > 0) {
     const thoughtLines = params.recentThoughts
       .map((t) => {
-        const gt = (t.tick % 96 / 4) | 0;
-        const min = ((t.tick % 4) * 15);
-        const time = `${String(gt).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+        const gt = tickToGameTime(t.tick);
+        const hhmm = `${String(gt.hour).padStart(2, "0")}:${String(gt.minute).padStart(2, "0")}`;
+        const dayDiff = gameTime.day - gt.day;
+        const time = dayDiff <= 0 ? hhmm : dayDiff === 1 ? `昨天${hhmm}` : `${dayDiff}天前${hhmm}`;
         return `- [${time}] ${t.content}`;
       })
       .join("\n");

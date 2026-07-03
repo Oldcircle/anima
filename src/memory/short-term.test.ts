@@ -83,4 +83,47 @@ describe("ShortTermMemory", () => {
     expect(recent).toHaveLength(3);
     expect(recent[0]!.content).toBe("B");
   });
+
+  it("窗口满时优先淘汰低重要性琐事，高重要性反思活得更久", () => {
+    const mem = new ShortTermMemory(3);
+    mem.add("tomori", { tick: 1, type: "thought", content: "[反思] 重要洞察", importance: 9 });
+    mem.add("tomori", { tick: 2, type: "event", content: "路过琐事", importance: 2 });
+    mem.add("tomori", { tick: 3, type: "event", content: "普通事件", importance: 4 });
+    mem.add("tomori", { tick: 4, type: "event", content: "新事件", importance: 4 });
+
+    const recent = mem.getRecent("tomori", 10);
+    expect(recent).toHaveLength(3);
+    // 被淘汰的是低重要性琐事，而不是更旧但更重要的反思
+    expect(recent.map((e) => e.content)).toEqual(["[反思] 重要洞察", "普通事件", "新事件"]);
+  });
+
+  it("超过 2 个游戏天的记忆无条件淘汰（再重要也会淡忘）", () => {
+    const mem = new ShortTermMemory(3);
+    mem.add("tomori", { tick: 1, type: "thought", content: "很久以前的反思", importance: 9 });
+    mem.add("tomori", { tick: 200, type: "event", content: "A", importance: 2 });
+    mem.add("tomori", { tick: 201, type: "event", content: "B", importance: 2 });
+    mem.add("tomori", { tick: 202, type: "event", content: "C", importance: 2 });
+
+    const recent = mem.getRecent("tomori", 10);
+    expect(recent.map((e) => e.content)).toEqual(["A", "B", "C"]);
+  });
+
+  it("formatForPrompt 传入 currentTick 时给跨天记忆加日期前缀", () => {
+    const mem = new ShortTermMemory(30);
+    mem.add("tomori", { tick: 92, type: "event", content: "昨晚的事", importance: 5 }); // day 0, 23:00
+    mem.add("tomori", { tick: 120, type: "event", content: "今天的事", importance: 5 }); // day 1, 06:00
+
+    const text = mem.formatForPrompt("tomori", 10, 124); // 当前 day 1, 07:00
+    expect(text).toContain("[昨天23:00] 昨晚的事");
+    expect(text).toContain("[06:00] 今天的事");
+  });
+
+  it("formatForPrompt 不传 currentTick 时保持旧格式（向后兼容）", () => {
+    const mem = new ShortTermMemory(30);
+    mem.add("tomori", { tick: 92, type: "event", content: "昨晚的事", importance: 5 });
+
+    const text = mem.formatForPrompt("tomori", 10);
+    expect(text).toContain("[23:00] 昨晚的事");
+    expect(text).not.toContain("昨天");
+  });
 });
