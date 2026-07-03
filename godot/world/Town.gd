@@ -78,15 +78,16 @@ const R_HOUSE_BEIGE := ["TilesetHouse", 4, 0, 4, 3]
 const R_INN := ["TilesetHouse", 26, 0, 3, 3]
 const R_BAR := ["TilesetHouse", 12, 0, 4, 3]
 const R_CAFE := ["TilesetHouse", 16, 0, 3, 3]
-const R_SHOP := ["TilesetHouse", 19, 0, 3, 3]
-const R_BAKERY := ["TilesetHouse", 22, 0, 3, 3]
+const R_SHOP := ["TilesetHouse", 19, 0, 4, 3]       # 杂货店实际 4 格宽（含菜摊）
+const R_BAKERY := ["TilesetHouse", 23, 0, 3, 3]     # 圆顶点心铺在 23..25
 const R_LIBRARY := ["TilesetHouse", 25, 10, 4, 4]
 const R_TORII := ["TilesetHouse", 0, 5, 3, 2]
-const R_PILLAR := ["TilesetHouse", 0, 15, 1, 2]
+const R_PILLAR := ["TilesetHouse", 0, 15, 1, 3]     # 石柱含底座共 3 格高
 const R_NOREN_A := ["TilesetHouse", 22, 20, 1, 2]
 const R_NOREN_B := ["TilesetHouse", 23, 20, 1, 2]
-const R_BASKET := ["TilesetHouse", 20, 12, 1, 1]
-const R_BREAD := ["TilesetHouse", 19, 13, 1, 1]
+const R_BASKET := ["TilesetHouse", 18, 13, 1, 1]    # 红果篮（完整 1x1）
+const R_BREAD := ["TilesetHouse", 20, 14, 1, 1]     # 面包篮（完整 1x1）
+const R_VEG := ["TilesetHouse", 19, 14, 1, 1]       # 菜篮（完整 1x1）
 const R_BARREL := ["TilesetHouse", 16, 15, 1, 1]
 
 const R_PINE_BIG := ["TilesetNature", 0, 2, 4, 3]
@@ -96,7 +97,8 @@ const R_SAKURA := ["TilesetNature", 12, 2, 4, 3]
 const R_GREEN_WIDE := ["TilesetNature", 16, 2, 4, 3]
 const R_TREE_S := ["TilesetNature", 0, 0, 2, 2]
 const R_PINE_S := ["TilesetNature", 2, 0, 2, 2]
-const R_ROCK := ["TilesetNature", 12, 7, 2, 2]
+const R_ROCK := ["TilesetNature", 13, 8, 2, 2]      # 完整单块圆岩
+const R_ROCK_S := ["TilesetNature", 15, 9, 1, 1]
 const R_BUSH := ["TilesetNature", 0, 10, 1, 1]
 const R_BUSH2 := ["TilesetNature", 2, 10, 1, 1]
 const R_SUNFLOWER := ["TilesetNature", 0, 11, 1, 1]
@@ -134,7 +136,7 @@ const LAYOUT := {
 	"farm":              {"stand": Vector2i(19, 9)},
 	"library":           {"bldg": R_LIBRARY, "at": Vector2i(30, 2), "stand": Vector2i(32, 7)},
 	"flower_shop":       {"bldg": R_HOUSE_BEIGE, "at": Vector2i(37, 3), "stand": Vector2i(39, 7)},
-	"shop":              {"bldg": R_SHOP, "at": Vector2i(8, 12), "stand": Vector2i(9, 16)},
+	"shop":              {"bldg": R_SHOP, "at": Vector2i(8, 12), "stand": Vector2i(10, 16)},
 	"bakery":            {"bldg": R_BAKERY, "at": Vector2i(14, 12), "stand": Vector2i(15, 16)},
 	"cafe":              {"bldg": R_CAFE, "at": Vector2i(20, 12), "stand": Vector2i(21, 16)},
 	"plaza":             {"stand": Vector2i(34, 16)},
@@ -152,7 +154,7 @@ const LAYOUT := {
 
 # ---- 室内房间（尺寸含墙；wall = 9 宫格变体基点，floor = 地板 tile）----
 const ROOMS := {
-	"cafe":         {"size": Vector2i(14, 9), "wall": WALL_ORANGE, "floor": FLOOR_BRICK, "rug": RUG_TAN},
+	"cafe":         {"size": Vector2i(14, 9), "wall": WALL_ORANGE, "floor": FLOOR_BRICK},
 	"bar":          {"size": Vector2i(13, 9), "wall": WALL_BROWN, "floor": FLOOR_DARK},
 	"library":      {"size": Vector2i(16, 11), "wall": WALL_GREEN, "floor": FLOOR_PLANK, "rug": RUG_GREEN},
 	"shop":         {"size": Vector2i(12, 9), "wall": WALL_TAN, "floor": FLOOR_PLANK},
@@ -463,7 +465,7 @@ func _build_paths() -> void:
 	seg_v.call(34, 6, 25)          # 中轴：图书馆西侧 → 广场 → 鸟居 → 海滩
 	seg_v.call(32, 6, 11)          # 图书馆门前
 	seg_v.call(39, 7, 11)          # 花店门前
-	seg_v.call(9, 15, 17)          # 杂货店
+	seg_v.call(10, 15, 17)         # 杂货店
 	seg_v.call(15, 15, 17)         # 面包坊
 	seg_v.call(21, 15, 17)         # 咖啡馆
 	seg_v.call(19, 9, 17)          # 农田 → 主街
@@ -655,12 +657,12 @@ func _build_nature(lights_parent: Node2D) -> void:
 	_stamp_block(R_ROCK, Vector2i(64, 27))
 	_sprite_px(PROP_DIR + "FishNetFull.png", Vector2(45 * TILE, 27.5 * TILE))
 	_mark_solid(Rect2i(45, 27, 2, 2))
+	_stamp_at(R_ROCK_S, Vector2i(47, 29))
 	_sprite_px(PROP_DIR + "Crane.png", Vector2(54 * TILE, 26.8 * TILE))
 	_mark_solid(Rect2i(54, 27, 2, 2))
 	_stamp_block(R_BOAT_S, Vector2i(46, 32))
 	var boat := _sprite_px(PROP_DIR + "Boat.png", Vector2(55 * TILE, 32 * TILE))
 	boat.z_index = 1
-	_sprite_px(PROP_DIR + "Sail.png", Vector2(24 * TILE, 33.5 * TILE))
 	_add_glow(Vector2((PIER_X + 1.5) * TILE, (WATER_Y + 2.0) * TILE), 64.0, Color("9fd0ff"), lights_parent)
 
 func _build_fence(r: Rect2i) -> void:
@@ -693,7 +695,7 @@ func _decorate_shops() -> void:
 	_stamp_block(R_BARREL, Vector2i(49, 16))
 	_stamp_block(R_BREAD, Vector2i(13, 15))   # 面包坊门前摆篮（bldg 14,12 3x3）
 	_stamp_block(R_BASKET, Vector2i(17, 15))
-	_stamp_block(R_BARREL, Vector2i(11, 13))  # 杂货店旁木桶（bldg 8,12 3x3）
+	_stamp_block(R_BARREL, Vector2i(12, 13))  # 杂货店旁木桶（bldg 8,12 4x3）
 
 func _build_plaza_props(lights_parent: Node2D) -> void:
 	_stamp_block(R_TORII, Vector2i(33, 22))
@@ -701,14 +703,16 @@ func _build_plaza_props(lights_parent: Node2D) -> void:
 	for x in [29, 39]:
 		_stamp_block(R_PILLAR, Vector2i(x, 13))
 		_add_glow(Vector2((x + 0.5) * TILE, 13.6 * TILE), 44.0, Color("ffd27a"), lights_parent)
-	# 集市摊位（东侧）：长桌 + 货物
+	# 集市摊位（东侧）：长桌 + 货物摆在桌面上
 	_stamp_at(F_COUNTER, Vector2i(37, 15))
 	_stamp_at(R_BREAD, Vector2i(37, 15))
+	_stamp_at(R_VEG, Vector2i(38, 15))
 	_stamp_at(R_BASKET, Vector2i(39, 15))
 	_mark_solid(Rect2i(37, 15, 3, 1))
 	_stamp_at(F_COUNTER, Vector2i(37, 18))
 	_stamp_at(R_BASKET, Vector2i(37, 18))
-	_stamp_at(F_JAR, Vector2i(39, 18))
+	_stamp_at(F_JAR, Vector2i(38, 18))
+	_stamp_at(R_VEG, Vector2i(39, 18))
 	_mark_solid(Rect2i(37, 18, 3, 1))
 	_stamp_block(R_CART, Vector2i(30, 20))
 	# 灌木 + 石子点缀

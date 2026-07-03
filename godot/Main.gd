@@ -33,6 +33,16 @@ const TIME_TINTS := {
 const ZOOM_MIN := 1.2
 const ZOOM_MAX := 4.0
 
+# 天气英文枚举（后端 Weather 类型）→ 中文显示 / 特效
+const WEATHER_CN := {
+	"sunny": "晴", "cloudy": "多云", "rainy": "雨", "stormy": "暴雨", "snowy": "雪",
+}
+const WEATHER_DIM := {
+	"sunny": 0.0, "cloudy": 0.12, "rainy": 0.18, "stormy": 0.3, "snowy": 0.06,
+}
+const BGM_DAY := "res://assets/ninja_adventure/music/calm_village.ogg"
+const BGM_NIGHT := "res://assets/ninja_adventure/music/chill.ogg"
+
 @onready var net: Node = $Net
 
 var _town: Node2D
@@ -57,6 +67,17 @@ var _drag_moved := false
 var _got_snapshot := false
 var _net_open := false
 var _time_key := ""
+var _bgm: AudioStreamPlayer
+var _bgm_path := ""
+var _rain: CPUParticles2D
+var _snow: CPUParticles2D
+var _dim: ColorRect
+var _weather := ""
+var _dialog: PanelContainer
+var _dialog_face: TextureRect
+var _dialog_name: Label
+var _dialog_text: Label
+var _dialog_timer: SceneTreeTimer
 
 func _ready() -> void:
 	get_viewport().physics_object_picking = true
@@ -90,6 +111,11 @@ func _ready() -> void:
 	_detail = DetailPanel.new()
 	add_child(_detail)
 
+	_bgm = AudioStreamPlayer.new()
+	_bgm.volume_db = -14.0
+	_bgm.bus = "Master"
+	add_child(_bgm)
+
 	net.connected.connect(func():
 		_net_open = true
 		print("[Main] ✅ 后端已连接"))
@@ -119,7 +145,7 @@ func _build_hud() -> void:
 	panel.add_child(_clock)
 
 	_hint = Label.new()
-	_hint.text = "拖拽平移 · 滚轮缩放 · 点角色跟随 · 点建筑进室内"
+	_hint.text = "拖拽平移 · 滚轮缩放 · 点角色跟随 · 点建筑进室内 · M 音乐开关"
 	_hint.add_theme_font_size_override("font_size", 12)
 	_hint.add_theme_color_override("font_color", Color(0.9, 0.88, 0.8, 0.75))
 	_hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
@@ -152,6 +178,100 @@ func _build_hud() -> void:
 	_banner_lbl.add_theme_font_size_override("font_size", 14)
 	_banner_lbl.add_theme_color_override("font_color", Color("ffe9a8"))
 	_banner.add_child(_banner_lbl)
+
+	_build_weather(layer)
+	_build_dialog(layer)
+
+func _build_weather(layer: CanvasLayer) -> void:
+	# 全屏遮罩：阴天/雨天压暗
+	_dim = ColorRect.new()
+	_dim.color = Color(0.02, 0.03, 0.1, 0.0)
+	_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_dim)
+	# 雨（屏幕空间粒子，斜落）
+	_rain = CPUParticles2D.new()
+	_rain.position = Vector2(600, -24)
+	_rain.amount = 260
+	_rain.lifetime = 1.1
+	_rain.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	_rain.emission_rect_extents = Vector2(760, 8)
+	_rain.direction = Vector2(0.18, 1)
+	_rain.spread = 2.0
+	_rain.gravity = Vector2(0, 0)
+	_rain.initial_velocity_min = 720.0
+	_rain.initial_velocity_max = 900.0
+	_rain.scale_amount_min = 2.2
+	_rain.scale_amount_max = 3.2
+	_rain.color = Color(0.66, 0.78, 1.0, 0.72)
+	_rain.emitting = false
+	layer.add_child(_rain)
+	# 雪（慢飘）
+	_snow = CPUParticles2D.new()
+	_snow.position = Vector2(640, -16)
+	_snow.amount = 140
+	_snow.lifetime = 7.0
+	_snow.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	_snow.emission_rect_extents = Vector2(700, 8)
+	_snow.direction = Vector2(0.05, 1)
+	_snow.spread = 12.0
+	_snow.gravity = Vector2(0, 6)
+	_snow.initial_velocity_min = 80.0
+	_snow.initial_velocity_max = 130.0
+	_snow.scale_amount_min = 2.0
+	_snow.scale_amount_max = 3.0
+	_snow.color = Color(1, 1, 1, 0.8)
+	_snow.emitting = false
+	layer.add_child(_snow)
+
+func _build_dialog(layer: CanvasLayer) -> void:
+	# JRPG 底部对话框：头像 + 名字 + 台词（最近一条 talk）
+	_dialog = PanelContainer.new()
+	_dialog.add_theme_stylebox_override("panel", _jrpg_box())
+	_dialog.anchor_left = 0.5
+	_dialog.anchor_right = 0.5
+	_dialog.anchor_top = 1.0
+	_dialog.anchor_bottom = 1.0
+	_dialog.offset_left = -330
+	_dialog.offset_right = 330
+	_dialog.offset_top = -118
+	_dialog.offset_bottom = -40
+	_dialog.visible = false
+	layer.add_child(_dialog)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 12)
+	_dialog.add_child(hb)
+	_dialog_face = TextureRect.new()
+	_dialog_face.custom_minimum_size = Vector2(76, 76)
+	_dialog_face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_dialog_face.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	hb.add_child(_dialog_face)
+	var vb := VBoxContainer.new()
+	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hb.add_child(vb)
+	_dialog_name = Label.new()
+	_dialog_name.add_theme_font_size_override("font_size", 14)
+	_dialog_name.add_theme_color_override("font_color", Color("ffd27a"))
+	vb.add_child(_dialog_name)
+	_dialog_text = Label.new()
+	_dialog_text.add_theme_font_size_override("font_size", 14)
+	_dialog_text.add_theme_color_override("font_color", Color("f5f0e8"))
+	_dialog_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_dialog_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vb.add_child(_dialog_text)
+
+func _show_dialog(char_id: String, display_name: String, text: String) -> void:
+	var face := "res://assets/ninja_adventure/characters/%s/Faceset.png" % _skin_for(char_id)
+	_dialog_face.texture = load(face) if ResourceLoader.exists(face) else null
+	_dialog_name.text = display_name
+	_dialog_text.text = text
+	_dialog.visible = true
+	_dialog_timer = get_tree().create_timer(7.0)
+	var this_timer := _dialog_timer
+	this_timer.timeout.connect(func() -> void:
+		if _dialog_timer == this_timer:   # 没被更新的对话顶掉才隐藏
+			_dialog.visible = false
+	)
 
 func _jrpg_box() -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
@@ -187,9 +307,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_follow = null
 		_cam.position -= event.relative / _cam.zoom.x
 		_clamp_cam()
-	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		if _space != "town":
+	elif event is InputEventKey and event.pressed:
+		if event.keycode == KEY_ESCAPE and _space != "town":
 			_exit_room()
+		elif event.keycode == KEY_M:
+			_bgm.playing = not _bgm.playing   # M 键开关音乐
 
 func _zoom_at(screen_pos: Vector2, factor: float) -> void:
 	var z: float = clampf(_cam.zoom.x * factor, ZOOM_MIN, ZOOM_MAX)
@@ -278,12 +400,14 @@ func _maybe_offline_demo() -> void:
 	if _got_snapshot:
 		return
 	print("[Main] 未连后端 → 离线演示（假数据，仅预览美术）")
-	var demo_time := "上午 10:00" if "--day" in OS.get_cmdline_user_args() else "晚上 21:30"
+	var args := OS.get_cmdline_user_args()
+	var demo_time := "上午 10:00" if "--day" in args else "晚上 21:30"
+	var demo_weather := "rainy" if "--rain" in args else "sunny"
 	_on_snapshot({
 		"locations": _town.demo_locations(),
 		"characters": _demo_characters(),
 		"formattedTime": demo_time,
-		"weather": "晴",
+		"weather": demo_weather,
 	})
 	if _views.has("asuka"): _views["asuka"].say("客人真多，忙不过来了！", "thought")
 	if _views.has("lelouch"): _views["lelouch"].say("「今晚的海风真舒服」", "talk")
@@ -297,7 +421,9 @@ func _maybe_offline_demo() -> void:
 			if c["id"] == "shinji": c["locationId"] = "beach"      # 码头 → 沙滩（栈桥寻路）
 			if c["id"] == "senjougahara": c["locationId"] = "plaza" # 室内 → 小镇
 		_on_tick({"tick": "demo", "formattedTime": _clock.text.split("   ")[0],
-			"weather": "晴", "characters": chars, "events": []})
+			"weather": _weather, "characters": chars,
+			"events": [{"characterId": "lelouch", "action": "talk",
+				"args": {"message": "今晚的海风真舒服，要不要去码头走走？"}}]})
 	)
 
 func _demo_characters() -> Array:
@@ -429,6 +555,9 @@ func _apply_bubbles(events: Array) -> Vector2i:
 			var msg := str(args.get("message", "")) if args is Dictionary else ""
 			if msg != "":
 				v.say("「%s」" % msg, "talk")
+				var cid := str(e.get("characterId", ""))
+				var cname := str(_last_chars.get(cid, {}).get("name", cid))
+				_show_dialog(cid, cname, msg)
 				talks += 1
 				continue
 		var thought = e.get("thought", null)
@@ -439,8 +568,20 @@ func _apply_bubbles(events: Array) -> Vector2i:
 
 func _update_clock(data: Dictionary) -> void:
 	var formatted := str(data.get("formattedTime", "?"))
-	_clock.text = "%s   %s" % [formatted, data.get("weather", "?")]
+	var weather := str(data.get("weather", ""))
+	_clock.text = "%s   %s" % [formatted, WEATHER_CN.get(weather, weather)]
 	_apply_time_of_day(formatted)
+	_apply_weather(weather)
+
+func _apply_weather(weather: String) -> void:
+	if weather == _weather:
+		return
+	_weather = weather
+	_rain.emitting = weather in ["rainy", "stormy"]
+	_rain.amount = 460 if weather == "stormy" else 260
+	_snow.emitting = weather == "snowy"
+	var dim: float = WEATHER_DIM.get(weather, 0.0)
+	create_tween().tween_property(_dim, "color:a", dim, 1.0)
 
 func _apply_time_of_day(formatted: String) -> void:
 	var key := "day"
@@ -456,3 +597,14 @@ func _apply_time_of_day(formatted: String) -> void:
 	tw.tween_property(_town, "modulate", tint[0], 1.2)
 	tw.tween_property(_chars_root, "modulate", tint[1], 1.2)
 	_lights.visible = tint[2]
+	_play_bgm(BGM_NIGHT if tint[2] else BGM_DAY)
+
+func _play_bgm(path: String) -> void:
+	if _bgm_path == path or "--shot" in OS.get_cmdline_user_args():
+		return
+	_bgm_path = path
+	var stream: AudioStream = load(path)
+	if stream is AudioStreamOggVorbis:
+		stream.loop = true
+	_bgm.stream = stream
+	_bgm.play()
