@@ -10,7 +10,7 @@ import type { CharacterState, CharacterNeeds, Weather, InboxMessage, LocationAtm
 import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime, tickToGameTime } from "../core/tick-engine.js";
 import type { WorldEvent } from "../core/event-bus.js";
-import { weatherDescription, weatherHint } from "../world/weather.js";
+import { climateEnvLine, climateHint, seasonAmbient } from "../world/climate.js";
 import { formatMoodlets } from "../world/moodlets.js";
 import { getAtmosphereText } from "../world/location-loader.js";
 import type { ImpressionStore } from "../memory/impressions.js";
@@ -331,7 +331,9 @@ export function buildUserPrompt(params: {
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
-  const weatherStr = params.weather ? `  天气: ${weatherDescription(params.weather)}` : "";
+  const weatherStr = params.weather
+    ? `  天气: ${climateEnvLine(gameTime.season, params.weather, gameTime.hour)}`
+    : "";
 
   const parts: string[] = [];
 
@@ -344,13 +346,14 @@ export function buildUserPrompt(params: {
     parts.push(`## 你现在看到的\n${locationName}，${formatGameTime(gameTime)}。${weatherStr}`);
   }
 
-  const hint = params.weather ? weatherHint(params.weather) : "";
+  const hint = params.weather ? climateHint(gameTime.season, params.weather, gameTime.hour) : "";
   if (hint) parts.push(hint);
+  parts.push(seasonAmbient(gameTime.season));
 
   if (params.festivalHint) parts.push(`\n🎉 **${params.festivalHint}**`);
 
   // 身体感受（替代数值面板和约束警告）
-  const bodyFeelings = formatBodyFeelings(state.needs, state.gold, gameTime.hour);
+  const bodyFeelings = formatBodyFeelings(state.needs, state.gold, gameTime.hour, state.life?.income);
   parts.push(`\n## 你的身体感受\n${bodyFeelings}`);
 
   // 情绪状态（Moodlet 系统）

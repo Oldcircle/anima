@@ -139,6 +139,7 @@ export async function runAgentTick(params: {
     allLocations: world.getAllLocations(),
     gold: state.gold,
     hour: gameTime.hour,
+    season: gameTime.season,
     relationships: params.relationships,
     characterNames,
     activePhase: world.narrative.getWorld().activePhase,

@@ -5,6 +5,8 @@
  * 加一个新维度只需要在 NEED_DEFINITIONS 中新增一条。
  */
 
+import { financeFeeling } from "./economy.js";
+
 export interface FeelingLevel {
   /** 低于此值触发 */
   below: number;
@@ -148,7 +150,7 @@ export function getDecayRates(): Record<string, number> {
  * 将需求值转化为自然语言身体感受。
  * 满的不提，偏低用身体感受，极低用紧急措辞。
  */
-export function formatBodyFeelings(needs: Record<string, number>, gold: number, hour?: number): string {
+export function formatBodyFeelings(needs: Record<string, number>, gold: number, hour?: number, income?: number): string {
   const feelings: string[] = [];
 
   for (const def of NEED_DEFINITIONS) {
@@ -175,9 +177,9 @@ export function formatBodyFeelings(needs: Record<string, number>, gold: number, 
     }
   }
 
-  // 金币
-  if (gold === 0) feelings.push("口袋空空的，一个硬币都没有。");
-  else if (gold < 10) feelings.push(`口袋里只剩 ${gold} 金币，得省着花。`);
+  // 财务体感（相对日常开销折算"撑得了几天"，比裸金额更贴生活；宽裕时不啰嗦）
+  const financeLine = financeFeeling(gold, income);
+  if (financeLine) feelings.push(financeLine);
 
   // 多维极端组合
   if (gold === 0 && (needs.hunger ?? 100) < 20) {

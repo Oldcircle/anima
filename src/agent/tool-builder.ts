@@ -15,7 +15,7 @@ import type { ToolDefinition } from "../providers/types.js";
 import type { ActionDefinition, ActionResult, ActionContext } from "../actions/types.js";
 import type { CharacterState, Location, LocationTool } from "../world/types.js";
 import type { CharacterCard } from "../character/types.js";
-import { getWorkIncome } from "../world/economy.js";
+import { getWorkIncome, effectivePrice } from "../world/economy.js";
 import { inviteOutAction, shareSecretAction } from "../actions/relationship-actions.js";
 import { getItemDef, hasItem, resolveItem } from "../world/item-registry.js";
 import type { ShopItem } from "../world/item-types.js";
@@ -31,6 +31,8 @@ export interface ToolBuildContext {
   gold: number;
   /** 当前游戏时间（小时） */
   hour?: number;
+  /** 当前季节（季节市场价格用） */
+  season?: import("../world/types.js").Season;
   /** 关系管理器（用于条件浮现关系工具） */
   relationships?: import("../world/relationships.js").RelationshipManager;
   /** 角色 ID → 显示名映射（用于 go_to 地点人物描述） */
@@ -733,14 +735,20 @@ function buildPrepareTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefini
 }
 
 function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition | null {
+  // 季节市场价：应季便宜、反季贵。filter/展示/扣款三处用同一到手价，保持一致
+  const season = ctx.season ?? "spring";
+  const priceOf = (s: ShopItem) => effectivePrice(s.price, s.id, season);
+
   // 只列出买得起的物品
-  const affordable = shop.filter(s => ctx.gold >= s.price);
+  const affordable = shop.filter(s => ctx.gold >= priceOf(s));
   if (affordable.length === 0) return null;
 
   const itemList = affordable.map(s => {
     const def = getItemDef(s.id);
     const desc = def?.description ? `——${def.description}` : "";
-    return `${s.name}（${s.price}金币${desc}）`;
+    const p = priceOf(s);
+    const tag = p < s.price ? "，应季实惠" : (p > s.price ? "，反季偏贵" : "");
+    return `${s.name}（${p}金币${tag}${desc}）`;
   }).join("、");
 
   return {
@@ -767,14 +775,15 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
       if (!shopItem) {
         return { description: `这里没有卖${rawItem}`, effects: [], success: false };
       }
-      if (actx.gold < shopItem.price) {
+      const price = priceOf(shopItem);
+      if (actx.gold < price) {
         return { description: `钱不够买${shopItem.name}`, effects: [], success: false };
       }
       return {
         description: `买了${shopItem.name}`,
         effects: [],
         observableState: `手里拿着刚买的${shopItem.name}，还没决定是自己留着还是带走。`,
-        _buyItem: { defId: shopItem.id, price: shopItem.price },
+        _buyItem: { defId: shopItem.id, price },
       } as ActionResult & { _buyItem: { defId: string; price: number } };
     },
   };

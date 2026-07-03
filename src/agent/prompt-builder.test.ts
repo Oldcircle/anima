@@ -32,7 +32,7 @@ function createState(): CharacterState {
       hygiene: 80,
       bladder: 90,
     },
-    gold: 30,
+    gold: 100,   // 真实起始金币；配合生计系统，100 金币约 5 天开销 = "够用"不焦虑
     moodlets: [], inbox: [],
   };
 }
@@ -134,7 +134,7 @@ describe("prompt-builder", () => {
       allLocationNames: [{ id: "home_tomori", name: "灯的家" }],
     });
 
-    expect(prompt).toContain("口袋空空");
+    expect(prompt).toContain("口袋快空了");
   });
 
   it("极端饥饿+没钱时显示紧急感受", () => {

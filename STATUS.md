@@ -5,6 +5,58 @@
 
 ## 当前状态（2026-07-03）
 
+### 世界系统深化 · 第 1 弹「气候系统」（2026-07-03，天气×四季做成真游戏系统）
+
+把原本纸面化的天气/四季（只有文字、无机制、无画面）升级成三位一体系统。审计结论：
+天气 2/10、四季 2/10、经济 3/10、社交 6/10 —— 按"可感知 + 有生存压力 + 前端看得见"逐个补齐。
+**顺序：气候 ✅ → 经济 ✅ → 社交（进行中：关系网可视化 ✅；声誉/恋爱线阶段/冲突升级待做）**。
+
+### 世界系统深化 · 第 3 弹「社交系统」（进行中）——从"扎实"到"有戏剧张力"
+
+社交本就是四系统里最扎实的（关系轴+bond身份+八卦+同场修正+印象+约定），先补最缺的「看得见」：
+
+- **关系网可视化**（`godot/ui/RelationWeb.gd`，R 键 / HUD「关系」按钮）：全镇角色沿圆环排布，
+  两两关系画成连线——颜色=类型（挚友绿/点头之交灰/宿敌红/暧昧恋人粉）、粗细=亲密/敌对强度，
+  bond 身份（恋人/前任/宿敌…）在连线中点标注。纯前端消费 tick 已下发的 `relationships[]`；
+  离线 demo 注入了假关系网，`--relweb` flag 可截图。**⚠️ 该文件踩过 GDScript 严格警告坑**：
+  `var x := dict.get(...)` 会因"从 Variant 推断类型"被当错误，改 `var x: T = ...` 或无冒号 `var x =`
+- **气候+经济真机验证（2026-07-04）**：跑了半天真实模拟（rainy spring 36 tick）——房租准点扣、
+  金币 100→76~92（有压力没破产、零焦虑刷屏）；7 角色晨间打算全被雨影响、避雨窝室内行为涌现。
+  两系统平衡良好无需调整（探针用完已删）
+- **待做（社交 drama 三件套）**：声誉/名声（公共善行↑恶行↓ + 进 prompt + 前端显示）、
+  恋爱线阶段（好感→暧昧→表白→在一起/被拒 状态机）、冲突升级（积怨到临界爆发）
+
+
+- **后端 `src/world/climate.ts`（新，17 测试）**：体感温度 = 季节基温 + 天气修正 + 时辰摆动（±5°C，
+  正午最暖凌晨最冷）；`comfortBand` 六档；`isSheltered(loc)`（residential/commercial/library/home_* 算室内）
+- **有生存压力**：`simulation` 每 tick 对**露天**角色施加 `climateNeedEffects`——冷/热耗 energy、
+  雨雪掉 hygiene+fun、暴风雨最狠；`applyClimateMoodlet` 露天淋雨→狼狈 moodlet、宜人晴天→舒展 moodlet。
+  躲屋里就免疫 → 催生"避雨躲寒"的涌现行为
+- **可感知**：`prompt-builder` 环境行加温度体感（"下着小雨，12°C（微凉）"）+ 气候提示（带伞/添衣）+
+  季节氛围一句话（樱花/蝉鸣/落叶/呵气成霜）
+- **看得见（Godot）**：WS 广播 `temperature`；`Main.gd` 四季换装 = 地图季节染色（春嫩绿/夏标准/
+  秋金黄/冬冷白，与时段染色**相乘**，只染地面不染角色脸）+ 季节氛围粒子（樱花瓣/落叶/雪絮，preprocess
+  预热整屏）+ 时钟显示温度。离线渲染 4 季 × 昼夜验证零 SCRIPT ERROR（截图见 godot/docs/shot_climate_*.png）
+- 验证 flag：`godot --path godot -- --shot [--spring|--summer|--autumn|--winter] [--day] [--wide]`
+
+### 世界系统深化 · 第 2 弹「经济系统」（2026-07-04，让钱有牙齿）
+
+原本 gold 只涨不跌（工作+，可选消费−），没有生计压力 → 钱没有分量。深化后三位一体：
+
+- **后端 `src/world/economy.ts` 扩写（新增 +14 测试）**：
+  - **生计压力（keystone）**：`dailyUpkeep(income)` 按收入累进的每日开销（房租+杂用），
+    `simulation` 每天 07:00 `applyDailyUpkeep` 扣一次；付不起 → 尽量付 + "开销没付清"焦虑
+    moodlet + 生计记忆（不引 debt 字段，用压力表达）。角色起始 100 金 ≈ 5 天开销的缓冲
+  - **财务体感**：`financeBand/financeLabel/financeFeeling`——按"手头的钱撑得了几天"分档
+    （宽裕/宽松/够用/手头紧/拮据/揭不开锅），比裸金额更贴生活；破产 `financeMoodlet` 焦虑
+  - **季节市场价格**：`effectivePrice` 应季便宜反季贵（秋收食物 0.82、寒冬 1.22…），
+    `tool-builder` 的 buy 工具 filter/展示/扣款三处用同一到手价，展示带"应季实惠/反季偏贵"标注
+- **可感知**：`prompt-builder` 身体感受段接入 `financeFeeling`（宽裕不啰嗦，紧才提醒"多接点活"）
+- **看得见（Godot）**：WS 下发 `finance` 标签；名册每行显示金币数（按财务档上色，红=拮据）、
+  详情面板「钱包 8 金币 · 揭不开锅」行、**挣钱/花钱/房租头顶飘金币**（`float_text`，绿+红−，
+  diff 上一 tick gold）。离线渲染名册/详情零 SCRIPT ERROR
+- 验证 flag 复用 `--roster` / `--detail <id>`；截图 godot/docs/shot_economy_*.png
+
 ### 后端 / 模拟核心
 
 **叙事系统 N0-N6 + Director Agent 化 D1/D2/D4 全部完成并合并 main。**
@@ -24,7 +76,18 @@ P0~P4 主干完成（详见 [PLAN-game-frontend.md](./PLAN-game-frontend.md) 状
 - **室内**：13 个房间（6 商铺公共 + 7 住宅），点建筑进入、ESC 返回、占位小人徽章
 - **系统**：AStarGrid2D 寻路、相机拖拽缩放跟随（自动跟进室内）、昼夜染色 + 夜景灯光、
   BGM 昼夜双曲、天气特效（雨/雪/阴）、JRPG 底部对话框、调速面板（P4）、详情面板离线可用
-- **验证**：`godot --path godot -- --shot [--day] [--wide] [--rain] [--room <id>]` 离线渲染（零 LLM 成本）
+- **验证**：`godot --path godot -- --shot [--day] [--wide] [--rain] [--room <id>] [--roster] [--detail <id>]` 离线渲染（零 LLM 成本）
+
+**生存可视化层（2026-07-03 新增）——「让 AI 的生存被看见」**：把 needs 从详情面板的裸数字
+变成一眼可读的游戏化表达，兑现"像真正的游戏、AI 在其中生存"：
+- **镇民状态名册**（`ui/StatusRoster.gd`，Tab 键 / HUD「名册」按钮）：JRPG 半透明菜单，
+  每行 = 像素头像 + 名字 + 当前动作 + 饿/困 迷你血条（绿/橙/红三档）+ 最紧迫需求高亮标签
+- **头顶生存告警徽章**（`CharacterView.set_need_alert`）：需求跌破阈值时角色头顶挂
+  「饿/困/寂/脏/闷/急」小牌，urgent（<15-20）红底脉动、moderate（<30-32）橙底，
+  数据每 tick 从 needs 推导（`Main._apply_need_alerts` / `_worst_need`，阈值对齐后端 need-definitions）
+- **详情面板需求条**（`ui/DetailPanel.gd`）：裸文本 "hunger 45" → 六条彩色血条 + 数值 + 中文标签
+- 全部 **纯前端、零后端改动、零 LLM 成本**：消费 tick/snapshot 已下发的 `needs`（server.ts:308），
+  离线 demo 数据已补 needs+动作，4 张离线渲染验证零 SCRIPT ERROR（roster/detail/on-map 徽章都对）
 
 ### 未完成 / 下次入口
 

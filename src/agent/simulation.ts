@@ -13,6 +13,8 @@ import type { LLMProvider } from "../providers/types.js";
 import type { ActionDefinition } from "../actions/types.js";
 import { RelationshipManager } from "../world/relationships.js";
 import { rollWeather } from "../world/weather.js";
+import { computeTemperature, isSheltered, climateNeedEffects, applyClimateMoodlet } from "../world/climate.js";
+import { applyDailyUpkeep, financeMoodlet } from "../world/economy.js";
 import { rollRandomEvents, type RandomEvent } from "../world/events.js";
 import { processGossipSpread, type GossipItem } from "../world/gossip.js";
 import { getTodayFestival, type Festival } from "../world/festivals.js";
@@ -298,6 +300,13 @@ export class Simulation {
       }
     }
 
+    // 0b. 每天 07:00 扣一次生活开销（房租+杂用）——生计压力，让"赚钱活下去"有分量
+    if (gameTime.hour === 7 && gameTime.minute === 0) {
+      for (const c of this.world.getAllCharacters()) {
+        applyDailyUpkeep(c, gameTime.tick, this.memory);
+      }
+    }
+
     // 1. 衰减需求 + Moodlet 管理
     this.world.decayNeeds();
     this.world.setTick(gameTime.tick);
@@ -319,9 +328,18 @@ export class Simulation {
     if (gameTime.hour === 6 && gameTime.minute === 0) {
       this.runMorningPlans(gameTime);
     }
+    // 1.0f 气候压力：露天暴露在恶劣天气/极端温度 → 额外消耗 needs + moodlet（催人躲屋里）
+    const climateTemp = computeTemperature(gameTime.season, this.world.weather, gameTime.hour);
     for (const c of this.world.getAllCharacters()) {
       tickMoodlets(c, gameTime.tick);
       generateNeedMoodlets(c, gameTime.tick);
+      financeMoodlet(c, gameTime.tick);
+      const sheltered = isSheltered(this.world.getLocation(c.locationId));
+      const climateEff = climateNeedEffects(climateTemp, this.world.weather, sheltered);
+      for (const [field, delta] of Object.entries(climateEff)) {
+        this.world.modifyNeed(c.id, field, delta);
+      }
+      applyClimateMoodlet(c, climateTemp, this.world.weather, sheltered, gameTime.tick);
       // 行为链检测 → 后果涟漪
       const chainMoodlets = detectBehaviorPatterns(c, gameTime.tick);
       for (const m of chainMoodlets) {

@@ -14,6 +14,8 @@ import type { TickEngine } from "../core/tick-engine.js";
 import type { GameTime } from "../core/tick-engine.js";
 import { formatGameTime, tickToGameTime } from "../core/tick-engine.js";
 import * as itemRegistry from "../world/item-registry.js";
+import { computeTemperature } from "../world/climate.js";
+import { financeLabel } from "../world/economy.js";
 import type { CharacterCard } from "../character/types.js";
 import { registerAdminRoutes } from "./admin-routes.js";
 import { registerNarrativeRoutes } from "./narrative-routes.js";
@@ -76,7 +78,8 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
           const memories = simulation.memory.getRecent(id, 20);
           const relationships = simulation.relationships.getRelationshipsOf(id);
           const impressions = simulation.impressions.getAllFor(id);
-          ws.send(JSON.stringify({ type: "character_detail", data: { ...character, memories, relationships, impressions } }));
+          const finance = character ? financeLabel(character.gold, character.life?.income) : undefined;
+          ws.send(JSON.stringify({ type: "character_detail", data: { ...character, finance, memories, relationships, impressions } }));
         }
         break;
       }
@@ -142,6 +145,7 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
           concern: r.concern,
         })),
         weather: simulation.world.weather,
+        temperature: computeTemperature(summary.gameTime.season, simulation.world.weather, summary.gameTime.hour),
         relationships: simulation.relationships.getAll().map((r) => ({
           a: r.characterA, b: r.characterB, level: r.level, type: r.type, bond: r.bond,
         })),
@@ -282,6 +286,7 @@ function getWorldSnapshot(sim: Simulation) {
     gameTime: gt,
     formattedTime: formatGameTime(gt),
     weather: sim.world.weather,
+    temperature: computeTemperature(gt.season, sim.world.weather, gt.hour),
     characters: getCharactersState(sim),
     locations: sim.world.getAllLocations().map((l) => ({
       id: l.id,
@@ -307,6 +312,7 @@ function getCharactersState(sim: Simulation) {
     locationId: c.locationId,
     needs: c.needs,
     gold: c.gold,
+    finance: financeLabel(c.gold, c.life?.income),
     currentAction: c.currentAction,
     observableState: c.observableState ? {
       actionName: c.observableState.actionName,

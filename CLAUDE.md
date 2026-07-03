@@ -20,6 +20,17 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
   （arrange_meet 说定→分级提醒→赴约/爽约结算）——反思→打算→行动→回顾的日循环闭环
 - **生活节律（2026-07-03）**：饭点感知、上班节律、居家可供性（rest/tidy_up）、
   重要性感知记忆（反思比琐事活得久）、跨天时间标注（"昨天23:00"）
+- **气候系统（2026-07-03，`src/world/climate.ts`）**：天气×四季×时辰 → 体感温度；露天暴露在
+  恶劣气候会额外耗 needs + 生 moodlet（催人躲屋里），室内免疫；温度/气候提示/季节氛围注入 prompt；
+  Godot 四季换装（季节染色 + 樱花/落叶/雪絮粒子 + 时钟温度）。这是"世界系统深化"三部曲第 1 弹
+  （气候 ✅ → 经济 ✅ → 社交），把纸面天气/四季做成"可感知+有压力+看得见"的真游戏系统
+- **经济系统深化（2026-07-04，`src/world/economy.ts`）**：三部曲第 2 弹。生计压力（每天 07:00 扣
+  房租/杂用 `applyDailyUpkeep`，付不起→焦虑+生计记忆）+ 财务体感（按"撑得了几天"分档 financeBand，
+  进 prompt）+ 季节市场价格（`effectivePrice` 应季便宜反季贵，buy 工具三处一致）；Godot 名册/详情
+  显示金币+财务档（按档上色）、挣钱花钱房租头顶飘金币。让"赚钱活下去"真的有分量
+- **社交可视化（2026-07-04）**：三部曲第 3 弹（进行中）。社交机制本就最扎实，先补「看得见」——
+  `godot/ui/RelationWeb.gd` 关系网（R 键，圆环 + 关系连线按类型上色 + bond 标注）。
+  待做：声誉/恋爱线阶段/冲突升级三件 drama 机制
 - **思考持久化**：LLM 每次决策的内心独白存入记忆，念头能跨 tick 延续
 - **时间系统**：Tick 驱动（1 tick = 游戏 15 分钟），支持加速/暂停
 
@@ -28,7 +39,7 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **运行时**：Node.js 24 + TypeScript 5.9
 - **LLM**：DeepSeek（默认），支持 OpenAI 兼容端点
 - **存储**：SQLite（世界状态 + 记忆 + 印象 + 长期记忆）
-- **前端**：① `web/` 管理面板（单 HTML + WebSocket）② `godot/` 游戏化观看前端（Godot 4.6，同一条 WS，日式 RPG 像素小镇 + 昼夜氛围，美术 = Ninja Adventure CC0，见 godot/README.md）
+- **前端**：① `web/` 管理面板（单 HTML + WebSocket）② `godot/` 游戏化观看前端（Godot 4.6，同一条 WS，日式 RPG 像素小镇 + 昼夜氛围 + **四季换装** + 天气特效，美术 = Ninja Adventure CC0；HUD 面板：**Tab 镇民状态名册**（生存血条+金币）、**R 关系网**、生存告警徽章、头顶飘金币、叙事干预、调速；见 godot/README.md）
 - **测试**：Vitest 4（单元 / live / 模拟测试）
 
 ## 目录结构
@@ -41,7 +52,7 @@ anima/
 ├── PLAN-game-frontend.md   # 分期：Godot 夜景前端
 ├── src/
 │   ├── core/           # 时间系统（tick-engine）、事件总线
-│   ├── world/          # 世界状态、地点、关系、经济、天气、约定（appointments）
+│   ├── world/          # 世界状态、地点、关系、经济、天气、气候(climate)、约定（appointments）
 │   ├── character/      # 角色卡类型、YAML 加载器
 │   ├── agent/          # LLM agent 循环、prompt 构建、对话模式、印象、观察推理、反思、晨间打算
 │   ├── memory/         # 短期记忆、印象存储、时间衰减、MMR
