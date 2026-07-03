@@ -1,0 +1,31 @@
+; Anima Town — Godot 前端（观看窗口）
+; Engine configuration file.
+; Godot 4.3+
+
+config_version=5
+
+[application]
+
+config/name="Anima Town"
+run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
+config/description="Anima AI 小镇的观看前端：消费后端 WebSocket，把角色渲染成像素小镇里走动的精灵。"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+
+[gui]
+
+theme/custom_font="res://assets/fonts/fusion-pixel-12px-proportional-zh_hans.otf"
+
+[network]
+
+; 后端 WebSocket 地址在 net/WebSocketClient.gd 的 url 导出属性里配置（默认 ws://localhost:3001）
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+textures/canvas_textures/default_texture_filter=0

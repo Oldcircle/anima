@@ -28,6 +28,13 @@ notes/
 # 暂停中的子项目（不进发布）
 web-game/
 
+# Godot 前端（源码进仓，导入缓存不进）
+godot/.godot/
+godot/.import/
+godot/android/
+
 # 编辑器
 .vscode/
 .idea/
+godot/shot.png
+godot/shot.png.import

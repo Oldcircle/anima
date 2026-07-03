@@ -25,7 +25,7 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **运行时**：Node.js 24 + TypeScript 5.9
 - **LLM**：DeepSeek（默认），支持 OpenAI 兼容端点
 - **存储**：SQLite（世界状态 + 记忆 + 印象 + 长期记忆）
-- **前端**：单 HTML 文件 + WebSocket 实时通信
+- **前端**：① `web/` 管理面板（单 HTML + WebSocket）② `godot/` 游戏化观看前端（Godot 4.6，同一条 WS，日式 RPG 像素小镇 + 昼夜氛围，美术 = Ninja Adventure CC0，见 godot/README.md）
 - **测试**：Vitest 4（单元 / live / 模拟测试）
 
 ## 目录结构
@@ -33,9 +33,8 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 ```
 anima/
 ├── CLAUDE.md           # 本文件（项目说明书）
-├── PLAN.md             # 实现分期计划
-├── DESIGN.md           # 详细架构设计
-├── STATUS.md           # 当前开发状态
+├── PLAN-tool-feedback.md   # 分期：Tool Feedback Loop
+├── PLAN-game-frontend.md   # 分期：Godot 夜景前端
 ├── src/
 │   ├── core/           # 时间系统（tick-engine）、事件总线
 │   ├── world/          # 世界状态、地点、关系、经济、天气
@@ -47,10 +46,11 @@ anima/
 │   ├── persistence/    # SQLite 持久化、存档/读档
 │   ├── api/            # Express + WebSocket 服务
 │   └── cli.ts          # CLI 入口
-├── web/                # 前端（单 HTML）
+├── web/                # 管理面板前端（单 HTML）
+├── godot/              # 游戏化观看前端（Godot 4.6，日式 RPG 像素小镇，见 godot/README.md）
 ├── data/
 │   ├── locations/      # 地点 YAML（含 atmosphere 感官描写）
-│   └── characters/     # 5 个角色卡 YAML（零跨角色引用）
+│   └── characters/     # 27 个角色卡 YAML（多数 disabled，由 scenario 启用；零跨角色引用）
 ├── test/
 │   └── helpers/        # 测试工具（test-world、sim-reporter）
 └── logs/               # 模拟日志（Markdown 格式）
@@ -106,14 +106,10 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 
 ## 活跃文档
 
-- [STATUS.md](./STATUS.md) — 当前开发状态与 Live 验证结果
 - [PLAN-tool-feedback.md](./PLAN-tool-feedback.md) — Tool Feedback Loop 改造（对齐 Claude Code is_error + system-reminder 思想，治"✗ 你已经在 X 了"反复刷屏）
-- [PLAN-game-frontend.md](./PLAN-game-frontend.md) — 游戏前端设计（星露谷风格像素 RPG）
-- [PLAN-frontend-redesign.md](./PLAN-frontend-redesign.md) — `web/` 管理面板重构计划（API 设置 + 角色/地点 CRUD）
-- [DESIGN-narrative.md](./DESIGN-narrative.md) — 叙事架构设计（4 层结构 + scenario pack + beat engine + LLM director）
-- [PLAN-narrative.md](./PLAN-narrative.md) — 叙事系统分期实施计划（N0-N7）
-- [PLAN-director-agent.md](./PLAN-director-agent.md) — Director Agent 化改造（D1-D4：read 工具 + tool loop + pulse 反馈 + agenda 持久化）
-- [IMPORT-koukou-judgment.md](./IMPORT-koukou-judgment.md) — 扣扣审判卡导入策略（1B/2B/3C 决策记录）
+- [PLAN-game-frontend.md](./PLAN-game-frontend.md) — Godot 观看前端（日式 RPG 像素小镇）。P0/P1a/P1b/P2+昼夜已完成（P1b Ninja Adventure 真美术 2026-07-03）；运行见 godot/README.md
+
+> 叙事系统(N0-N6) 与 Director Agent(D1-D4) 的旧规划文档（STATUS.md / DESIGN-narrative.md / PLAN-narrative.md / PLAN-director-agent.md / PLAN-frontend-redesign.md / IMPORT-koukou-judgment.md）本地已丢失（被 gitignore 未入仓）。这些已完成工作的要点见下方「当前迭代焦点」+ 代码本身，不必再找这些文件。
 
 ## 当前迭代焦点
 
@@ -126,7 +122,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 - last-ferry 狗血版（3 角色 + 3 重 climax + 全 beat auto_seeds 配置）
 - 玩家通过 web 叙事面板可塞纸条、注入事件、触发 director
 
-完整规划见 PLAN-narrative.md / PLAN-director-agent.md，当前进度见 STATUS.md。
+> ⚠️ 这部分的旧分期文档（PLAN-narrative.md / PLAN-director-agent.md / STATUS.md）本地已丢失，要点即上方所列，细节见代码（`src/narrative/`、`src/agent/`）。
 
 ## 环境配置
 
