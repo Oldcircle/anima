@@ -11,6 +11,7 @@ const NarrativePanel := preload("res://ui/NarrativePanel.gd")
 
 # 7 角色 → Ninja Adventure 精灵皮肤（assets/ninja_adventure/characters/）
 const CHAR_SKINS := {
+	# default 剧本
 	"asuka":        "Village6",    # 红发少女
 	"l_lawliet":    "Inspector",   # 侦探帽
 	"lelouch":      "Noble",       # 黑衣贵族
@@ -18,6 +19,12 @@ const CHAR_SKINS := {
 	"rei":          "Spirit",      # 苍白幽灵系
 	"senjougahara": "Princess",    # 紫长发
 	"shinji":       "Villager2",   # 朴素少年
+	# mygo-seaside 剧本
+	"tomori":       "EggGirl",     # 苍白安静
+	"anon":         "Cavegirl2",   # 粉红活泼
+	"sakiko":       "Princess",    # 白金大小姐
+	"mutsumi":      "Cavegirl",    # 绿衣寡言
+	"soyo":         "Woman",       # 金发温柔
 }
 const FALLBACK_SKINS := ["Villager", "Villager3", "Villager4", "Woman", "OldMan"]
 
@@ -601,7 +608,7 @@ func _update_badges(chars: Array) -> void:
 			if not by_loc.has(loc):
 				by_loc[loc] = []
 			by_loc[loc].append(_skin_for(str(c.get("id", ""))))
-	for id in _town.ROOMS:
+	for id in _town.room_ids():
 		_town.update_badge(id, by_loc.get(id, []))
 
 func _apply_expressions(chars: Array) -> void:

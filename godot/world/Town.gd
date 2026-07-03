@@ -188,6 +188,10 @@ const TYPE_BY_ID := {
 	"beach": "nature", "dock": "nature", "farm": "nature", "forest": "nature",
 }
 
+# 默认七栋住宅的槽位顺序：换剧本时，未知的 home_* 地点按序复用空出来的房子
+const HOME_IDS := ["home_asuka", "home_l", "home_lelouch", "home_light",
+	"home_rei", "home_senjougahara", "home_shinji"]
+
 const PLAZA := Rect2i(27, 12, 15, 10)
 const BEACH_Y := 25        # 沙滩过渡行
 const WATER_Y := 31        # 海面起始行
@@ -197,6 +201,8 @@ const PIER_Y0 := 27        # 栈桥起始行（沙滩上）
 var grid: AStarGrid2D      # 小镇寻路网格（Main 经 path_points 使用）
 var _zone_pos := {}        # id -> 站点像素坐标
 var _room_origin := {}     # id -> 房间左上角 tile（含墙）
+var _room_plan := {}       # 本次 build 实际要建的房间：id -> 房间 spec（含剧本住宅复用）
+var _home_alias := {}      # 未知 home_* id -> 复用的默认住宅槽位 id
 var _textures := {}
 var _objects: Node2D
 var _labels: Node2D
@@ -217,11 +223,14 @@ func name_for(id: String) -> String:
 	return NAME_BY_ID.get(id, id)
 
 func is_interior(id: String) -> bool:
-	return ROOMS.has(id)
+	return _room_plan.has(id)
+
+func room_ids() -> Array:
+	return _room_plan.keys()
 
 ## 角色所在的"空间"：小镇 = "town"，室内 = 地点 id
 func space_of(id: String) -> String:
-	return id if ROOMS.has(id) else "town"
+	return id if _room_plan.has(id) else "town"
 
 func zone_center(id: String) -> Vector2:
 	return _zone_pos.get(id, Vector2(MAP_W * TILE / 2.0, 20 * TILE))
@@ -237,7 +246,7 @@ func room_rect(id: String) -> Rect2:
 	if not _room_origin.has(id):
 		return Rect2(0, 0, MAP_W * TILE, MAP_H * TILE)
 	var o: Vector2i = _room_origin[id]
-	var sz: Vector2i = ROOMS[id]["size"]
+	var sz: Vector2i = _room_plan[id]["size"]
 	return Rect2(o.x * TILE, o.y * TILE, sz.x * TILE, sz.y * TILE)
 
 ## 小镇寻路：像素 → 途径点数组（含终点）。找不到路时退化为直线
@@ -319,11 +328,12 @@ func build(locations: Array, lights_parent: Node2D, rooms_parent: Node2D) -> voi
 	_labels.z_index = 10
 	add_child(_labels)
 	_build_nature(lights_parent)
+	_plan_locations(locations)
 	for loc in locations:
 		var id: String = str(loc.get("id", ""))
 		if id == "":
 			continue
-		var conf: Dictionary = LAYOUT.get(id, {})
+		var conf: Dictionary = LAYOUT.get(id, LAYOUT.get(_home_alias.get(id, ""), {}))
 		var stand: Vector2i = conf["stand"] if conf.has("stand") else _fallback_stand()
 		var display := name_for(id) if NAME_BY_ID.has(id) else str(loc.get("name", id))
 		if conf.has("bldg"):
@@ -333,7 +343,7 @@ func build(locations: Array, lights_parent: Node2D, rooms_parent: Node2D) -> voi
 			_mark_solid(Rect2i(at.x, at.y, r[3], r[4]))
 			_add_door_glow(r, at, lights_parent)
 			_add_label(display, Vector2((at.x + r[3] / 2.0) * TILE, at.y * TILE - 4))
-			if ROOMS.has(id):
+			if _room_plan.has(id):
 				_add_building_area(id, at, r)
 				_add_badge(id, at, r)
 		else:
@@ -753,6 +763,25 @@ func _add_glow(pos: Vector2, radius: float, col: Color, parent: Node2D) -> void:
 
 # ---------------- 室内 ----------------
 
+## 规划本次要建的房间：已知地点直接用 ROOMS；未知 home_* 复用空出来的默认住宅槽位
+func _plan_locations(locations: Array) -> void:
+	_room_plan.clear()
+	_home_alias.clear()
+	var present := {}
+	for l in locations:
+		present[str(l.get("id", ""))] = true
+	var free_homes: Array = HOME_IDS.filter(func(h): return not present.has(h))
+	for l in locations:
+		var id: String = str(l.get("id", ""))
+		if ROOMS.has(id):
+			_room_plan[id] = ROOMS[id]
+		elif id.begins_with("home_") and not free_homes.is_empty():
+			var slot: String = free_homes.pop_front()
+			_home_alias[id] = slot
+			_room_plan[id] = ROOMS[slot]
+	if not _home_alias.is_empty():
+		print("[Town] 剧本住宅复用槽位: ", _home_alias)
+
 func _build_rooms(locations: Array) -> void:
 	var floorl := _layer("TilesetInteriorFloor", _rooms_root)
 	floorl.name = "RoomFloors"
@@ -764,22 +793,23 @@ func _build_rooms(locations: Array) -> void:
 	_rooms_root.add_child(room_objects)
 	_stamp_root = room_objects
 	var cursor := Vector2i(1, ROOM_ROW_Y)
-	var ids: Array = locations.map(func(l): return str(l.get("id", "")))
-	for id in ROOMS:
-		if not ids.has(id):
-			continue
-		var spec: Dictionary = ROOMS[id]
+	var names := {}
+	for l in locations:
+		names[str(l.get("id", ""))] = str(l.get("name", ""))
+	for id in _room_plan:
+		var spec: Dictionary = _room_plan[id]
 		var sz: Vector2i = spec["size"]
 		_room_origin[id] = cursor
 		_room_frame(wall, floorl, cursor, sz, spec)
 		_furnish(id, cursor, sz, spec)
-		_add_label(name_for(id), Vector2((cursor.x + sz.x / 2.0) * TILE, cursor.y * TILE - 2), _rooms_root)
+		var display: String = name_for(id) if NAME_BY_ID.has(id) else str(names.get(id, id))
+		_add_label(display, Vector2((cursor.x + sz.x / 2.0) * TILE, cursor.y * TILE - 2), _rooms_root)
 		cursor.x += sz.x + 14   # 间距拉开，相机进房间时看不到邻室
 	_stamp_root = _objects
 	# 室内站点：房间中下部一排
 	for id in _room_origin:
 		var o: Vector2i = _room_origin[id]
-		var sz: Vector2i = ROOMS[id]["size"]
+		var sz: Vector2i = _room_plan[id]["size"]
 		_zone_pos[id] = Vector2((o.x + sz.x / 2.0) * TILE, (o.y + sz.y - 2.5) * TILE)
 
 func _room_frame(wall: TileMapLayer, floorl: TileMapLayer, o: Vector2i, sz: Vector2i, spec: Dictionary) -> void:

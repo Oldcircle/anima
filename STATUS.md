@@ -37,8 +37,11 @@ P0~P4 主干完成（详见 [PLAN-game-frontend.md](./PLAN-game-frontend.md) 状
 2. ~~叙事控制进 Godot~~ ✅ **2026-07-03 完成**：`ui/NarrativePanel.gd`（N 键/按钮开关），
    塞纸条/散布流言/注入事件/推进导演四模式，HTTP 直连 3001；三个注入接口已 curl 冒烟通过，
    nudge（会调 LLM）未实测但接口简单。离线可预览、发送禁用
-3. **其他剧本前端适配**：mygo-seaside / koukou-judgment 的角色皮肤映射（`Main.gd CHAR_SKINS`）
-   与地图布局（`Town.gd LAYOUT/ROOMS`），未知角色/地点现在走兜底（哈希皮肤 + 沙滩排开）
+3. **其他剧本前端适配**：mygo-seaside ✅ **2026-07-03 完成** —— 5 角色皮肤
+   （tomori=EggGirl / anon=Cavegirl2 / sakiko=Princess / mutsumi=Cavegirl / soyo=Woman）+
+   **通用住宅槽位分配**（任何剧本的未知 home_* 自动按序复用默认七栋房子的空位，含室内房间与
+   徽章，标签用后端下发的地点名）；真后端 snapshot 验证通过（0 tick 零成本流程：起服→连上抓
+   snapshot→15 秒内杀）。koukou-judgment（14 角色 + 25 监狱地点）需要独立的监狱地图，另行立项
 3.5 ✅ **行为可视化（2026-07-03）**：tick.events 的工具调用映射到画面——
    PAIR_ACTIONS（talk/gossip/comfort/argue/share_secret/invite_out/give_gift）触发凑近+对视；
    give_gift 飞包裹+爱心+底部对话框播报；argue 怒/心碎；comfort 爱心；sleep/nap 困；
