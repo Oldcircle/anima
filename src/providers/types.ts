@@ -73,7 +73,14 @@ export interface LLMRequest {
 export interface LLMResponse {
   content: string;
   toolCalls: ToolCall[];
-  usage?: { inputTokens: number; outputTokens: number };
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    /** DeepSeek 前缀缓存命中的输入 token（prompt_cache_hit_tokens），命中部分按 0.1 倍计费 */
+    cacheHitTokens?: number;
+    /** DeepSeek 前缀缓存未命中的输入 token（prompt_cache_miss_tokens） */
+    cacheMissTokens?: number;
+  };
   /** "stop" = 正常结束，"length" = token 用尽被截断 */
   finishReason?: "stop" | "length" | string;
 }

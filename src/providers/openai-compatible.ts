@@ -27,6 +27,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private _apiKey: string;
   private _defaultModel: string;
   private _thinking: ThinkingMode;
+  /** 前缀缓存累计统计（DeepSeek 自动缓存），每 25 次调用输出一行摘要 */
+  private _cacheStats = { calls: 0, promptTokens: 0, hitTokens: 0 };
 
   constructor(config: OpenAICompatibleConfig) {
     this.id = config.id;
@@ -134,7 +136,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
         };
         finish_reason?: string;
       }>;
-      usage?: { prompt_tokens: number; completion_tokens: number };
+      usage?: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        prompt_cache_hit_tokens?: number;
+        prompt_cache_miss_tokens?: number;
+      };
     };
 
     const choice = data.choices[0];
@@ -143,6 +150,19 @@ export class OpenAICompatibleProvider implements LLMProvider {
     // token 截断检测（finish_reason=length 或使用率 >90%）
     if (choice.finish_reason === "length" || (data.usage && data.usage.completion_tokens / (request.maxTokens ?? 2048) > 0.9)) {
       console.warn(`[LLM] ⚠️ 可能截断: out=${data.usage?.completion_tokens ?? "?"}/${request.maxTokens ?? 2048} finish=${choice.finish_reason}`);
+    }
+
+    // 前缀缓存命中统计：定位"动态工具/易变 prompt 导致缓存失效"这类问题的量化依据
+    if (data.usage) {
+      this._cacheStats.calls++;
+      this._cacheStats.promptTokens += data.usage.prompt_tokens;
+      this._cacheStats.hitTokens += data.usage.prompt_cache_hit_tokens ?? 0;
+      if (this._cacheStats.calls % 25 === 0) {
+        const rate = this._cacheStats.promptTokens > 0
+          ? ((this._cacheStats.hitTokens / this._cacheStats.promptTokens) * 100).toFixed(1)
+          : "0.0";
+        console.log(`[LLM cache] 累计 ${this._cacheStats.calls} 次调用，前缀缓存命中率 ${rate}%（${this._cacheStats.hitTokens}/${this._cacheStats.promptTokens} tokens）`);
+      }
     }
 
     const content = choice.message.content ?? "";
@@ -156,7 +176,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
       content,
       toolCalls,
       usage: data.usage
-        ? { inputTokens: data.usage.prompt_tokens, outputTokens: data.usage.completion_tokens }
+        ? {
+            inputTokens: data.usage.prompt_tokens,
+            outputTokens: data.usage.completion_tokens,
+            cacheHitTokens: data.usage.prompt_cache_hit_tokens,
+            cacheMissTokens: data.usage.prompt_cache_miss_tokens,
+          }
         : undefined,
       finishReason: choice.finish_reason ?? undefined,
     };

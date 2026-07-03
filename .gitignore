@@ -33,3 +33,5 @@ godot/android/
 .idea/
 godot/shot.png
 godot/shot.png.import
+godot/shot_live_*.png
+godot/shot_live_*.png.import

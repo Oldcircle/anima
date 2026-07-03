@@ -590,9 +590,9 @@ func _add_building_area(id: String, at: Vector2i, r: Array) -> void:
 	add_child(area)
 
 func _add_badge(id: String, at: Vector2i, r: Array) -> void:
-	# 居住者徽章：悬在建筑右上角，缩小一档避免误看成建筑的一部分
+	# 居住者徽章：悬在建筑右上角外侧（避开居中的地名标签）
 	var badge := Node2D.new()
-	badge.position = Vector2((at.x + r[3]) * TILE - 6, at.y * TILE - 8)
+	badge.position = Vector2((at.x + r[3]) * TILE + 10, at.y * TILE + 2)
 	badge.scale = Vector2(0.8, 0.8)
 	badge.z_index = 11
 	badge.visible = false

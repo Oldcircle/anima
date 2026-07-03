@@ -129,6 +129,17 @@ func _ready() -> void:
 	get_tree().create_timer(3.0).timeout.connect(_maybe_offline_demo)
 	if "--shot" in OS.get_cmdline_user_args():
 		_capture_and_quit()
+	elif "--probe" in OS.get_cmdline_user_args():
+		_run_probe()
+
+## live 回归探针：连真后端跑 ~3 分钟，每 30 秒存一张截图后退出
+func _run_probe() -> void:
+	for i in 6:
+		await get_tree().create_timer(30.0).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("res://shot_live_%d.png" % i)
+		print("[probe] saved shot_live_%d.png (space=%s)" % [i, _space])
+	get_tree().quit()
 
 # ---------------- HUD ----------------
 
@@ -438,7 +449,7 @@ func _maybe_offline_demo() -> void:
 		return
 	print("[Main] 未连后端 → 离线演示（假数据，仅预览美术）")
 	var args := OS.get_cmdline_user_args()
-	var demo_time := "上午 10:00" if "--day" in args else "晚上 21:30"
+	var demo_time := "Y1 spring D2 上午 10:00" if "--day" in args else "Y1 spring D1 晚上 21:30"
 	var demo_weather := "rainy" if "--rain" in args else "sunny"
 	_on_snapshot({
 		"locations": _town.demo_locations(),
@@ -606,9 +617,18 @@ func _apply_bubbles(events: Array) -> Vector2i:
 func _update_clock(data: Dictionary) -> void:
 	var formatted := str(data.get("formattedTime", "?"))
 	var weather := str(data.get("weather", ""))
-	_clock.text = "%s   %s" % [formatted, WEATHER_CN.get(weather, weather)]
+	_clock.text = "%s   %s" % [_pretty_time(formatted), WEATHER_CN.get(weather, weather)]
 	_apply_time_of_day(formatted)
 	_apply_weather(weather)
+
+## "Y1 spring D1 清晨 06:15" → "春 第1天 · 清晨 06:15"（后端 formatGameTime 的格式）
+func _pretty_time(formatted: String) -> String:
+	var re := RegEx.create_from_string("^Y(\\d+) (spring|summer|autumn|winter) D(\\d+) (.+)$")
+	var m := re.search(formatted)
+	if m == null:
+		return formatted
+	var season: String = {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬"}[m.get_string(2)]
+	return "%s 第%s天 · %s" % [season, m.get_string(3), m.get_string(4)]
 
 func _apply_weather(weather: String) -> void:
 	if weather == _weather:
