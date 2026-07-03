@@ -78,6 +78,7 @@ var _dialog_face: TextureRect
 var _dialog_name: Label
 var _dialog_text: Label
 var _dialog_timer: SceneTreeTimer
+var _speed_btns := {}      # speed(float) -> Button
 
 func _ready() -> void:
 	get_viewport().physics_object_picking = true
@@ -181,6 +182,42 @@ func _build_hud() -> void:
 
 	_build_weather(layer)
 	_build_dialog(layer)
+	_build_speed_panel(layer)
+
+func _build_speed_panel(layer: CanvasLayer) -> void:
+	# P4：调速（右上角，连上后端才可用）
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _jrpg_box())
+	panel.anchor_left = 1.0
+	panel.anchor_right = 1.0
+	panel.offset_left = -196
+	panel.offset_right = -12
+	panel.offset_top = 12
+	layer.add_child(panel)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 4)
+	panel.add_child(hb)
+	for entry in [[0.0, "⏸"], [1.0, "1x"], [2.0, "2x"], [5.0, "5x"]]:
+		var b := Button.new()
+		b.text = entry[1]
+		b.add_theme_font_size_override("font_size", 13)
+		b.disabled = true
+		b.pressed.connect(func() -> void: net.set_speed(entry[0]))
+		hb.add_child(b)
+		_speed_btns[entry[0]] = b
+	net.speed_changed.connect(_on_speed_changed)
+	net.connected.connect(func() -> void:
+		for s in _speed_btns:
+			_speed_btns[s].disabled = false)
+	net.disconnected.connect(func() -> void:
+		for s in _speed_btns:
+			_speed_btns[s].disabled = true)
+
+func _on_speed_changed(speed: float) -> void:
+	for s in _speed_btns:
+		var b: Button = _speed_btns[s]
+		b.modulate = Color("ffd27a") if is_equal_approx(s, speed) else Color.WHITE
+	_show_banner("倍速 → %s" % ("暂停" if speed == 0.0 else str(speed) + "x"))
 
 func _build_weather(layer: CanvasLayer) -> void:
 	# 全屏遮罩：阴天/雨天压暗

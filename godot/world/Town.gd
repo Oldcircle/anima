@@ -27,9 +27,12 @@ const SAND_T := Vector2i(1, 0)
 const SAND_C := Vector2i(1, 1)
 
 # ---- TilesetWater：海面 / 码头板 / 草地池塘 / 点缀 ----
-const WATER_T := [Vector2i(5, 0), Vector2i(6, 0)]
-const WATER_C := [Vector2i(5, 1), Vector2i(6, 1), Vector2i(5, 2), Vector2i(6, 2)]
-const WATER_FISH := Vector2i(11, 1)
+# 注意：cols 4..8 的水块带"沉底沙丘圆圈"装饰，铺满会像满海半截石头 —— 海面只用纯水 (1,1)
+const WATER_T := Vector2i(1, 0)          # 干净海岸线（白沫顶边）
+const WATER_C := Vector2i(1, 1)          # 纯净海水
+const WATER_SHEEN := Vector2i(11, 2)     # 波光（低频点缀）
+const WATER_PEBBLE := Vector2i(11, 1)
+const WATER_FISH := Vector2i(11, 4)
 const WATER_LILY := Vector2i(11, 3)
 const DOCK_COL_ROWS := [12, 13, 14, 15]      # 码头板（cols 0..2 x rows 12..15）
 const POND := {"tl": Vector2i(0, 6), "t": Vector2i(1, 6), "tr": Vector2i(2, 6),
@@ -99,8 +102,8 @@ const R_TREE_S := ["TilesetNature", 0, 0, 2, 2]
 const R_PINE_S := ["TilesetNature", 2, 0, 2, 2]
 const R_ROCK := ["TilesetNature", 13, 8, 2, 2]      # 完整单块圆岩
 const R_ROCK_S := ["TilesetNature", 15, 9, 1, 1]
-const R_BUSH := ["TilesetNature", 0, 10, 1, 1]
-const R_BUSH2 := ["TilesetNature", 2, 10, 1, 1]
+const R_BUSH := ["TilesetNature", 1, 10, 1, 1]      # 完整圆灌木（0/2 列是无躯干的叶簇，别用）
+const R_BUSH2 := ["TilesetNature", 8, 11, 1, 1]     # 完整蓬松灌木
 const R_SUNFLOWER := ["TilesetNature", 0, 11, 1, 1]
 const R_FLOWER_R := ["TilesetNature", 3, 11, 1, 1]
 
@@ -405,11 +408,14 @@ func _build_ground() -> void:
 	var water := _layer("TilesetWater")
 	water.name = "Water"
 	for x in MAP_W:
-		water.set_cell(Vector2i(x, WATER_Y), 0, WATER_T[x % 2])
+		water.set_cell(Vector2i(x, WATER_Y), 0, WATER_T)
 		for y in range(WATER_Y + 1, MAP_H):
-			water.set_cell(Vector2i(x, y), 0, WATER_C[(x + y) % 4])
+			# 纯水为主，撒少量波光
+			var t := WATER_C if _rng.randf() > 0.07 else WATER_SHEEN
+			water.set_cell(Vector2i(x, y), 0, t)
 	for spot in [[5, 33, WATER_FISH], [14, 35, WATER_LILY], [26, 34, WATER_FISH],
-			[38, 36, WATER_LILY], [60, 33, WATER_FISH], [66, 36, WATER_LILY], [44, 37, WATER_FISH]]:
+			[38, 36, WATER_LILY], [60, 33, WATER_FISH], [66, 36, WATER_LILY],
+			[44, 37, WATER_FISH], [30, 38, WATER_PEBBLE]]:
 		water.set_cell(Vector2i(spot[0], spot[1]), 0, spot[2])
 
 	# 草地池塘（森林南侧）

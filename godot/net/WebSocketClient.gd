@@ -10,6 +10,7 @@ signal snapshot(data: Dictionary)
 signal tick(data: Dictionary)
 signal beat_ready(data: Dictionary)
 signal character_detail(data: Dictionary)
+signal speed_changed(speed: float)
 
 @export var url: String = "ws://localhost:3001"
 @export var reconnect_delay: float = 2.0
@@ -61,7 +62,7 @@ func _handle_text(txt: String) -> void:
 		"tick": tick.emit(data)
 		"beat_ready": beat_ready.emit(data)
 		"character_detail": character_detail.emit(data)
-		"speed_changed": pass
+		"speed_changed": speed_changed.emit(float(data.get("speed", 1.0)))
 		_: pass
 
 ## ── 上行（P2+ 用）──

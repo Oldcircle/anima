@@ -15,7 +15,7 @@ func _ready() -> void:
 	_panel.anchor_right = 1.0
 	_panel.offset_left = -320
 	_panel.offset_right = -12
-	_panel.offset_top = 12
+	_panel.offset_top = 56   # 让开右上角的调速面板
 	_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_panel.grow_vertical = Control.GROW_DIRECTION_END
 
