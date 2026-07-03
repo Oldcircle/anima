@@ -96,21 +96,49 @@ func _on_area_input(_vp: Node, event: InputEvent, _idx: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		clicked.emit(char_id)
 
-func move_to(target: Vector2, animated: bool = true) -> void:
-	if not animated or position.distance_to(target) < 2.0:
-		position = target
-		return
-	var delta := target - position
-	_dir = ("right" if delta.x > 0 else "left") if absf(delta.x) > absf(delta.y) \
-		else ("down" if delta.y > 0 else "up")
-	_sprite.play("walk_" + _dir)
+## 瞬移（初始化 / 跨空间：进出室内不走路）
+func place_at(target: Vector2) -> void:
 	if _tween and _tween.is_running():
 		_tween.kill()
-	var dur := clampf(position.distance_to(target) / 220.0, 0.35, 1.1)
+	position = target
+	if _sprite:
+		_sprite.play("idle_" + _dir)
+
+## 沿寻路途径点走过去；总时长压在 budget 秒内（模拟加速时不落后）
+func walk_path(points: PackedVector2Array, budget: float = 3.2) -> void:
+	if points.is_empty():
+		return
+	if _tween and _tween.is_running():
+		_tween.kill()
+	var total := 0.0
+	var prev := position
+	for p in points:
+		total += prev.distance_to(p)
+		prev = p
+	if total < 2.0:
+		position = points[-1]
+		return
+	var speed := maxf(80.0, total / budget)
 	_tween = create_tween()
-	_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_tween.tween_property(self, "position", target, dur)
+	prev = position
+	for p in points:
+		var seg := prev.distance_to(p)
+		if seg < 1.0:
+			prev = p
+			continue
+		var dir := _dir_of(p - prev)
+		_tween.tween_callback(func() -> void:
+			_dir = dir
+			_sprite.play("walk_" + _dir)
+		)
+		_tween.tween_property(self, "position", p, seg / speed)
+		prev = p
 	_tween.tween_callback(func() -> void: _sprite.play("idle_" + _dir))
+
+func _dir_of(delta: Vector2) -> String:
+	if absf(delta.x) > absf(delta.y):
+		return "right" if delta.x > 0 else "left"
+	return "down" if delta.y > 0 else "up"
 
 func say(text: String, kind: String) -> void:
 	if _bubble and is_instance_valid(_bubble):
