@@ -9,6 +9,7 @@
   - `characters/<皮肤名>/` — 角色四方向精灵（`Idle.png` 64x16 四朝向单帧；`Walk.png` 64x64 列=朝向[下上左右] 行=4帧）+ `Faceset.png` 头像
   - `characters/Shadow.png` — 脚底影子
   - `emotes/` — 30 个情绪气泡（约 16px）
+  - `items/` — 物品图标（送礼飞行动画等）
 - 需要更多角色/怪物/音乐时回原包取（完整包 ~90MB，含 Actor/Audio/FX/Items/Ui）。
 
 ## fonts/ — 缝合像素字体 Fusion Pixel Font

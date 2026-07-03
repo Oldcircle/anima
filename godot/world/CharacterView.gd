@@ -23,6 +23,8 @@ var _dir := "down"
 var _tween: Tween
 var _bubble: Control
 var _mood: Sprite2D
+var _flash: Sprite2D          # 行为瞬时 emote（睡觉/吵架/收礼/发呆…），与持续情绪分开
+var _flash_seq := 0
 var _action_lbl: Label
 var _name_lbl: Label
 var _name_y := 0.0
@@ -104,8 +106,9 @@ func place_at(target: Vector2) -> void:
 	if _sprite:
 		_sprite.play("idle_" + _dir)
 
-## 沿寻路途径点走过去；总时长压在 budget 秒内（模拟加速时不落后）
-func walk_path(points: PackedVector2Array, budget: float = 3.2) -> void:
+## 沿寻路途径点走过去；总时长压在 budget 秒内（模拟加速时不落后）。
+## face_pos 给定时，走完后面向该点（对话凑近用）。
+func walk_path(points: PackedVector2Array, budget: float = 3.2, face_pos: Vector2 = Vector2.INF) -> void:
 	if points.is_empty():
 		return
 	if _tween and _tween.is_running():
@@ -117,6 +120,8 @@ func walk_path(points: PackedVector2Array, budget: float = 3.2) -> void:
 		prev = p
 	if total < 2.0:
 		position = points[-1]
+		if face_pos != Vector2.INF:
+			face_towards(face_pos)
 		return
 	var speed := maxf(80.0, total / budget)
 	_tween = create_tween()
@@ -133,7 +138,36 @@ func walk_path(points: PackedVector2Array, budget: float = 3.2) -> void:
 		)
 		_tween.tween_property(self, "position", p, seg / speed)
 		prev = p
-	_tween.tween_callback(func() -> void: _sprite.play("idle_" + _dir))
+	_tween.tween_callback(func() -> void:
+		if face_pos != Vector2.INF:
+			face_towards(face_pos)
+		else:
+			_sprite.play("idle_" + _dir)
+	)
+
+## 面向某个世界坐标（对话/送礼时转身）
+func face_towards(pos: Vector2) -> void:
+	var delta := pos - position
+	if delta.length() < 1.0:
+		return
+	_dir = _dir_of(delta)
+	_sprite.play("idle_" + _dir)
+
+## 行为瞬时 emote：头顶左侧闪现几秒（与右侧的持续情绪 emote 并存）
+func flash_emote(emote: String, dur: float = 4.0) -> void:
+	if _flash == null:
+		_flash = Sprite2D.new()
+		_flash.position = Vector2(-14, -42)
+		_flash.z_index = 15
+		add_child(_flash)
+	_flash.texture = load(EMOTE_DIR + emote + ".png")
+	_flash.visible = true
+	_flash_seq += 1
+	var seq := _flash_seq
+	get_tree().create_timer(dur).timeout.connect(func() -> void:
+		if _flash_seq == seq and is_instance_valid(_flash):
+			_flash.visible = false
+	)
 
 func _dir_of(delta: Vector2) -> String:
 	if absf(delta.x) > absf(delta.y):

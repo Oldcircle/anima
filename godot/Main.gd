@@ -489,8 +489,17 @@ func _maybe_offline_demo() -> void:
 			if c["id"] == "senjougahara": c["locationId"] = "plaza" # 室内 → 小镇
 		_on_tick({"tick": "demo", "formattedTime": _clock.text.split("   ")[0],
 			"weather": _weather, "characters": chars,
-			"events": [{"characterId": "lelouch", "action": "talk",
-				"args": {"message": "今晚的海风真舒服，要不要去码头走走？"}}]})
+			"events": [
+				# 对话凑近 + 底部对话框
+				{"characterId": "lelouch", "action": "talk", "success": true,
+					"args": {"target": "senjougahara", "message": "今晚的海风真舒服，要不要去码头走走？"}},
+				# 室内送礼：包裹飞过去 + 对方冒爱心（进咖啡馆能看到）
+				{"characterId": "light", "action": "give_gift", "success": true,
+					"args": {"target": "asuka", "item": "热可可"},
+					"description": "送了热可可给明日香"},
+				# 发呆 "…"
+				{"characterId": "rei", "skipped": true},
+			]})
 	)
 
 func _demo_characters() -> Array:
@@ -611,21 +620,56 @@ func _apply_expressions(chars: Array) -> void:
 			act = str(ca.get("name", ""))
 		v.set_action(act)
 
+# 有互动对象的动作：说话者会凑到对方身边、双方面对面
+const PAIR_ACTIONS := ["talk", "gossip", "comfort", "argue", "share_secret", "invite_out", "give_gift"]
+# 动作 → 头顶瞬时 emote（睡觉/打盹 → 困）
+const ACTION_EMOTES := {"sleep": "emote14", "nap": "emote14"}
+
 func _apply_bubbles(events: Array) -> Vector2i:
+	# 工具调用 → 画面表现：对话凑近+气泡、送礼飞道具、吵架/安慰 emote、发呆 "…"
 	var thoughts := 0
 	var talks := 0
 	for e in events:
-		var v = _views.get(str(e.get("characterId", "")), null)
+		var cid := str(e.get("characterId", ""))
+		var v = _views.get(cid, null)
 		if v == null:
 			continue
-		if str(e.get("action", "")) == "talk":
-			var args = e.get("args", null)
+		var action := str(e.get("action", ""))
+		var args = e.get("args", null)
+		var success: bool = e.get("success", true)
+		var tv = null   # 互动对象
+		if args is Dictionary:
+			tv = _views.get(str(args.get("target", "")), null)
+
+		if bool(e.get("skipped", false)):
+			v.flash_emote("emote20", 3.0)   # 这个 tick 在发呆
+
+		if tv != null and action in PAIR_ACTIONS and success:
+			_pair_up(v, tv)
+
+		match action:
+			"give_gift":
+				if success and tv != null:
+					_fly_gift(v, tv)
+					var desc := str(e.get("description", ""))
+					if desc != "":
+						_show_dialog(cid, _name_of(cid), desc)
+			"argue":
+				if tv != null:
+					v.flash_emote("emote7", 4.0)    # 怒
+					tv.flash_emote("emote26", 4.0)  # 心碎
+			"comfort":
+				if success and tv != null:
+					tv.flash_emote("emote27", 3.5)  # 被安慰 → 心
+			_:
+				if ACTION_EMOTES.has(action):
+					v.flash_emote(ACTION_EMOTES[action], 4.0)
+
+		if action == "talk":
 			var msg := str(args.get("message", "")) if args is Dictionary else ""
 			if msg != "":
 				v.say("「%s」" % msg, "talk")
-				var cid := str(e.get("characterId", ""))
-				var cname := str(_last_chars.get(cid, {}).get("name", cid))
-				_show_dialog(cid, cname, msg)
+				_show_dialog(cid, _name_of(cid), msg)
 				talks += 1
 				continue
 		var thought = e.get("thought", null)
@@ -633,6 +677,41 @@ func _apply_bubbles(events: Array) -> Vector2i:
 			v.say(str(thought), "thought")
 			thoughts += 1
 	return Vector2i(thoughts, talks)
+
+func _name_of(cid: String) -> String:
+	return str(_last_chars.get(cid, {}).get("name", cid))
+
+## 对话/互动凑近：说话者走到对方身旁 22px 处，走完双方面对面
+func _pair_up(a, b) -> void:
+	if a.location_id != b.location_id:
+		return
+	if str(a.get_meta("space", "town")) != str(b.get_meta("space", "town")):
+		return
+	var side := signf(a.position.x - b.position.x)
+	if side == 0.0:
+		side = 1.0
+	var spot: Vector2 = b.position + Vector2(22.0 * side, 0)
+	if a.position.distance_to(spot) > 6.0:
+		a.walk_path(PackedVector2Array([spot]), 0.9, b.position)
+	else:
+		a.face_towards(b.position)
+	b.face_towards(a.position)
+
+## 送礼：一个小包裹从送礼人飘到对方头顶，对方冒爱心
+func _fly_gift(a, b) -> void:
+	var s := Sprite2D.new()
+	s.texture = load("res://assets/ninja_adventure/items/Bag.png")
+	s.position = a.position + Vector2(0, -16)
+	s.z_index = 25
+	_chars_root.add_child(s)
+	var tw := create_tween()
+	tw.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(s, "position", b.position + Vector2(0, -16), 0.6)
+	tw.tween_callback(func() -> void:
+		s.queue_free()
+		if is_instance_valid(b):
+			b.flash_emote("emote27", 3.5)
+	)
 
 func _update_clock(data: Dictionary) -> void:
 	var formatted := str(data.get("formattedTime", "?"))

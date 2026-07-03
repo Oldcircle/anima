@@ -39,6 +39,10 @@ P0~P4 主干完成（详见 [PLAN-game-frontend.md](./PLAN-game-frontend.md) 状
    nudge（会调 LLM）未实测但接口简单。离线可预览、发送禁用
 3. **其他剧本前端适配**：mygo-seaside / koukou-judgment 的角色皮肤映射（`Main.gd CHAR_SKINS`）
    与地图布局（`Town.gd LAYOUT/ROOMS`），未知角色/地点现在走兜底（哈希皮肤 + 沙滩排开）
+3.5 ✅ **行为可视化（2026-07-03）**：tick.events 的工具调用映射到画面——
+   PAIR_ACTIONS（talk/gossip/comfort/argue/share_secret/invite_out/give_gift）触发凑近+对视；
+   give_gift 飞包裹+爱心+底部对话框播报；argue 怒/心碎；comfort 爱心；sleep/nap 困；
+   skipped 冒"…"。离线 demo 已含 talk 凑近 + 室内送礼 + 发呆三个演示 case
 4. 后端：PLAN-tool-feedback.md 的 Tool Feedback Loop 改造
 5. **前缀缓存优化（待决策，2026-07-03）**：provider 已接入 DeepSeek 缓存命中指标
    （`LLMResponse.usage.cacheHitTokens/cacheMissTokens` + 每 25 次调用输出累计命中率日志）。
