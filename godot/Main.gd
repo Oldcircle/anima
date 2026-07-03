@@ -8,6 +8,8 @@ const Town := preload("res://world/Town.gd")
 const CharacterView := preload("res://world/CharacterView.gd")
 const DetailPanel := preload("res://ui/DetailPanel.gd")
 const NarrativePanel := preload("res://ui/NarrativePanel.gd")
+const StatusRoster := preload("res://ui/StatusRoster.gd")
+const RelationWeb := preload("res://ui/RelationWeb.gd")
 
 # 7 角色 → Ninja Adventure 精灵皮肤（assets/ninja_adventure/characters/）
 const CHAR_SKINS := {
@@ -27,6 +29,20 @@ const CHAR_SKINS := {
 	"soyo":         "Woman",       # 金发温柔
 }
 const FALLBACK_SKINS := ["Villager", "Villager3", "Villager4", "Woman", "OldMan"]
+
+# 季节 → 地图叠加染色（与时段染色相乘，只染地面/建筑，不染角色免得脸发绿）
+const SEASON_MAP_TINT := {
+	"spring": Color(0.90, 1.0, 0.88),   # 嫩绿·回暖
+	"summer": Color(1.0, 1.0, 1.0),     # 盛夏·标准
+	"autumn": Color(1.0, 0.83, 0.56),   # 金黄·落叶
+	"winter": Color(0.84, 0.9, 1.0),    # 冷白·萧瑟
+}
+# 季节 → 氛围粒子 [颜色, 数量, 飘落速度, 重力]（summer 关闭）
+const SEASON_FX := {
+	"spring": [Color(1.0, 0.75, 0.85, 0.85), 70, 55.0, 8.0],   # 樱花粉瓣
+	"autumn": [Color(0.9, 0.55, 0.2, 0.9), 60, 70.0, 12.0],    # 橙红落叶
+	"winter": [Color(1.0, 1.0, 1.0, 0.8), 90, 45.0, 6.0],      # 白雪絮
+}
 
 # 时段词 → [地图染色, 角色染色, 开灯]
 const TIME_TINTS := {
@@ -75,6 +91,10 @@ var _drag_moved := false
 var _got_snapshot := false
 var _net_open := false
 var _time_key := ""
+var _season_key := ""
+var _time_map_tint := Color.WHITE     # 时段染色（白天白/夜晚蓝）
+var _season_map_tint := Color.WHITE   # 季节染色（春嫩绿/秋金黄/冬冷白），与时段相乘
+var _season_fx: CPUParticles2D        # 季节氛围粒子（春樱花/秋落叶/冬雪絮）
 var _bgm: AudioStreamPlayer
 var _bgm_path := ""
 var _rain: CPUParticles2D
@@ -88,6 +108,18 @@ var _dialog_text: Label
 var _dialog_timer: SceneTreeTimer
 var _speed_btns := {}      # speed(float) -> Button
 var _narrative: CanvasLayer
+var _roster: CanvasLayer
+var _relweb: CanvasLayer
+
+# 生存告警：需求 → 中文单字 + [urgent 阈值, moderate 阈值]（与后端 need-definitions 对齐）
+const NEED_CN := {
+	"hunger": "饿", "energy": "困", "social": "寂",
+	"hygiene": "脏", "fun": "闷", "bladder": "急",
+}
+const NEED_THRESH := {
+	"hunger": [15, 32], "energy": [15, 32], "social": [15, 30],
+	"hygiene": [20, 32], "fun": [15, 32], "bladder": [15, 30],
+}
 
 func _ready() -> void:
 	get_viewport().physics_object_picking = true
@@ -131,6 +163,14 @@ func _ready() -> void:
 	net.connected.connect(func() -> void: _narrative.set_online(true))
 	net.disconnected.connect(func() -> void: _narrative.set_online(false))
 
+	_roster = StatusRoster.new()
+	add_child(_roster)
+	_roster.set_skin_resolver(Callable(self, "_skin_for"))
+
+	_relweb = RelationWeb.new()
+	add_child(_relweb)
+	_relweb.set_skin_resolver(Callable(self, "_skin_for"))
+
 	net.connected.connect(func():
 		_net_open = true
 		print("[Main] ✅ 后端已连接"))
@@ -171,7 +211,7 @@ func _build_hud() -> void:
 	panel.add_child(_clock)
 
 	_hint = Label.new()
-	_hint.text = "拖拽平移 · 滚轮缩放 · 点角色跟随 · 点建筑进室内 · M 音乐 · N 叙事"
+	_hint.text = "拖拽平移 · 滚轮缩放 · 点角色跟随 · 点建筑进室内 · Tab 名册 · R 关系 · M 音乐 · N 叙事"
 	_hint.add_theme_font_size_override("font_size", 12)
 	_hint.add_theme_color_override("font_color", Color(0.9, 0.88, 0.8, 0.75))
 	_hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
@@ -226,13 +266,27 @@ func _build_speed_panel(layer: CanvasLayer) -> void:
 		var b := Button.new()
 		b.text = entry[1]
 		b.add_theme_font_size_override("font_size", 13)
+		b.focus_mode = Control.FOCUS_NONE
 		b.disabled = true
 		b.pressed.connect(func() -> void: net.set_speed(entry[0]))
 		hb.add_child(b)
 		_speed_btns[entry[0]] = b
+	var rb := Button.new()
+	rb.text = "名册"
+	rb.add_theme_font_size_override("font_size", 13)
+	rb.focus_mode = Control.FOCUS_NONE   # 让 Tab 键留给名册开关，不被按钮抢焦点
+	rb.pressed.connect(func() -> void: _roster.toggle())
+	hb.add_child(rb)
+	var wb := Button.new()
+	wb.text = "关系"
+	wb.add_theme_font_size_override("font_size", 13)
+	wb.focus_mode = Control.FOCUS_NONE
+	wb.pressed.connect(func() -> void: _relweb.toggle())
+	hb.add_child(wb)
 	var nb := Button.new()
 	nb.text = "叙事"
 	nb.add_theme_font_size_override("font_size", 13)
+	nb.focus_mode = Control.FOCUS_NONE
 	nb.pressed.connect(func() -> void: _narrative.toggle())
 	hb.add_child(nb)
 	net.speed_changed.connect(_on_speed_changed)
@@ -290,6 +344,21 @@ func _build_weather(layer: CanvasLayer) -> void:
 	_snow.color = Color(1, 1, 1, 0.8)
 	_snow.emitting = false
 	layer.add_child(_snow)
+	# 季节氛围粒子（樱花/落叶/雪絮）——比天气雪更轻更慢，做季节"换装"用
+	_season_fx = CPUParticles2D.new()
+	_season_fx.position = Vector2(640, -16)
+	_season_fx.lifetime = 8.0
+	_season_fx.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	_season_fx.emission_rect_extents = Vector2(720, 8)
+	_season_fx.direction = Vector2(0.35, 1)
+	_season_fx.spread = 18.0
+	_season_fx.scale_amount_min = 2.0
+	_season_fx.scale_amount_max = 3.4
+	_season_fx.angular_velocity_min = -60.0
+	_season_fx.angular_velocity_max = 60.0
+	_season_fx.preprocess = 8.0   # 预热：一开场整屏就飘满，不用等粒子从顶上落下来
+	_season_fx.emitting = false
+	layer.add_child(_season_fx)
 
 func _build_dialog(layer: CanvasLayer) -> void:
 	# JRPG 底部对话框：头像 + 名字 + 台词（最近一条 talk）
@@ -378,12 +447,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_ESCAPE:
 			if _narrative.is_open():
 				_narrative.close()
+			elif _relweb.is_open():
+				_relweb.close()
+			elif _roster.is_open():
+				_roster.close()
 			elif _space != "town":
 				_exit_room()
 		elif event.keycode == KEY_M:
 			_bgm.playing = not _bgm.playing   # M 键开关音乐
 		elif event.keycode == KEY_N:
 			_narrative.toggle()               # N 键开关叙事面板
+		elif event.keycode == KEY_TAB:
+			_roster.toggle()                  # Tab 开关镇民状态名册
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_R:
+			_relweb.toggle()                  # R 开关关系网
 
 func _zoom_at(screen_pos: Vector2, factor: float) -> void:
 	var z: float = clampf(_cam.zoom.x * factor, ZOOM_MIN, ZOOM_MAX)
@@ -457,6 +535,14 @@ func _capture_and_quit() -> void:
 	var ri := args.find("--room")
 	if "--panel" in args:
 		_narrative.toggle()
+	if "--roster" in args:
+		_roster.toggle()
+	if "--relweb" in args:
+		_relweb.toggle()
+	var di := args.find("--detail")
+	if di != -1 and di + 1 < args.size():
+		var cid: String = args[di + 1]
+		_detail.show_detail(_last_chars.get(cid, {"id": cid, "name": cid}), _skin_for(cid))
 	if ri != -1 and ri + 1 < args.size():
 		_enter_room(args[ri + 1])
 		await get_tree().create_timer(0.6).timeout
@@ -475,13 +561,21 @@ func _maybe_offline_demo() -> void:
 		return
 	print("[Main] 未连后端 → 离线演示（假数据，仅预览美术）")
 	var args := OS.get_cmdline_user_args()
-	var demo_time := "Y1 spring D2 上午 10:00" if "--day" in args else "Y1 spring D1 晚上 21:30"
-	var demo_weather := "rainy" if "--rain" in args else "sunny"
+	var demo_season := "spring"
+	for s in ["summer", "autumn", "winter", "spring"]:
+		if "--" + s in args:
+			demo_season = s
+			break
+	var demo_time := ("Y1 %s D2 上午 10:00" % demo_season) if "--day" in args else ("Y1 %s D1 晚上 21:30" % demo_season)
+	var demo_weather := "rainy" if "--rain" in args else ("snowy" if demo_season == "winter" else "sunny")
+	var demo_temp: int = {"spring": 16, "summer": 29, "autumn": 13, "winter": 1}[demo_season]
 	_on_snapshot({
 		"locations": _town.demo_locations(),
 		"characters": _demo_characters(),
 		"formattedTime": demo_time,
 		"weather": demo_weather,
+		"temperature": demo_temp,
+		"relationships": _demo_relationships(),
 	})
 	if _views.has("asuka"): _views["asuka"].say("客人真多，忙不过来了！", "thought")
 	if _views.has("lelouch"): _views["lelouch"].say("「今晚的海风真舒服」", "talk")
@@ -491,11 +585,13 @@ func _maybe_offline_demo() -> void:
 	get_tree().create_timer(1.4).timeout.connect(func() -> void:
 		var chars := _demo_characters()
 		for c in chars:
-			if c["id"] == "light": c["locationId"] = "cafe"        # 小镇 → 室内（瞬移进店）
+			if c["id"] == "light": c["locationId"] = "cafe"; c["gold"] = 117   # 进店 + 挣了 22
 			if c["id"] == "shinji": c["locationId"] = "beach"      # 码头 → 沙滩（栈桥寻路）
 			if c["id"] == "senjougahara": c["locationId"] = "plaza" # 室内 → 小镇
+			if c["id"] == "asuka": c["gold"] = 115                  # 花了 15 买东西
 		_on_tick({"tick": "demo", "formattedTime": _clock.text.split("   ")[0],
-			"weather": _weather, "characters": chars,
+			"weather": _weather, "temperature": demo_temp, "characters": chars,
+			"relationships": _demo_relationships(),
 			"events": [
 				# 对话凑近 + 底部对话框
 				{"characterId": "lelouch", "action": "talk", "success": true,
@@ -509,16 +605,44 @@ func _maybe_offline_demo() -> void:
 			]})
 	)
 
+func _demo_relationships() -> Array:
+	# 离线预览用的假关系网（覆盖各类型：恋人/宿敌/挚友/朋友/点头之交）
+	return [
+		{"a": "lelouch", "b": "senjougahara", "level": 72, "type": "romantic", "bond": "partner"},
+		{"a": "light", "b": "l_lawliet", "level": -38, "type": "rival", "bond": "rival"},
+		{"a": "rei", "b": "shinji", "level": 66, "type": "close_friend"},
+		{"a": "asuka", "b": "shinji", "level": 44, "type": "friend"},
+		{"a": "asuka", "b": "senjougahara", "level": 38, "type": "friend"},
+		{"a": "light", "b": "lelouch", "level": 28, "type": "acquaintance"},
+		{"a": "l_lawliet", "b": "rei", "level": 22, "type": "acquaintance"},
+	]
+
 func _demo_characters() -> Array:
+	# 假数据也带 needs / 动作 / 钱包，好让离线预览展示生存+经济 UI（血条/告警/金币/财务）
+	# [名字, 地点, 动作, {needs}, gold, finance]
 	var spots := {
-		"asuka": ["明日香", "cafe"], "l_lawliet": ["L", "library"],
-		"lelouch": ["鲁鲁修", "plaza"], "light": ["夜神月", "plaza"],
-		"rei": ["绫波丽", "beach"], "senjougahara": ["战场原", "bar"],
-		"shinji": ["真嗣", "dock"],
+		"asuka": ["明日香", "cafe", "在咖啡馆忙活",
+			{"hunger": 24, "energy": 68, "social": 55, "hygiene": 80, "fun": 40, "bladder": 70}, 130, "宽松"],
+		"l_lawliet": ["L", "library", "盯着甜点出神",
+			{"hunger": 12, "energy": 45, "social": 33, "hygiene": 60, "fun": 62, "bladder": 55}, 8, "揭不开锅"],
+		"lelouch": ["鲁鲁修", "plaza", "在广场散步",
+			{"hunger": 70, "energy": 72, "social": 58, "hygiene": 85, "fun": 66, "bladder": 80}, 240, "宽裕"],
+		"light": ["夜神月", "plaza", "整理观察笔记",
+			{"hunger": 62, "energy": 58, "social": 48, "hygiene": 78, "fun": 55, "bladder": 65}, 95, "够用"],
+		"rei": ["绫波丽", "beach", "在海边发呆",
+			{"hunger": 55, "energy": 13, "social": 40, "hygiene": 70, "fun": 45, "bladder": 60}, 42, "手头紧"],
+		"senjougahara": ["战场原", "bar", "独自喝东西",
+			{"hunger": 66, "energy": 60, "social": 12, "hygiene": 82, "fun": 70, "bladder": 75}, 60, "够用"],
+		"shinji": ["真嗣", "dock", "在码头看海",
+			{"hunger": 58, "energy": 50, "social": 28, "hygiene": 46, "fun": 35, "bladder": 55}, 18, "拮据"],
 	}
 	var out := []
 	for cid in spots:
-		out.append({"id": cid, "name": spots[cid][0], "locationId": spots[cid][1], "moodlets": []})
+		out.append({
+			"id": cid, "name": spots[cid][0], "locationId": spots[cid][1], "moodlets": [],
+			"observableState": {"summary": spots[cid][2]}, "needs": spots[cid][3],
+			"gold": spots[cid][4], "finance": spots[cid][5],
+		})
 	return out
 
 # ---------------- 世界状态 ----------------
@@ -536,6 +660,9 @@ func _on_snapshot(data: Dictionary) -> void:
 		_ensure_view(str(c.get("id", "")), str(c.get("name", "")))
 	_place_all(chars, false)
 	_apply_expressions(chars)
+	_apply_need_alerts(chars)
+	_roster.update_roster(chars)
+	_relweb.update_web(chars, data.get("relationships", []))
 	_update_badges(chars)
 	_update_clock(data)
 	_narrative.set_characters(chars.map(func(c): return [str(c.get("id", "")), str(c.get("name", ""))]))
@@ -547,6 +674,9 @@ func _on_tick(data: Dictionary) -> void:
 		_ensure_view(str(c.get("id", "")), str(c.get("name", "")))
 	_place_all(chars, true)
 	_apply_expressions(chars)
+	_apply_need_alerts(chars)
+	_roster.update_roster(chars)
+	_relweb.update_web(chars, data.get("relationships", []))
 	_update_badges(chars)
 	var counts := _apply_bubbles(data.get("events", []))
 	_update_clock(data)
@@ -581,6 +711,13 @@ func _place_all(chars: Array, animated: bool) -> void:
 		var loc: String = str(c.get("locationId", ""))
 		if not _views.has(id):
 			continue
+		# 金币增减 → 头顶飘字（挣钱绿 / 花钱·房租红），diff 上一 tick 的 gold
+		var prev = _last_chars.get(id, null)
+		if animated and prev != null:
+			var dg: int = int(c.get("gold", 0)) - int(prev.get("gold", 0))
+			if dg != 0:
+				_views[id].float_text(("+%d" % dg) if dg > 0 else str(dg),
+					Color("6fdc8c") if dg > 0 else Color("e07a6a"))
 		_last_chars[id] = c
 		var idx: int = counts.get(loc, 0)
 		counts[loc] = idx + 1
@@ -626,6 +763,36 @@ func _apply_expressions(chars: Array) -> void:
 		elif ca is Dictionary:
 			act = str(ca.get("name", ""))
 		v.set_action(act)
+
+# 生存告警：每 tick 从 needs 推导「谁在硬扛」，头顶挂饿/困/寂…徽章
+func _apply_need_alerts(chars: Array) -> void:
+	for c in chars:
+		var v = _views.get(str(c.get("id", "")), null)
+		if v == null:
+			continue
+		var wn := _worst_need(c.get("needs", null))
+		v.set_need_alert(wn[0], wn[1])
+
+## 找出最紧迫的需求 → [中文标签, urgent?]；都还行返回 ["", false]
+func _worst_need(needs) -> Array:
+	if not (needs is Dictionary):
+		return ["", false]
+	var best_label := ""
+	var best_urgent := false
+	var best_val := 999.0
+	for k in needs:
+		if not NEED_THRESH.has(k):
+			continue
+		var val := float(needs[k])
+		var th: Array = NEED_THRESH[k]
+		if val >= th[1]:
+			continue
+		var urgent: bool = val < th[0]
+		if (urgent and not best_urgent) or (urgent == best_urgent and val < best_val):
+			best_val = val
+			best_label = NEED_CN[k]
+			best_urgent = urgent
+	return [best_label, best_urgent]
 
 # 有互动对象的动作：说话者会凑到对方身边、双方面对面
 const PAIR_ACTIONS := ["talk", "gossip", "comfort", "argue", "share_secret", "invite_out", "give_gift"]
@@ -723,9 +890,13 @@ func _fly_gift(a, b) -> void:
 func _update_clock(data: Dictionary) -> void:
 	var formatted := str(data.get("formattedTime", "?"))
 	var weather := str(data.get("weather", ""))
-	_clock.text = "%s   %s" % [_pretty_time(formatted), WEATHER_CN.get(weather, weather)]
+	var wx: String = WEATHER_CN.get(weather, weather)
+	if data.get("temperature") != null:
+		wx += "  %d°C" % int(round(float(data["temperature"])))
+	_clock.text = "%s   %s" % [_pretty_time(formatted), wx]
 	_apply_time_of_day(formatted)
 	_apply_weather(weather)
+	_apply_season(_season_word(formatted))
 
 ## "Y1 spring D1 清晨 06:15" → "春 第1天 · 清晨 06:15"（后端 formatGameTime 的格式）
 func _pretty_time(formatted: String) -> String:
@@ -756,11 +927,40 @@ func _apply_time_of_day(formatted: String) -> void:
 		return
 	_time_key = key
 	var tint: Array = TIME_TINTS[key]
-	var tw := create_tween().set_parallel(true)
-	tw.tween_property(_town, "modulate", tint[0], 1.2)
-	tw.tween_property(_chars_root, "modulate", tint[1], 1.2)
+	_time_map_tint = tint[0]
+	create_tween().tween_property(_chars_root, "modulate", tint[1], 1.2)
 	_lights.visible = tint[2]
 	_play_bgm(BGM_NIGHT if tint[2] else BGM_DAY)
+	_recompose_map_tint()
+
+## 季节换装：地图季节染色 + 氛围粒子（樱花/落叶/雪絮）
+func _apply_season(season: String) -> void:
+	if season == _season_key or not SEASON_MAP_TINT.has(season):
+		return
+	_season_key = season
+	_season_map_tint = SEASON_MAP_TINT[season]
+	_recompose_map_tint()
+	if SEASON_FX.has(season):
+		var fx: Array = SEASON_FX[season]
+		_season_fx.color = fx[0]
+		_season_fx.amount = int(fx[1])
+		_season_fx.initial_velocity_min = float(fx[2]) * 0.8
+		_season_fx.initial_velocity_max = float(fx[2]) * 1.2
+		_season_fx.gravity = Vector2(0, float(fx[3]))
+		_season_fx.emitting = true
+	else:
+		_season_fx.emitting = false   # 夏天不飘
+
+## 地面/建筑最终染色 = 时段染色 × 季节染色（角色只吃时段染色，免得脸色发绿）
+func _recompose_map_tint() -> void:
+	create_tween().tween_property(_town, "modulate", _time_map_tint * _season_map_tint, 1.2)
+
+## 从 formattedTime 里认出季节（兼容 "Y1 spring ..." 原格式与 "春 第X天" 中文格式）
+func _season_word(formatted: String) -> String:
+	for pair in [["spring", "春"], ["summer", "夏"], ["autumn", "秋"], ["winter", "冬"]]:
+		if formatted.contains(pair[0]) or formatted.contains(pair[1]):
+			return pair[0]
+	return "summer"
 
 func _play_bgm(path: String) -> void:
 	if _bgm_path == path or "--shot" in OS.get_cmdline_user_args():

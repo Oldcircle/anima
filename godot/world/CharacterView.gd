@@ -25,6 +25,12 @@ var _bubble: Control
 var _mood: Sprite2D
 var _flash: Sprite2D          # 行为瞬时 emote（睡觉/吵架/收礼/发呆…），与持续情绪分开
 var _flash_seq := 0
+var _need_badge: PanelContainer   # 生存告警徽章（饿/困/寂…），头顶常驻直到需求缓解
+var _need_lbl: Label
+var _need_sb: StyleBoxFlat
+var _need_text := ""
+var _need_urgent := false
+var _need_tween: Tween
 var _action_lbl: Label
 var _name_lbl: Label
 var _name_y := 0.0
@@ -168,6 +174,68 @@ func flash_emote(emote: String, dur: float = 4.0) -> void:
 		if _flash_seq == seq and is_instance_valid(_flash):
 			_flash.visible = false
 	)
+
+## 生存告警徽章：需求跌破阈值时头顶挂一个「饿/困/寂…」小牌，urgent 时红底脉动。
+## text 为空 → 隐藏。数据每 tick 从 needs 推导（见 Main._apply_need_alerts）。
+func set_need_alert(text: String, urgent: bool) -> void:
+	if text == "":
+		_need_text = ""
+		if _need_badge:
+			_need_badge.visible = false
+		if _need_tween:
+			_need_tween.kill()
+		return
+	if _need_badge == null:
+		_need_sb = StyleBoxFlat.new()
+		_need_sb.set_border_width_all(1)
+		_need_sb.border_color = Color("1a1626")
+		_need_sb.set_corner_radius_all(3)
+		_need_sb.set_content_margin_all(2)
+		_need_badge = PanelContainer.new()
+		_need_badge.add_theme_stylebox_override("panel", _need_sb)
+		_need_badge.z_index = 16
+		_need_lbl = Label.new()
+		_need_lbl.add_theme_font_size_override("font_size", 11)
+		_need_lbl.add_theme_color_override("font_color", Color("fff4e0"))
+		_need_badge.add_child(_need_lbl)
+		add_child(_need_badge)
+	var changed := text != _need_text or urgent != _need_urgent
+	_need_text = text
+	_need_urgent = urgent
+	_need_lbl.text = text
+	_need_sb.bg_color = Color(0.82, 0.24, 0.24, 0.95) if urgent else Color(0.86, 0.6, 0.15, 0.95)
+	_need_badge.visible = true
+	if not changed:
+		return   # 同一告警持续中：别每 tick 重置尺寸/脉动，免得抖动
+	_need_badge.reset_size()
+	_need_badge.position = Vector2(-_need_badge.size.x / 2.0, _name_y - 16.0)
+	if _need_tween:
+		_need_tween.kill()
+	if urgent:
+		_need_badge.modulate.a = 1.0
+		_need_tween = create_tween().set_loops()
+		_need_tween.tween_property(_need_badge, "modulate:a", 0.35, 0.5)
+		_need_tween.tween_property(_need_badge, "modulate:a", 1.0, 0.5)
+	else:
+		_need_badge.modulate.a = 1.0
+
+## 头顶飘字（挣钱/花钱的金币增减、以后也可复用）：升起淡出
+func float_text(text: String, color: Color) -> void:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 12)
+	lbl.add_theme_color_override("font_color", color)
+	lbl.add_theme_color_override("font_outline_color", Color(0.1, 0.08, 0.15, 0.9))
+	lbl.add_theme_constant_override("outline_size", 3)
+	lbl.z_index = 22
+	add_child(lbl)
+	lbl.reset_size()
+	var start := Vector2(-lbl.size.x / 2.0, -30.0)
+	lbl.position = start
+	var tw := create_tween()
+	tw.tween_property(lbl, "position:y", start.y - 22.0, 1.1).set_trans(Tween.TRANS_SINE)
+	tw.parallel().tween_property(lbl, "modulate:a", 0.0, 1.1).set_ease(Tween.EASE_IN)
+	tw.tween_callback(lbl.queue_free)
 
 func _dir_of(delta: Vector2) -> String:
 	if absf(delta.x) > absf(delta.y):
