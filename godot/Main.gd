@@ -7,6 +7,7 @@ extends Node2D
 const Town := preload("res://world/Town.gd")
 const CharacterView := preload("res://world/CharacterView.gd")
 const DetailPanel := preload("res://ui/DetailPanel.gd")
+const NarrativePanel := preload("res://ui/NarrativePanel.gd")
 
 # 7 角色 → Ninja Adventure 精灵皮肤（assets/ninja_adventure/characters/）
 const CHAR_SKINS := {
@@ -79,6 +80,7 @@ var _dialog_name: Label
 var _dialog_text: Label
 var _dialog_timer: SceneTreeTimer
 var _speed_btns := {}      # speed(float) -> Button
+var _narrative: CanvasLayer
 
 func _ready() -> void:
 	get_viewport().physics_object_picking = true
@@ -116,6 +118,11 @@ func _ready() -> void:
 	_bgm.volume_db = -14.0
 	_bgm.bus = "Master"
 	add_child(_bgm)
+
+	_narrative = NarrativePanel.new()
+	add_child(_narrative)
+	net.connected.connect(func() -> void: _narrative.set_online(true))
+	net.disconnected.connect(func() -> void: _narrative.set_online(false))
 
 	net.connected.connect(func():
 		_net_open = true
@@ -157,7 +164,7 @@ func _build_hud() -> void:
 	panel.add_child(_clock)
 
 	_hint = Label.new()
-	_hint.text = "拖拽平移 · 滚轮缩放 · 点角色跟随 · 点建筑进室内 · M 音乐开关"
+	_hint.text = "拖拽平移 · 滚轮缩放 · 点角色跟随 · 点建筑进室内 · M 音乐 · N 叙事"
 	_hint.add_theme_font_size_override("font_size", 12)
 	_hint.add_theme_color_override("font_color", Color(0.9, 0.88, 0.8, 0.75))
 	_hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
@@ -201,7 +208,7 @@ func _build_speed_panel(layer: CanvasLayer) -> void:
 	panel.add_theme_stylebox_override("panel", _jrpg_box())
 	panel.anchor_left = 1.0
 	panel.anchor_right = 1.0
-	panel.offset_left = -196
+	panel.offset_left = -262
 	panel.offset_right = -12
 	panel.offset_top = 12
 	layer.add_child(panel)
@@ -216,6 +223,11 @@ func _build_speed_panel(layer: CanvasLayer) -> void:
 		b.pressed.connect(func() -> void: net.set_speed(entry[0]))
 		hb.add_child(b)
 		_speed_btns[entry[0]] = b
+	var nb := Button.new()
+	nb.text = "叙事"
+	nb.add_theme_font_size_override("font_size", 13)
+	nb.pressed.connect(func() -> void: _narrative.toggle())
+	hb.add_child(nb)
 	net.speed_changed.connect(_on_speed_changed)
 	net.connected.connect(func() -> void:
 		for s in _speed_btns:
@@ -356,10 +368,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		_cam.position -= event.relative / _cam.zoom.x
 		_clamp_cam()
 	elif event is InputEventKey and event.pressed:
-		if event.keycode == KEY_ESCAPE and _space != "town":
-			_exit_room()
+		if event.keycode == KEY_ESCAPE:
+			if _narrative.is_open():
+				_narrative.close()
+			elif _space != "town":
+				_exit_room()
 		elif event.keycode == KEY_M:
 			_bgm.playing = not _bgm.playing   # M 键开关音乐
+		elif event.keycode == KEY_N:
+			_narrative.toggle()               # N 键开关叙事面板
 
 func _zoom_at(screen_pos: Vector2, factor: float) -> void:
 	var z: float = clampf(_cam.zoom.x * factor, ZOOM_MIN, ZOOM_MAX)
@@ -431,6 +448,8 @@ func _capture_and_quit() -> void:
 	await get_tree().create_timer(4.6).timeout
 	var args := OS.get_cmdline_user_args()
 	var ri := args.find("--room")
+	if "--panel" in args:
+		_narrative.toggle()
 	if ri != -1 and ri + 1 < args.size():
 		_enter_room(args[ri + 1])
 		await get_tree().create_timer(0.6).timeout
@@ -503,6 +522,7 @@ func _on_snapshot(data: Dictionary) -> void:
 	_apply_expressions(chars)
 	_update_badges(chars)
 	_update_clock(data)
+	_narrative.set_characters(chars.map(func(c): return [str(c.get("id", "")), str(c.get("name", ""))]))
 	print("[Main] snapshot：已生成 %d 个角色并就位" % _views.size())
 
 func _on_tick(data: Dictionary) -> void:

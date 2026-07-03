@@ -34,8 +34,9 @@ P0~P4 主干完成（详见 [PLAN-game-frontend.md](./PLAN-game-frontend.md) 状
    - 清晨时段全员在室内 → 镇面空、徽章正确显示屋内人数（符合设计，观看时点建筑进室内看）
    - 据此迭代：徽章移出地名标签区、时钟改「春 第X天 · 清晨 06:15」格式
    - 探针工具：`godot --path godot -- --probe`（连真后端 3 分钟，每 30s 存 shot_live_N.png 自动退出）
-2. **叙事控制进 Godot**（P4 剩余）：塞纸条/注入事件/触发 director（HTTP `src/api/narrative-routes.ts`），
-   做成 JRPG 菜单
+2. ~~叙事控制进 Godot~~ ✅ **2026-07-03 完成**：`ui/NarrativePanel.gd`（N 键/按钮开关），
+   塞纸条/散布流言/注入事件/推进导演四模式，HTTP 直连 3001；三个注入接口已 curl 冒烟通过，
+   nudge（会调 LLM）未实测但接口简单。离线可预览、发送禁用
 3. **其他剧本前端适配**：mygo-seaside / koukou-judgment 的角色皮肤映射（`Main.gd CHAR_SKINS`）
    与地图布局（`Town.gd LAYOUT/ROOMS`），未知角色/地点现在走兜底（哈希皮肤 + 沙滩排开）
 4. 后端：PLAN-tool-feedback.md 的 Tool Feedback Loop 改造
