@@ -5,7 +5,9 @@
  * 在 prompt 构建时注入，让角色有连续性。
  */
 
-import { tickToGameTime } from "../core/tick-engine.js";
+import { tickToGameTime, TICKS_PER_DAY } from "../core/tick-engine.js";
+import { mmrRerank } from "./mmr.js";
+import { calculateTemporalDecayMultiplier } from "./temporal-decay.js";
 
 /** tick → "HH:MM"；传入 currentTick 时跨天记忆加"昨天"/"N天前"前缀，让模型分得清昨晚和刚才 */
 function _tickTime(tick: number, currentTick?: number): string {
@@ -24,6 +26,71 @@ export interface MemoryEntry {
   importance: number; // 1-10
   /** 对话相关记忆的对方 ID（talk 发出/收到时记录） */
   relatedCharacterId?: string;
+}
+
+/**
+ * prompt 记忆检索的重排配置。
+ * 此前注入 prompt 的记忆是纯 recency（取最近 N 条），importance 只参与淘汰不参与检索，
+ * 也没有多样性去重 → 反思容易被琐事挤出、同类行为反复刷屏。
+ * 这里在「已选出的最近窗口」内做一次加权打分 + MMR 多样性重排（不触碰长期记忆，控制影响范围）。
+ */
+export interface RetrievalRerankConfig {
+  enabled: boolean;
+  /** 加权打分的时间衰减半衰期（游戏天）。窗口内最多约 2 天，用短半衰期让"新"真有梯度。 */
+  halfLifeDays: number;
+  /** MMR λ：0=最多样、1=最相关。0.7 偏相关但足够挤掉雷同措辞的冗余记忆。 */
+  lambda: number;
+}
+
+export const DEFAULT_RETRIEVAL_RERANK: RetrievalRerankConfig = {
+  // 默认开启；`ANIMA_MEM_RERANK=0` 可关掉，用于同一份构建的 A/B（baseline 与现状逐字一致）。
+  enabled: process.env.ANIMA_MEM_RERANK !== "0",
+  halfLifeDays: 2,
+  lambda: 0.7,
+};
+
+/**
+ * 原始候选池 = count × 此系数（天然被 _maxEntries=30 封顶）。
+ * 比旧的 ×2 略宽，给重排足够挑选空间；关闭重排时 slice(-count) 结果不受系数影响 → baseline 不变。
+ */
+const RETRIEVAL_POOL_MULTIPLIER = 3;
+
+/**
+ * 在最近窗口内选出注入 prompt 的 count 条记忆：
+ * 1. 打分 = importance × 时间衰减（越新越重，但重要的旧记忆不会瞬间归零）；
+ * 2. MMR 用 Jaccard 相似度去冗余，雷同措辞只留代表、腾位置给多样内容；
+ * 3. 选完按 tick 正序还原，让下游的时间戳/跨天前缀/连续压缩照常工作。
+ *
+ * 候选 ≤ count（或关闭时）原样返回最近 count 条 —— 与旧的纯 recency 行为逐字一致，
+ * 因此 baseline（enabled=false）永远等于改动前的输出。
+ */
+export function rerankRecentForPrompt(
+  candidates: MemoryEntry[],
+  count: number,
+  currentTick: number | undefined,
+  config: RetrievalRerankConfig = DEFAULT_RETRIEVAL_RERANK,
+): MemoryEntry[] {
+  if (!config.enabled || candidates.length <= count) {
+    return candidates.slice(-count);
+  }
+
+  const scored = candidates.map((entry, i) => {
+    const decay =
+      currentTick === undefined
+        ? 1
+        : calculateTemporalDecayMultiplier({
+            ageInDays: Math.max(0, currentTick - entry.tick) / TICKS_PER_DAY,
+            halfLifeDays: config.halfLifeDays,
+          });
+    // id 用下标保证唯一（内容/tick 可能重复），MMR 的 tokenCache 才不会串味
+    return { id: String(i), score: entry.importance * decay, content: entry.content, entry };
+  });
+
+  const ranked = mmrRerank(scored, { enabled: true, lambda: config.lambda });
+  return ranked
+    .slice(0, count)
+    .map((s) => s.entry)
+    .sort((a, b) => a.tick - b.tick);
 }
 
 export class ShortTermMemory {
@@ -97,8 +164,12 @@ export class ShortTermMemory {
    * @param currentTick 当前游戏 tick；传入时跨天记忆会带"昨天"/"N天前"前缀
    */
   formatForPrompt(characterId: string, count = 10, currentTick?: number): string {
-    const allEntries = this.getRecent(characterId, count * 2);
-    const entries = allEntries.filter((e) => e.type !== "thought").slice(-count);
+    // 拉宽原始候选（× MULTIPLIER，天然被 _maxEntries 封顶），过滤掉已单独成段的 thought，
+    // 再在窗口内做「重要性 × 时间衰减」加权 + MMR 多样性重排选出 count 条。
+    // 关闭重排（ANIMA_MEM_RERANK=0）时退化为取最近 count 条，与旧的纯 recency 行为逐字一致。
+    const pool = this.getRecent(characterId, count * RETRIEVAL_POOL_MULTIPLIER);
+    const candidates = pool.filter((e) => e.type !== "thought");
+    const entries = rerankRecentForPrompt(candidates, count, currentTick);
     if (entries.length === 0) return "";
 
     // 第一遍：对话未回复检测

@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { ShortTermMemory } from "./short-term.js";
+import {
+  ShortTermMemory,
+  rerankRecentForPrompt,
+  DEFAULT_RETRIEVAL_RERANK,
+  type MemoryEntry,
+  type RetrievalRerankConfig,
+} from "./short-term.js";
+
+const RERANK_ON: RetrievalRerankConfig = { enabled: true, halfLifeDays: 2, lambda: 0.7 };
+const RERANK_OFF: RetrievalRerankConfig = { enabled: false, halfLifeDays: 2, lambda: 0.7 };
 
 describe("ShortTermMemory", () => {
   it("基本记忆添加和获取", () => {
@@ -125,5 +134,106 @@ describe("ShortTermMemory", () => {
     const text = mem.formatForPrompt("tomori", 10);
     expect(text).toContain("[23:00] 昨晚的事");
     expect(text).not.toContain("昨天");
+  });
+});
+
+describe("rerankRecentForPrompt", () => {
+  it("候选 ≤ count 时原样返回最近 count 条（与旧纯 recency 一致）", () => {
+    const entries: MemoryEntry[] = [
+      { tick: 1, type: "event", content: "A", importance: 4 },
+      { tick: 2, type: "event", content: "B", importance: 4 },
+    ];
+    expect(rerankRecentForPrompt(entries, 12, 100, RERANK_ON)).toEqual(entries);
+  });
+
+  it("关闭时退化为纯 recency（丢掉更旧的记忆，即使它更重要）", () => {
+    const entries: MemoryEntry[] = [
+      { tick: 1, type: "event", content: "[反思] 重要洞察", importance: 9 },
+    ];
+    for (let i = 1; i <= 13; i++) {
+      entries.push({ tick: 1 + i, type: "event", content: `琐事${i}`, importance: 3 });
+    }
+    const out = rerankRecentForPrompt(entries, 12, undefined, RERANK_OFF);
+    expect(out).toHaveLength(12);
+    // 纯 recency 取最后 12 条 → 最旧的高重要性反思被挤掉
+    expect(out.map((e) => e.content)).not.toContain("[反思] 重要洞察");
+    expect(out).toEqual(entries.slice(-12));
+  });
+
+  it("开启时重要性把旧反思拉回窗口（recency 会丢掉它）", () => {
+    const entries: MemoryEntry[] = [
+      { tick: 1, type: "event", content: "[反思] 重要洞察", importance: 9 },
+    ];
+    for (let i = 1; i <= 13; i++) {
+      entries.push({ tick: 1 + i, type: "event", content: `琐事${i}`, importance: 3 });
+    }
+    // 不传 currentTick → 衰减=1，打分=importance，反思(9) 稳赢琐事(3)
+    const out = rerankRecentForPrompt(entries, 12, undefined, RERANK_ON);
+    expect(out).toHaveLength(12);
+    expect(out.map((e) => e.content)).toContain("[反思] 重要洞察");
+  });
+
+  it("开启时输出仍按 tick 正序（下游时间戳/连续压缩依赖此序）", () => {
+    const entries: MemoryEntry[] = [
+      { tick: 1, type: "event", content: "[反思] 重要洞察", importance: 9 },
+    ];
+    for (let i = 1; i <= 13; i++) {
+      entries.push({ tick: 1 + i, type: "event", content: `独特小事${i}的记录`, importance: 3 });
+    }
+    const out = rerankRecentForPrompt(entries, 12, undefined, RERANK_ON);
+    const ticks = out.map((e) => e.tick);
+    expect(ticks).toEqual([...ticks].sort((a, b) => a - b));
+  });
+
+  it("开启时 MMR 去冗余：雷同记忆比纯 recency 留得更少", () => {
+    // 6 条内容各异 + 8 条完全相同的"浇花"，最新的都是浇花
+    const distinct = [
+      "在花店修好了漏水的水龙头",
+      "海边散步时捡到一枚贝壳",
+      "图书馆借了一本讲天文的书",
+      "午饭吃了咖喱有点辣",
+      "和战场原拌了两句嘴",
+      "下午打盹梦见小时候",
+    ];
+    const entries: MemoryEntry[] = distinct.map((content, i) => ({
+      tick: i + 1,
+      type: "event" as const,
+      content,
+      importance: 4,
+    }));
+    for (let i = 0; i < 8; i++) {
+      entries.push({ tick: 100 + i, type: "event", content: "给院子里的花浇了水", importance: 4 });
+    }
+
+    const countFlower = (out: MemoryEntry[]) =>
+      out.filter((e) => e.content === "给院子里的花浇了水").length;
+
+    const recency = rerankRecentForPrompt(entries, 10, undefined, RERANK_OFF);
+    const reranked = rerankRecentForPrompt(entries, 10, undefined, RERANK_ON);
+
+    expect(reranked).toHaveLength(10);
+    // MMR 把重复的"浇花"挤掉，给各异记忆腾位置
+    expect(countFlower(reranked)).toBeLessThan(countFlower(recency));
+    // 6 条各异记忆全部保留
+    for (const d of distinct) {
+      expect(reranked.map((e) => e.content)).toContain(d);
+    }
+  });
+});
+
+describe("formatForPrompt 接入重排", () => {
+  it("默认配置下高重要性旧反思不被近期琐事挤出注入文本", () => {
+    const mem = new ShortTermMemory(40);
+    mem.add("tomori", { tick: 1, type: "event", content: "[反思] 我总躲着排练，明天想主动去一次", importance: 9 });
+    for (let i = 1; i <= 15; i++) {
+      mem.add("tomori", { tick: 1 + i, type: "event", content: `路过第${i}处随便看了看`, importance: 3 });
+    }
+    const text = mem.formatForPrompt("tomori", 12);
+    if (DEFAULT_RETRIEVAL_RERANK.enabled) {
+      expect(text).toContain("[反思] 我总躲着排练");
+    } else {
+      // ANIMA_MEM_RERANK=0 时退化为纯 recency，反思被挤出
+      expect(text).not.toContain("[反思] 我总躲着排练");
+    }
   });
 });

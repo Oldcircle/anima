@@ -5,6 +5,30 @@
 
 ## 当前状态（2026-07-03）
 
+### 记忆检索接入 · 重要性×时间衰减 + MMR 多样性重排（2026-07-04，活人感优化）
+
+注入 prompt 的记忆此前是**纯 recency**（`short-term.ts formatForPrompt` 取最近 N 条），importance 只参与
+淘汰不参与检索、没有多样性去重 → 重要反思容易被琐事挤出、同类记忆反复刷屏。把两个早先删掉的纯函数模块
+（`memory/mmr.ts` Jaccard+MMR、`memory/temporal-decay.ts` 半衰期衰减）**恢复并接线**到检索路径：
+
+- **只在已选出的最近窗口内重排**（候选池 `count×3`，天然被 `_maxEntries=30` 封顶，不碰长期记忆/DB）：
+  打分 = `importance × 时间衰减(halfLife=2 游戏天)` → MMR（λ=0.7）去冗余 → 选出 count 条 → **按 tick 正序还原**
+  （下游时间戳/跨天前缀/连续压缩照常）。核心逻辑抽成纯函数 `rerankRecentForPrompt`
+- **向后兼容 & 干净 A/B**：候选 ≤ count 或关闭时退化为 `slice(-count)`，与旧输出**逐字一致**；
+  `ANIMA_MEM_RERANK=0` 关掉重排 → baseline = 改动前行为（同一份构建，可控 A/B）。所有旧单测零改动通过
+- **验证（`pnpm test:live` sim-halfday，deepseek-chat，各 ~230s）**：
+  - **确定性记忆选择对比**（临时探针：同一批候选同时算 rerank 与纯 recency，194 次激活、均候选池 22.1）——
+    注入平均**重要性 +18.4%**（6.17 vs 5.21）、去重后**独特内容 +1.02 条**（11.7 vs 10.7 / 12）、
+    每次平均**换入 4.86 条** recency 会漏掉的记忆；**100% 的调用**在重要性与多样性两轴都 ≥ recency。
+    即"既更相关又更不冗余"在真实记忆上被逐调用坐实（无 LLM 噪声）。探针用完已删
+  - **行为 A/B**（rerank ON vs `ANIMA_MEM_RERANK=0`，各一轮 36 tick）：约束失败 **0/0 无回归**；
+    重复对话拦截 10→**7**、只想不做救回 8→**5**（都更少，去卡壳倾向）；行为种类 20→**24**、
+    baseline 的 `shelve_books(14)/prepare(21)` 刷屏尖峰被摊平 → 行为更丰富。净收益确认，已默认开启
+  - 半天窗口内无"昨天/夜间反思"，"记得昨天反思"这条留 `pnpm test:sim` seven-day 观察
+- 单测：新增 5 条重排选择/多样性/正序 + 1 条 formatForPrompt 接入 + 恢复 mmr/temporal-decay 各自测试，
+  全套 **507 通过**、build 0 error。调参入口：`short-term.ts` 的 `DEFAULT_RETRIEVAL_RERANK`（halfLife/λ）
+  与 `RETRIEVAL_POOL_MULTIPLIER`
+
 ### 可维护性 · runOneTick 拆分（2026-07-04，P1 上帝函数）
 
 `simulation.ts` 的 `runOneTick` 曾是 **519 行**单函数（tick 的全部 phase 挤在一起，任何改动都要在
@@ -150,9 +174,9 @@ P0~P4 主干完成（详见 [PLAN-game-frontend.md](./PLAN-game-frontend.md) 状
    - 记忆/念头时间戳跨天标注（"昨天23:00"），模型能分清昨晚和刚才
    - 生活节律：饭点提示（早/午/晚，肚子不满才触发，`need-definitions.ts`）+
      上班节律一句话进 system prompt（静态、缓存友好，`prompt-builder.ts formatLifeContext`）
-   - ~~已知未接线：`memory/temporal-decay.ts` 和 `memory/mmr.ts` 死代码~~ ✅ **2026-07-04 已删**
-     （零生产引用，纯函数带测试；接线是改 prompt 行为的活，需 live 半天模拟验证净收益，已单开任务，
-     代码可从 git 历史恢复）
+   - ~~已知未接线：`memory/temporal-decay.ts` 和 `memory/mmr.ts` 死代码（曾删，代码在 git 历史）~~
+     ✅ **2026-07-04 已恢复并接入 `formatForPrompt` 检索路径**（重要性×时间衰减加权 + MMR 多样性重排），
+     live 半天模拟确认净收益（详见上方「记忆检索接入」section）
    - 验证入口：`pnpm test:live`（sim-halfday），观察点 = 角色是否按饭点吃饭/是否记得昨天的反思/
      `[LLM cache]` 命中率日志
 7. **活人感第二批：半天模拟实测驱动（2026-07-03）**。第一轮 live 实测数据（275 次调用）：

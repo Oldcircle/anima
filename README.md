@@ -53,6 +53,7 @@ Run the simulation for an hour and you'll see things you didn't write.
 - **Five layers of "feeling alive"** — environmental atmosphere, impressions, layered inner monologue, conversation modes, and observational reasoning.
 - **Persistent inner monologue** — every LLM decision's thought is stored as memory. Ideas can carry across ticks.
 - **Living-state memory** — `currentIntent` keeps unfinished business alive (you wanted to reply to her, you haven't yet). `observableState` lets others see "she's holding a cooling latte and staring at nothing."
+- **Memory that's relevant, not just recent** — what gets injected into the prompt is reranked by *importance × recency-decay* plus MMR diversity, so a key reflection isn't crowded out by trivia and near-duplicate memories stop repeating (measured in a half-day live sim: +18% mean injected importance, cleaner de-duplication, richer behavior).
 - **A day with a throughline** — nightly reflection → next morning's intentions (1–3 loose "things I want to do today") → action → evening review. Life stops being pure need-reaction and gains a plot. Characters make and keep (or ghost) **appointments** with each other.
 - **A world with teeth** — a **climate system** (weather × season × time-of-day → felt temperature, with exposure draining needs so people seek shelter) and an **economy** (daily rent/upkeep, seasonal market prices, a "how many days can I last" money feeling) make survival actually matter.
 - **Two-layer narrative director** — a rule-based `BeatEngine` plus an agentic LLM `Director` (read tools → act → feedback loop) can seed topics and nudge drama without scripting the characters.
@@ -138,7 +139,7 @@ anima/
 │   ├── world/          # World state, locations, weather, relationships
 │   ├── character/      # Character card types & YAML loader
 │   ├── agent/          # Agent loop, prompt builder, conversation modes
-│   ├── memory/         # Short-term memory, impressions
+│   ├── memory/         # Short-term memory, impressions, retrieval rerank (importance-decay + MMR)
 │   ├── actions/        # Action tools (talk/eat/work/go_to/...)
 │   ├── providers/      # LLM provider abstraction
 │   ├── persistence/    # SQLite save/load
