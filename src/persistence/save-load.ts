@@ -24,7 +24,14 @@ export function saveGame(sim: Simulation, dbPath: string): void {
       moodlets: c.moodlets,
       inventory: c.inventory,
       recentActions: c.recentActions,
+      // 生活主线状态：晨间打算 / 短期意图 / 信箱（读档后主线才不会蒸发）
+      todayPlan: c.todayPlan,
+      currentIntent: c.currentIntent,
+      inbox: c.inbox,
     }));
+
+    // 约定（世界级）：pending 的赴约/爽约结算依赖它，必须随档保存
+    const appointments = [...sim.world.getAllAppointments()];
 
     const relationships = sim.relationships.getAll();
 
@@ -71,10 +78,11 @@ export function saveGame(sim: Simulation, dbPath: string): void {
       events,
       impressions,
       longTermMemories,
+      appointments,
       narrativeJson: JSON.stringify(sim.world.narrative.getSnapshot()),
     });
 
-    console.log(`💾 已保存到 ${dbPath} (tick=${sim.world.tick}, ${characters.length} 角色, ${memories.length} 记忆, ${relationships.length} 关系)`);
+    console.log(`💾 已保存到 ${dbPath} (tick=${sim.world.tick}, ${characters.length} 角色, ${memories.length} 记忆, ${relationships.length} 关系, ${appointments.length} 约定)`);
   } finally {
     db.close();
   }
@@ -133,8 +141,18 @@ export function loadGame(sim: Simulation, dbPath: string): boolean {
         if (sc.recentActions) {
           char.recentActions = sc.recentActions;
         }
+        // 恢复生活主线状态：晨间打算 / 短期意图 / 信箱
+        char.todayPlan = sc.todayPlan;
+        char.currentIntent = sc.currentIntent;
+        if (sc.inbox) {
+          char.inbox = sc.inbox;
+        }
       }
     }
+
+    // 恢复约定（世界级）
+    const savedAppointments = db.loadAppointments();
+    sim.world.restoreAppointments(savedAppointments);
 
     // 恢复关系
     const savedRels = db.loadRelationships();
@@ -175,7 +193,7 @@ export function loadGame(sim: Simulation, dbPath: string): boolean {
       }
     }
 
-    console.log(`📂 已读取存档 (tick=${worldState.tick}, ${savedChars.length} 角色, ${savedRels.length} 关系, ${savedImpressions.length} 印象, ${ltmCount} 长期记忆)`);
+    console.log(`📂 已读取存档 (tick=${worldState.tick}, ${savedChars.length} 角色, ${savedRels.length} 关系, ${savedImpressions.length} 印象, ${ltmCount} 长期记忆, ${savedAppointments.length} 约定)`);
     return true;
   } finally {
     db.close();

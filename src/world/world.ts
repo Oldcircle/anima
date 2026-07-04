@@ -329,6 +329,11 @@ export class World {
     return this._appointments;
   }
 
+  /** 读档：直接替换约定列表（跳过 addAppointment 的配额/替换校验） */
+  restoreAppointments(list: Appointment[]): void {
+    this._appointments = [...list];
+  }
+
   // --- 信箱 ---
 
   /** 向角色信箱投递消息 */

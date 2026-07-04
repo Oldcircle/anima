@@ -14,6 +14,7 @@ export class AnimaDB {
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
     this._initSchema();
+    this._migrate();
   }
 
   private _initSchema() {
@@ -34,7 +35,10 @@ export class AnimaDB {
         life_json TEXT,
         moodlets_json TEXT,
         inventory_json TEXT,
-        recent_actions_json TEXT
+        recent_actions_json TEXT,
+        today_plan_json TEXT,
+        current_intent_json TEXT,
+        inbox_json TEXT
       );
 
       CREATE TABLE IF NOT EXISTS memories (
@@ -94,7 +98,36 @@ export class AnimaDB {
       );
       CREATE INDEX IF NOT EXISTS idx_ltm_char ON long_term_memories(character_id);
       CREATE INDEX IF NOT EXISTS idx_ltm_related ON long_term_memories(related_character_id);
+
+      CREATE TABLE IF NOT EXISTS appointments (
+        id TEXT PRIMARY KEY,
+        proposer_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        location_id TEXT NOT NULL,
+        at_tick INTEGER NOT NULL,
+        activity TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_tick INTEGER NOT NULL
+      );
     `);
+  }
+
+  /**
+   * 轻量迁移：给已存在的老库补上后加的列。
+   * `CREATE TABLE IF NOT EXISTS` 不会改动已存在表的结构，所以历史存档需要 ALTER 补列。
+   */
+  private _migrate() {
+    const existing = new Set(
+      (this.db.prepare("PRAGMA table_info(characters)").all() as Array<{ name: string }>).map((r) => r.name),
+    );
+    const addColumn = (name: string, decl: string) => {
+      if (!existing.has(name)) {
+        this.db.exec(`ALTER TABLE characters ADD COLUMN ${name} ${decl}`);
+      }
+    };
+    addColumn("today_plan_json", "TEXT");
+    addColumn("current_intent_json", "TEXT");
+    addColumn("inbox_json", "TEXT");
   }
 
   // --- 世界状态 ---
@@ -130,10 +163,13 @@ export class AnimaDB {
     moodlets?: import("../world/types.js").Moodlet[];
     inventory?: import("../world/item-types.js").ItemInstance[];
     recentActions?: { actionId: string; tick: number }[];
+    todayPlan?: { day: number; items: string[] };
+    currentIntent?: import("../world/types.js").CharacterIntent;
+    inbox?: import("../world/types.js").InboxMessage[];
   }) {
     this.db.prepare(`
-      INSERT OR REPLACE INTO characters (id, name, location_id, gold, needs_json, current_action, current_action_remaining, life_json, moodlets_json, inventory_json, recent_actions_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO characters (id, name, location_id, gold, needs_json, current_action, current_action_remaining, life_json, moodlets_json, inventory_json, recent_actions_json, today_plan_json, current_intent_json, inbox_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       c.id, c.name, c.locationId, c.gold,
       JSON.stringify(c.needs),
@@ -142,6 +178,9 @@ export class AnimaDB {
       c.moodlets && c.moodlets.length > 0 ? JSON.stringify(c.moodlets) : null,
       c.inventory && c.inventory.length > 0 ? JSON.stringify(c.inventory) : null,
       c.recentActions && c.recentActions.length > 0 ? JSON.stringify(c.recentActions) : null,
+      c.todayPlan ? JSON.stringify(c.todayPlan) : null,
+      c.currentIntent ? JSON.stringify(c.currentIntent) : null,
+      c.inbox && c.inbox.length > 0 ? JSON.stringify(c.inbox) : null,
     );
   }
 
@@ -153,6 +192,9 @@ export class AnimaDB {
     moodlets?: import("../world/types.js").Moodlet[];
     inventory?: import("../world/item-types.js").ItemInstance[];
     recentActions?: { actionId: string; tick: number }[];
+    todayPlan?: { day: number; items: string[] };
+    currentIntent?: import("../world/types.js").CharacterIntent;
+    inbox?: import("../world/types.js").InboxMessage[];
   }> {
     const rows = this.db.prepare("SELECT * FROM characters").all() as any[];
     return rows.map((r) => ({
@@ -163,6 +205,9 @@ export class AnimaDB {
       moodlets: r.moodlets_json ? JSON.parse(r.moodlets_json) : undefined,
       inventory: r.inventory_json ? JSON.parse(r.inventory_json) : undefined,
       recentActions: r.recent_actions_json ? JSON.parse(r.recent_actions_json) : undefined,
+      todayPlan: r.today_plan_json ? JSON.parse(r.today_plan_json) : undefined,
+      currentIntent: r.current_intent_json ? JSON.parse(r.current_intent_json) : undefined,
+      inbox: r.inbox_json ? JSON.parse(r.inbox_json) : undefined,
     }));
   }
 
@@ -267,6 +312,29 @@ export class AnimaDB {
     ).all(characterId, `%${keyword}%`, limit) as any[];
   }
 
+  // --- 约定 ---
+
+  saveAppointment(a: import("../world/types.js").Appointment) {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO appointments (id, proposer_id, target_id, location_id, at_tick, activity, status, created_tick)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(a.id, a.proposerId, a.targetId, a.locationId, a.atTick, a.activity ?? null, a.status, a.createdTick);
+  }
+
+  loadAppointments(): import("../world/types.js").Appointment[] {
+    const rows = this.db.prepare("SELECT * FROM appointments").all() as any[];
+    return rows.map((r) => ({
+      id: r.id,
+      proposerId: r.proposer_id,
+      targetId: r.target_id,
+      locationId: r.location_id,
+      atTick: r.at_tick,
+      activity: r.activity ?? undefined,
+      status: r.status,
+      createdTick: r.created_tick,
+    }));
+  }
+
   // --- 批量操作 ---
 
   saveAll(params: {
@@ -278,10 +346,13 @@ export class AnimaDB {
     events: any[];
     impressions?: Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; lastUpdated: number } }>;
     longTermMemories?: Array<{ characterId: string; tick: number; type: string; content: string; importance: number; relatedCharacterId?: string }>;
+    appointments?: import("../world/types.js").Appointment[];
     narrativeJson?: string;
   }) {
     const tx = this.db.transaction(() => {
       this.saveWorldState(params.tick, params.weather, params.narrativeJson);
+      // 全量覆盖约定：旧存档里已结算/删除的不应残留
+      this.db.exec("DELETE FROM appointments");
       for (const c of params.characters) this.saveCharacter(c);
       for (const r of params.relationships) {
         this.saveRelationship(r.characterA, r.characterB, r.level, r.type, r.lastInteraction, r.history, r.bond);
@@ -295,6 +366,9 @@ export class AnimaDB {
       }
       for (const ltm of params.longTermMemories ?? []) {
         this.saveLongTermMemory(ltm.characterId, ltm.tick, ltm.type, ltm.content, ltm.importance, ltm.relatedCharacterId);
+      }
+      for (const a of params.appointments ?? []) {
+        this.saveAppointment(a);
       }
     });
     tx();
