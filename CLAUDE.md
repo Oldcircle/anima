@@ -76,7 +76,7 @@ anima/
 ```bash
 pnpm dev              # 启动模拟 + Web 服务 (http://localhost:3001)
 pnpm build            # TypeScript 编译
-pnpm test             # 单元测试（~469 tests，几秒完成）
+pnpm test             # 单元测试（~485 tests，几秒完成）
 pnpm test:watch       # 开发时 watch 模式
 pnpm test:live        # Live 测试（需要 DEEPSEEK_API_KEY）
 pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
@@ -85,7 +85,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 ## 测试说明
 
 ### 单元测试（pnpm test）
-- ~469 个测试，44 个文件，不需要 API key（数字会随开发增长，以实际运行为准）
+- ~485 个测试，45 个文件，不需要 API key（数字会随开发增长，以实际运行为准）
 - 覆盖：时间系统、世界状态、需求衰减、关系、记忆、印象、对话追踪、观察推理、prompt 构建、约束检查、数据库、约定系统、晨间打算
 
 ### Live 测试（pnpm test:live）

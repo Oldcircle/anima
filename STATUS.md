@@ -5,6 +5,34 @@
 
 ## 当前状态（2026-07-03）
 
+### 可维护性 · runOneTick 拆分（2026-07-04，P1 上帝函数）
+
+`simulation.ts` 的 `runOneTick` 曾是 **519 行**单函数（tick 的全部 phase 挤在一起，任何改动都要在
+500 行里穿针）。做了一次**行为保持的结构化提取**（只改组织、不改执行顺序/逻辑），拆成 10 个按 phase
+命名的 private 方法：`_applyDailyEnvironment`（0/0b 天气节日开销）、`_applyClimateAndMoodlets`（1.0f）、
+`_rollRandomEvents`（1.5）、`_gatherAgentDecisions`（2 并行决策）、`_applyTalkEffects`（3）、
+`_runReactionRounds`（3.5 反应轮，最大一块 ~145 行）、`_scheduleImpressionUpdates`（3.6）、
+`_scheduleObservations`（3.7）、`_processGossip`（4）、`_runNightlyReflection`（4b 反思+晋升）。
+`runOneTick` 现在是 **75 行的编排器**，读起来就是一条 tick 的 phase 流水线。
+
+- **验证**：build 0 error + **485 单测全绿** + stress-sim（SmartMockLLM 多 tick）通过 → 行为未变
+- 下一个可维护性目标（未做）：`tool-builder.ts`（1069）、`agent-loop.ts`（1015）同类拆分，但没 simulation 急
+
+### 存档补齐 · 生活主线状态入档（2026-07-04，P0 正确性缺口）
+
+整体审阅发现的唯一功能正确性缺口：读档会丢掉整条「生活主线」。反思→晨间打算→约定→赴约是头号
+feature，但 save-load 从不保存这些状态 → reload 即蒸发。已补齐：
+
+- **新增持久化字段**：`characters` 表加 `today_plan_json` / `current_intent_json` / `inbox_json` 三列
+  + 新建 `appointments` 表（`database.ts`）；老库通过 `_migrate()` 用 `PRAGMA table_info` 探测后
+  `ALTER TABLE ADD COLUMN` 幂等补列，向后兼容（已用模拟老库验证：补列 + 建表 + 旧数据正常读出）
+- **World 新增 `restoreAppointments()`**：读档直接替换列表，跳过 `addAppointment` 的配额/替换校验
+- **save-load.ts**：saveGame 收集 todayPlan/currentIntent/inbox + `getAllAppointments()`；
+  loadGame 逐字段还原 + `restoreAppointments()`；saveAll 事务里全量覆盖 appointments（避免旧档残留）
+- **新增 `save-load.test.ts`**（2 测试）：真实 saveGame→loadGame 往返，断言四类状态完整还原 +
+  读档后约定仍可被 `getUpcomingAppointments` 检索到（结算链路依赖）。全套 **501 通过**、build 0 error
+- 未纳入（有意）：`wantToDiscuss`（director 工作态，narrative snapshot 另存）、`observableState`（瞬态痕迹）
+
 ### 世界系统深化 · 第 1 弹「气候系统」（2026-07-03，天气×四季做成真游戏系统）
 
 把原本纸面化的天气/四季（只有文字、无机制、无画面）升级成三位一体系统。审计结论：
@@ -122,8 +150,9 @@ P0~P4 主干完成（详见 [PLAN-game-frontend.md](./PLAN-game-frontend.md) 状
    - 记忆/念头时间戳跨天标注（"昨天23:00"），模型能分清昨晚和刚才
    - 生活节律：饭点提示（早/午/晚，肚子不满才触发，`need-definitions.ts`）+
      上班节律一句话进 system prompt（静态、缓存友好，`prompt-builder.ts formatLifeContext`）
-   - 已知未接线：`memory/temporal-decay.ts` 和 `memory/mmr.ts` 有实现有测试但零生产引用（死代码），
-     下次要么接进记忆检索要么删
+   - ~~已知未接线：`memory/temporal-decay.ts` 和 `memory/mmr.ts` 死代码~~ ✅ **2026-07-04 已删**
+     （零生产引用，纯函数带测试；接线是改 prompt 行为的活，需 live 半天模拟验证净收益，已单开任务，
+     代码可从 git 历史恢复）
    - 验证入口：`pnpm test:live`（sim-halfday），观察点 = 角色是否按饭点吃饭/是否记得昨天的反思/
      `[LLM cache]` 命中率日志
 7. **活人感第二批：半天模拟实测驱动（2026-07-03）**。第一轮 live 实测数据（275 次调用）：
@@ -157,7 +186,8 @@ P0~P4 主干完成（详见 [PLAN-game-frontend.md](./PLAN-game-frontend.md) 状
      共同活动（一起吃饭是两人分别 eat）——属于新系统设计，待立项
 9. **约定系统 v1（2026-07-03 实现，设计见 PLAN-appointments.md）**：
    - 数据：`Appointment` 存 World（`addAppointment`/`getUpcomingAppointments`/`getDueAppointments`，
-     同对角色新约替换旧约、每人最多 3 个 pending）；瞬态不持久化（同 intent 惯例，存档补齐待做）
+     同对角色新约替换旧约、每人最多 3 个 pending）；~~瞬态不持久化~~ ✅ **2026-07-04 已入档**
+     （见下方「存档补齐」）
    - 创建：`arrange_meet` 工具（tool-builder，附近有人时浮现），确定性时间解析
      （`world/appointments.ts parseAppointmentTime`：今天18:00/明天中午/18点半，过时自动滚明天），
      `_appointment` 后门落库 + inbox 通知对方

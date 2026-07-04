@@ -10,7 +10,7 @@
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522-43853d?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek%20%2F%20OpenAI%20compatible-7c3aed?style=for-the-badge)](#-llm-providers)
-[![Tests](https://img.shields.io/badge/tests-266%20passing-3fb950?style=for-the-badge)](src)
+[![Tests](https://img.shields.io/badge/tests-485%20passing-3fb950?style=for-the-badge)](src)
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -53,8 +53,11 @@ Run the simulation for an hour and you'll see things you didn't write.
 - **Five layers of "feeling alive"** — environmental atmosphere, impressions, layered inner monologue, conversation modes, and observational reasoning.
 - **Persistent inner monologue** — every LLM decision's thought is stored as memory. Ideas can carry across ticks.
 - **Living-state memory** — `currentIntent` keeps unfinished business alive (you wanted to reply to her, you haven't yet). `observableState` lets others see "she's holding a cooling latte and staring at nothing."
+- **A day with a throughline** — nightly reflection → next morning's intentions (1–3 loose "things I want to do today") → action → evening review. Life stops being pure need-reaction and gains a plot. Characters make and keep (or ghost) **appointments** with each other.
+- **A world with teeth** — a **climate system** (weather × season × time-of-day → felt temperature, with exposure draining needs so people seek shelter) and an **economy** (daily rent/upkeep, seasonal market prices, a "how many days can I last" money feeling) make survival actually matter.
+- **Two-layer narrative director** — a rule-based `BeatEngine` plus an agentic LLM `Director` (read tools → act → feedback loop) can seed topics and nudge drama without scripting the characters.
 - **Hot-reload** — edit a character or location in the UI and changes apply between ticks without breaking ongoing decisions.
-- **Storage** — SQLite for the world state, YAML for character cards and locations, JSON for LLM settings.
+- **Storage** — SQLite for the world state (characters, memory, impressions, appointments, morning plans all survive a reload), YAML for character cards and locations, JSON for LLM settings.
 
 ## 🖥️ The Admin Panel
 
@@ -66,6 +69,10 @@ A zero-build Preact + htm web UI ships in `web/`. Open it to:
 - **Settings** — pick from 12 OpenAI-compatible LLM providers (DeepSeek, OpenAI, OpenRouter, Groq, Mistral, Together, Fireworks, Moonshot, SiliconFlow, Ollama, …) with auto-fill endpoints and one-click model selection. Test connection before saving.
 
 Soft-disable everything (characters, locations) without losing the YAML — perfect for trying new casts.
+
+## 🕹️ The Game Frontend
+
+Beyond the admin panel, `godot/` is a **JRPG-style pixel viewer** (Godot 4.6, CC0 Ninja Adventure art) that consumes the same WebSocket feed: a hand-built seaside town with day/night lighting, **four-season reskin** + weather effects, indoor scenes, A* pathfinding, and HUD panels for townsfolk status (survival bars + gold), a relationship web, need alerts, and floating coins when money moves. It also carries the narrative-intervention menu (pass notes, spread gossip, inject events, advance the director). See `godot/README.md`.
 
 ## 🚀 Quick start
 
@@ -109,14 +116,14 @@ Configure in the **Settings** page — or set `DEEPSEEK_API_KEY` / `DEEPSEEK_BAS
 | **LLM** | OpenAI-compatible (DeepSeek default) |
 | **Storage** | SQLite (better-sqlite3) + YAML + JSON |
 | **Web** | Express 5 + WebSocket + Preact (CDN) + htm |
-| **Tests** | Vitest 4 — 266 passing |
+| **Tests** | Vitest 4 — 485 passing |
 
 ## 🧪 Commands
 
 ```bash
 pnpm dev              # Run simulation + admin panel  → :3001
 pnpm build            # tsc compile
-pnpm test             # 266 unit tests, no API key needed
+pnpm test             # 485 unit tests, no API key needed
 pnpm test:watch       # Watch mode
 pnpm test:live        # Live LLM tests (needs key)
 pnpm test:sim         # Multi-day simulation tests (needs key)
@@ -131,7 +138,7 @@ anima/
 │   ├── world/          # World state, locations, weather, relationships
 │   ├── character/      # Character card types & YAML loader
 │   ├── agent/          # Agent loop, prompt builder, conversation modes
-│   ├── memory/         # Short-term memory, impressions, time decay
+│   ├── memory/         # Short-term memory, impressions
 │   ├── actions/        # Action tools (talk/eat/work/go_to/...)
 │   ├── providers/      # LLM provider abstraction
 │   ├── persistence/    # SQLite save/load
