@@ -278,7 +278,75 @@ export class Simulation {
       observePulses(pulseStore, this.memory, gameTime.tick);
     }
 
-    // 0. 每天凌晨更新天气 + 检查节日
+    // 0/0b. 每日环境：天气 / 节日 / 生活开销
+    this._applyDailyEnvironment(gameTime);
+
+    // 1. 衰减需求 + Moodlet 管理
+    this.world.decayNeeds();
+    this.world.setTick(gameTime.tick);
+    // 1.0a 叙事张力（N2）：每 tick 末更新 tension_index
+    updateWorldTension(this.world);
+    // 1.0b BeatEngine 扫描（N3）：每 4 tick（每游戏小时）扫一次
+    // 原设计只在 22:00 扫，但有时间条件的 beat（如 hour >= 11）会被错过
+    if (gameTime.tick % 4 === 0) {
+      this.runBeatScan(gameTime);
+    }
+    // 1.0c LLM Director 日节奏检查（N4）：每天 06:00 一次
+    if (gameTime.hour === 6 && gameTime.minute === 0) {
+      this.runDailyPacingCheck(gameTime);
+    }
+    // 1.0d 约定结算：到点检查赴约/爽约，产生记忆/情绪/关系变化（在角色决策前，
+    // 让"被放鸽子"的记忆和情绪能进入本 tick 的 prompt）
+    this.resolveAppointments(gameTime);
+    // 1.0e 晨间打算：每天 06:00 各角色给自己定今天想做的 1-3 件事（fire-and-forget）
+    if (gameTime.hour === 6 && gameTime.minute === 0) {
+      this.runMorningPlans(gameTime);
+    }
+    // 1.0f 气候压力 + moodlet 管理 + 行为链检测
+    this._applyClimateAndMoodlets(gameTime);
+
+    // 1.5 随机事件
+    const triggeredEvents = this._rollRandomEvents(gameTime);
+
+    // 2. 并行决策所有未忙碌角色
+    const results = await this._gatherAgentDecisions(gameTime);
+
+    // 3. talk 产生的关系变化（共享关系）+ 记录对话（含 manner）
+    this._applyTalkEffects(results, gameTime);
+
+    // 3.5 反应轮：信箱有新消息的角色获得额外决策机会
+    await this._runReactionRounds(results, gameTime);
+
+    // 3.6 互动后印象更新（fire-and-forget）+ 清理过期对话
+    this._scheduleImpressionUpdates(results, gameTime);
+    this.conversations.cleanup(gameTime.tick);
+
+    // 3.7 社会观察推理（fire-and-forget）
+    this._scheduleObservations(gameTime);
+
+    // 4. 八卦传播
+    const gossips = this._processGossip(gameTime);
+
+    // 4b. 每天 23:00 反思 + 职业晋升
+    const reflections = await this._runNightlyReflection(gameTime);
+
+    const summary: TickSummary = {
+      tick: gameTime.tick, gameTime, results, reflections,
+      randomEvents: triggeredEvents.length > 0 ? triggeredEvents : undefined,
+      gossips: gossips.length > 0 ? gossips : undefined,
+    };
+
+    // 通知监听器
+    for (const listener of this._listeners) {
+      listener(summary);
+    }
+
+    return summary;
+  }
+
+  /** 0/0b. 每日环境：凌晨滚天气、早 8 点应用节日效果、早 7 点扣生活开销 */
+  private _applyDailyEnvironment(gameTime: GameTime): void {
+    // 0. 每天凌晨更新天气
     if (gameTime.hour === 0 && gameTime.minute === 0) {
       const newWeather = rollWeather(gameTime.season);
       this.world.setWeather(newWeather);
@@ -306,29 +374,10 @@ export class Simulation {
         applyDailyUpkeep(c, gameTime.tick, this.memory);
       }
     }
+  }
 
-    // 1. 衰减需求 + Moodlet 管理
-    this.world.decayNeeds();
-    this.world.setTick(gameTime.tick);
-    // 1.0a 叙事张力（N2）：每 tick 末更新 tension_index
-    updateWorldTension(this.world);
-    // 1.0b BeatEngine 扫描（N3）：每 4 tick（每游戏小时）扫一次
-    // 原设计只在 22:00 扫，但有时间条件的 beat（如 hour >= 11）会被错过
-    if (gameTime.tick % 4 === 0) {
-      this.runBeatScan(gameTime);
-    }
-    // 1.0c LLM Director 日节奏检查（N4）：每天 06:00 一次
-    if (gameTime.hour === 6 && gameTime.minute === 0) {
-      this.runDailyPacingCheck(gameTime);
-    }
-    // 1.0d 约定结算：到点检查赴约/爽约，产生记忆/情绪/关系变化（在角色决策前，
-    // 让"被放鸽子"的记忆和情绪能进入本 tick 的 prompt）
-    this.resolveAppointments(gameTime);
-    // 1.0e 晨间打算：每天 06:00 各角色给自己定今天想做的 1-3 件事（fire-and-forget）
-    if (gameTime.hour === 6 && gameTime.minute === 0) {
-      this.runMorningPlans(gameTime);
-    }
-    // 1.0f 气候压力：露天暴露在恶劣天气/极端温度 → 额外消耗 needs + moodlet（催人躲屋里）
+  /** 1.0f 气候压力（露天暴露耗 needs + moodlet）+ moodlet 生命周期 + 行为链后果涟漪 */
+  private _applyClimateAndMoodlets(gameTime: GameTime): void {
     const climateTemp = computeTemperature(gameTime.season, this.world.weather, gameTime.hour);
     for (const c of this.world.getAllCharacters()) {
       tickMoodlets(c, gameTime.tick);
@@ -346,8 +395,10 @@ export class Simulation {
         addMoodlet(c, m.emotion, m.intensity, m.reason, m.expiresAtTick - gameTime.tick, m.source, gameTime.tick);
       }
     }
+  }
 
-    // 1.5 随机事件
+  /** 1.5 随机事件：按时段/季节/天气掷事件，施加 needs 影响 + 写观察记忆 */
+  private _rollRandomEvents(gameTime: GameTime): Array<{ event: RandomEvent; affectedCharacters: string[] }> {
     const triggeredEvents: Array<{ event: RandomEvent; affectedCharacters: string[] }> = [];
     const randomEvents = rollRandomEvents({
       hour: gameTime.hour,
@@ -381,9 +432,11 @@ export class Simulation {
       }
       triggeredEvents.push({ event, affectedCharacters: affected });
     }
+    return triggeredEvents;
+  }
 
-    // 2. 并行决策所有未忙碌角色
-    const results: AgentTickResult[] = [];
+  /** 2. 并行决策所有未忙碌角色（活跃对话中的角色走 conversation 模式请求） */
+  private async _gatherAgentDecisions(gameTime: GameTime): Promise<AgentTickResult[]> {
     const promises: Promise<AgentTickResult>[] = [];
 
     for (const [id, config] of this._configs) {
@@ -442,10 +495,11 @@ export class Simulation {
       }));
     }
 
-    const agentResults = await Promise.all(promises);
-    results.push(...agentResults);
+    return await Promise.all(promises);
+  }
 
-    // 3. talk 产生的关系变化（共享关系）+ 记录对话（含 manner）
+  /** 3. talk 产生的关系变化（共享关系）+ 记录对话（含 manner）+ social moodlet */
+  private _applyTalkEffects(results: AgentTickResult[], gameTime: GameTime): void {
     for (const r of results) {
       if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
         const targetId = this._resolveCharacterId(r.action.args.target as string);
@@ -471,9 +525,13 @@ export class Simulation {
         }
       }
     }
+  }
 
-    // 3.5 反应轮：信箱有新消息的角色获得额外决策机会
-    // 限制：每 tick 最多 1 轮反应，每对角色每 tick 最多交换 2 次，对话后冷却 2 tick
+  /**
+   * 3.5 反应轮：信箱有新消息的角色获得额外决策机会（就地把反应结果追加进 results）。
+   * 限制：每 tick 最多 3 轮反应，每对角色每 tick 最多交换 2 次，对话后冷却 2 tick。
+   */
+  private async _runReactionRounds(results: AgentTickResult[], gameTime: GameTime): Promise<void> {
     const MAX_REACTION_ROUNDS = 3;
     const pairExchangeCount = new Map<string, number>();
     const pairKey = (a: string, b: string) => [a, b].sort().join(":");
@@ -620,9 +678,12 @@ export class Simulation {
       // 如果没有人回复 talk，停止反应轮
       if (!hasNewTalk) break;
     }
+  }
 
-    // 3.6 互动后印象更新：对有足够交流的角色对生成/更新叙事印象
-    // Fire-and-forget：不阻塞 tick 循环
+  /**
+   * 3.6 互动后印象更新：对有足够交流的角色对生成/更新叙事印象（fire-and-forget，不阻塞 tick）。
+   */
+  private _scheduleImpressionUpdates(results: AgentTickResult[], gameTime: GameTime): void {
     const impressionPromises: Promise<void>[] = [];
     const processedPairs = new Set<string>();
     for (const r of results) {
@@ -661,12 +722,12 @@ export class Simulation {
         console.warn(`[tick ${gameTime.tick}] 印象生成失败:`, err?.message ?? err);
       });
     }
+  }
 
-    // 清理过期对话
-    this.conversations.cleanup(gameTime.tick);
-
-    // 3.7 社会观察推理：空闲角色解读同地点其他人的行为
-    // Fire-and-forget，不阻塞 tick 循环
+  /**
+   * 3.7 社会观察推理：空闲角色解读同地点其他人的行为（fire-and-forget，不阻塞 tick）。
+   */
+  private _scheduleObservations(gameTime: GameTime): void {
     const observationPromises: Promise<void>[] = [];
     for (const [id, config] of this._configs) {
       const state = this.world.getCharacter(id);
@@ -716,73 +777,66 @@ export class Simulation {
         console.warn(`[tick ${gameTime.tick}] 观察推理失败:`, err?.message ?? err);
       });
     }
+  }
 
-    // 4. 八卦传播
+  /** 4. 八卦传播：同地点多人时把最近事件扩散成传闻记忆 */
+  private _processGossip(gameTime: GameTime): ReturnType<typeof processGossipSpread> {
     const locationCharMap = new Map<string, string[]>();
     for (const loc of this.world.getAllLocations()) {
       if (loc.presentCharacters.length > 1) {
         locationCharMap.set(loc.id, [...loc.presentCharacters]);
       }
     }
-    const gossips = processGossipSpread({
+    return processGossipSpread({
       recentEvents: this.eventBus.history.slice(-20),
       charactersAtLocation: locationCharMap,
       memory: this.memory,
       currentTick: gameTime.tick,
     });
+  }
 
-    // 4. 每天 23:00 触发反思
-    let reflections: ReflectionResult[] | undefined;
-    if (gameTime.hour === 23 && gameTime.minute === 0) {
-      const dayStartTick = gameTime.tick - 92; // 当天 00:00 起
-      reflections = [];
-      const reflectionPromises = Array.from(this._configs.values()).map((config) => {
-        const planState = this.world.getCharacter(config.card.id);
-        return runReflection({
-          card: config.card,
-          memory: this.memory,
-          relationships: this.relationships,
-          provider: this._provider,
-          modelId: config.modelId,
-          dayStartTick,
-          dayEndTick: gameTime.tick,
-          todayPlan: planState?.todayPlan?.day === gameTime.day ? planState.todayPlan.items : undefined,
-        });
+  /**
+   * 4b. 每天 23:00 触发反思：回写愿望/担忧 life state + 职业晋升检查。
+   * 非 23:00 返回 undefined。
+   */
+  private async _runNightlyReflection(gameTime: GameTime): Promise<ReflectionResult[] | undefined> {
+    if (!(gameTime.hour === 23 && gameTime.minute === 0)) return undefined;
+
+    const dayStartTick = gameTime.tick - 92; // 当天 00:00 起
+    const reflectionPromises = Array.from(this._configs.values()).map((config) => {
+      const planState = this.world.getCharacter(config.card.id);
+      return runReflection({
+        card: config.card,
+        memory: this.memory,
+        relationships: this.relationships,
+        provider: this._provider,
+        modelId: config.modelId,
+        dayStartTick,
+        dayEndTick: gameTime.tick,
+        todayPlan: planState?.todayPlan?.day === gameTime.day ? planState.todayPlan.items : undefined,
       });
-      reflections = await Promise.all(reflectionPromises);
+    });
+    const reflections = await Promise.all(reflectionPromises);
 
-      // 反思结果回写 life state（愿望/担忧）
-      for (const r of reflections) {
-        const charState = this.world.getCharacter(r.characterId);
-        if (charState?.life) {
-          if (r.wish) charState.life.currentGoal = r.wish;
-          if (r.concern) charState.life.currentConcern = r.concern;
-        }
-      }
-
-      // 职业晋升检查（每天反思时）
-      const allLocations = this.world.getAllLocations();
-      for (const charState of this.world.getAllCharacters()) {
-        const promotion = checkPromotion(charState, allLocations);
-        if (promotion) {
-          applyPromotion(charState, promotion, this.memory, gameTime.tick);
-          console.log(`🎉 [晋升] ${charState.name}: ${promotion.oldTitle} → ${promotion.newTitle}`);
-        }
+    // 反思结果回写 life state（愿望/担忧）
+    for (const r of reflections) {
+      const charState = this.world.getCharacter(r.characterId);
+      if (charState?.life) {
+        if (r.wish) charState.life.currentGoal = r.wish;
+        if (r.concern) charState.life.currentConcern = r.concern;
       }
     }
 
-    const summary: TickSummary = {
-      tick: gameTime.tick, gameTime, results, reflections,
-      randomEvents: triggeredEvents.length > 0 ? triggeredEvents : undefined,
-      gossips: gossips.length > 0 ? gossips : undefined,
-    };
-
-    // 通知监听器
-    for (const listener of this._listeners) {
-      listener(summary);
+    // 职业晋升检查（每天反思时）
+    const allLocations = this.world.getAllLocations();
+    for (const charState of this.world.getAllCharacters()) {
+      const promotion = checkPromotion(charState, allLocations);
+      if (promotion) {
+        applyPromotion(charState, promotion, this.memory, gameTime.tick);
+        console.log(`🎉 [晋升] ${charState.name}: ${promotion.oldTitle} → ${promotion.newTitle}`);
+      }
     }
-
-    return summary;
+    return reflections;
   }
 
   /** 运行 N 个 tick */
