@@ -166,11 +166,32 @@ function loadSeeds(scenariosRoot: string, scenarioId: string): ScenarioSeeds | u
   const raw = readFileSync(path, "utf-8");
   const parsed = parseYAML(raw) as Record<string, unknown> | null;
   if (!parsed) return undefined;
+  // ⚠️ 不能把 YAML 的 snake_case 对象直接 cast 成 camelCase 类型：
+  // 此前 visible_to 从未被读取 → applySeeds 的 `visibleTo ?? "*"` 兜底把**所有剧本秘密
+  // 泄漏给所有角色**（生产存档实测：配置 [asuka] 的私生子秘密落库成 "*"，
+  // 每个演员从第 1 tick 就读过全部剧本——戏剧反讽全毁）。逐字段显式映射。
   return {
     activePhase: typeof parsed.active_phase === "string" ? parsed.active_phase : undefined,
-    unresolvedEvents: Array.isArray(parsed.unresolved_events) ? (parsed.unresolved_events as ScenarioSeeds["unresolvedEvents"]) : undefined,
+    unresolvedEvents: Array.isArray(parsed.unresolved_events)
+      ? (parsed.unresolved_events as Array<Record<string, unknown>>).map((e) => ({
+          id: String(e.id ?? ""),
+          summary: String(e.summary ?? ""),
+          involved: Array.isArray(e.involved) ? (e.involved as string[]) : undefined,
+          visibleTo: e.visible_to === "*"
+            ? ("*" as const)
+            : Array.isArray(e.visible_to)
+              ? (e.visible_to as string[])
+              : undefined,
+        }))
+      : undefined,
     characterRelationships: Array.isArray(parsed.character_relationships) ? (parsed.character_relationships as ScenarioSeeds["characterRelationships"]) : undefined,
-    initialRumors: Array.isArray(parsed.initial_rumors) ? (parsed.initial_rumors as ScenarioSeeds["initialRumors"]) : undefined,
+    initialRumors: Array.isArray(parsed.initial_rumors)
+      ? (parsed.initial_rumors as Array<Record<string, unknown>>).map((r) => ({
+          content: String(r.content ?? ""),
+          sourceCharId: typeof r.source_char_id === "string" ? r.source_char_id : (typeof (r as any).sourceCharId === "string" ? (r as any).sourceCharId : undefined),
+          spreadTo: Array.isArray(r.spread_to) ? (r.spread_to as string[]) : (Array.isArray((r as any).spreadTo) ? ((r as any).spreadTo as string[]) : undefined),
+        }))
+      : undefined,
   };
 }
 

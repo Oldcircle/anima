@@ -121,6 +121,8 @@ export interface ConversationPromptParams {
   impressionText?: string;
   /** 角色最近记忆 */
   recentMemories?: string;
+  /** 你和对方之间实际发生过的事（长期记忆 + 关系史），防编造共同历史 */
+  sharedHistory?: string;
   /** D3: director 注入的"想聊的话题" */
   wantToDiscuss?: Array<{ topic: string; urgency: "low" | "med" | "high"; targetChar?: string }>;
 }
@@ -179,6 +181,14 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
   parts.push(bodyFeelings);
   if (moodletText) parts.push(moodletText);
   if (params.recentMemories) parts.push(`最近的经历：\n${params.recentMemories}`);
+
+  // 你们之间实际发生过的事（长期记忆 + 关系史）——真历史进对话，假"上周"出局
+  if (params.sharedHistory) {
+    parts.push(`\n## 你和${partnerCard.name}之间实际发生过的\n${params.sharedHistory}\n（可以自然地提起这些真实发生过的事。）`);
+  } else {
+    parts.push(`\n（你和${partnerCard.name}之间还没有什么值得一提的共同经历。）`);
+  }
+  parts.push(`⚠️ 不要编造上面没有列出的具体共同经历——不存在的"上周我们…"、"你每次都…"、"平时你总是…"。刚认识就是刚认识。`);
 
   // 随身物品（对话中可能会给对方东西）
   if (state.inventory && state.inventory.length > 0) {
@@ -282,6 +292,7 @@ export function buildConversationRequest(params: {
   relationship?: { level: number; type: string };
   impressionText?: string;
   recentMemories?: string;
+  sharedHistory?: string;
   actions: ActionDefinition[];
   workplaceName?: string;
   colleagueNames?: string[];
@@ -302,6 +313,7 @@ export function buildConversationRequest(params: {
     relationship: params.relationship,
     impressionText: params.impressionText,
     recentMemories: params.recentMemories,
+    sharedHistory: params.sharedHistory,
     wantToDiscuss: params.wantToDiscuss,
   });
 

@@ -9,6 +9,7 @@ import type { World } from "../world/world.js";
 import type { EventBus } from "../core/event-bus.js";
 import type { WorldEvent } from "../core/event-bus.js";
 import type { GameTime } from "../core/tick-engine.js";
+import { tickToGameTime } from "../core/tick-engine.js";
 import type { LLMProvider } from "../providers/types.js";
 import type { ActionDefinition } from "../actions/types.js";
 import { RelationshipManager } from "../world/relationships.js";
@@ -19,6 +20,7 @@ import { rollRandomEvents, type RandomEvent } from "../world/events.js";
 import { processGossipSpread, type GossipItem } from "../world/gossip.js";
 import { getTodayFestival, type Festival } from "../world/festivals.js";
 import { ShortTermMemory } from "../memory/short-term.js";
+import { LongTermMemoryStore, formatSharedHistory } from "../memory/long-term.js";
 import { runAgentTick, describeObservableAction, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest } from "./conversation-mode.js";
@@ -69,6 +71,7 @@ export class Simulation {
   eventBus: EventBus;
   relationships: RelationshipManager;
   memory: ShortTermMemory;
+  longTerm: LongTermMemoryStore;
   conversations: ConversationTracker;
   impressions: ImpressionStore;
   /** N3：规则导演 */
@@ -91,6 +94,7 @@ export class Simulation {
     this.eventBus = eventBus;
     this.relationships = new RelationshipManager();
     this.memory = new ShortTermMemory();
+    this.longTerm = new LongTermMemoryStore();
     this.conversations = new ConversationTracker();
     this.impressions = new ImpressionStore();
     this.beatEngine = new BeatEngine();
@@ -317,6 +321,9 @@ export class Simulation {
     // 3.5 反应轮：信箱有新消息的角色获得额外决策机会
     await this._runReactionRounds(results, gameTime);
 
+    // 3.55 冲突当刻晋升长期记忆：吵架/偷窃被抓不该 48 小时后蒸发
+    this._promoteConflictsToLongTerm(results, gameTime);
+
     // 3.6 互动后印象更新（fire-and-forget）+ 清理过期对话
     this._scheduleImpressionUpdates(results, gameTime);
     this.conversations.cleanup(gameTime.tick);
@@ -477,6 +484,7 @@ export class Simulation {
               .map((r) => this.world.getCharacter(r.otherId)?.name)
               .filter((n): n is string => !!n),
             wantToDiscuss: this.world.getWantToDiscuss(id, gameTime.tick, activePartnerId),
+            sharedHistory: this._sharedHistoryFor(id, activePartnerId, gameTime.tick),
           });
         }
       }
@@ -522,6 +530,56 @@ export class Simulation {
         const targetState = this.world.getCharacter(targetId);
         if (targetState) {
           addMoodlet(targetState, "happy", 1, "有人找我说话", 8, "social", gameTime.tick);
+        }
+      }
+    }
+  }
+
+  /**
+   * 3.55 冲突当刻晋升长期记忆：argue / steal 被抓这类"有重量的事"直接写入 LTM（双方视角），
+   * 之后对话时会作为"你们之间实际发生过的"注入——上周的架不会像没吵过一样。
+   */
+  private _promoteConflictsToLongTerm(results: AgentTickResult[], gameTime: GameTime): void {
+    for (const r of results) {
+      if (r.result?.success === false || !r.action) continue;
+      const targetRaw = r.action.args.target as string | undefined;
+
+      if (r.action.name === "argue" && targetRaw) {
+        const targetId = this._resolveCharacterId(targetRaw);
+        const actorName = this.world.getCharacter(r.characterId)?.name ?? r.characterId;
+        const targetName = this.world.getCharacter(targetId)?.name ?? targetId;
+        const reason = (r.action.args.reason as string | undefined) ?? "";
+        this.longTerm.add(r.characterId, {
+          tick: gameTime.tick, type: "event", importance: 8,
+          content: `你和${targetName}大吵了一架${reason ? `（${reason}）` : ""}`,
+          relatedCharacterId: targetId,
+        });
+        this.longTerm.add(targetId, {
+          tick: gameTime.tick, type: "event", importance: 8,
+          content: `${actorName}当面冲你发了火${reason ? `（${reason}）` : ""}`,
+          relatedCharacterId: r.characterId,
+        });
+      }
+
+      if (r.action.name === "steal" && r.result?.description?.includes("抓住")) {
+        // 被抓的偷窃：受害者在 description 里（"伸手去摸XX的钱袋"）
+        const m = r.result.description.match(/伸手去摸(.+?)的钱袋/);
+        const victimName = m?.[1];
+        const victim = victimName
+          ? this.world.getAllCharacters().find((c) => c.name === victimName)
+          : undefined;
+        const actorName = this.world.getCharacter(r.characterId)?.name ?? r.characterId;
+        this.longTerm.add(r.characterId, {
+          tick: gameTime.tick, type: "event", importance: 9,
+          content: `你偷${victimName ?? "别人"}的东西被当场抓住了`,
+          relatedCharacterId: victim?.id,
+        });
+        if (victim) {
+          this.longTerm.add(victim.id, {
+            tick: gameTime.tick, type: "event", importance: 9,
+            content: `你抓到${actorName}偷你的东西`,
+            relatedCharacterId: r.characterId,
+          });
         }
       }
     }
@@ -610,6 +668,7 @@ export class Simulation {
                 .map((r) => this.world.getCharacter(r.otherId)?.name)
                 .filter((n): n is string => !!n),
               wantToDiscuss: this.world.getWantToDiscuss(id, gameTime.tick, partnerId),
+              sharedHistory: this._sharedHistoryFor(id, partnerId, gameTime.tick),
             });
             r = await runAgentTick({
               config,
@@ -818,12 +877,30 @@ export class Simulation {
     });
     const reflections = await Promise.all(reflectionPromises);
 
-    // 反思结果回写 life state（愿望/担忧）
+    // 反思结果回写 life state（愿望/担忧）+ lastReflection（晨间打算直接读它）+ 长期记忆
     for (const r of reflections) {
       const charState = this.world.getCharacter(r.characterId);
       if (charState?.life) {
         if (r.wish) charState.life.currentGoal = r.wish;
         if (r.concern) charState.life.currentConcern = r.concern;
+      }
+      if (charState) {
+        charState.lastReflection = {
+          day: gameTime.day,
+          insights: r.insights,
+          mood: r.mood,
+          wish: r.wish,
+          concern: r.concern,
+        };
+      }
+      // 反思在发生当刻进入长期记忆——人生从此有跨越 48 小时的传记
+      for (const insight of r.insights) {
+        this.longTerm.add(r.characterId, {
+          tick: gameTime.tick,
+          type: "reflection",
+          content: `[反思] ${insight}`,
+          importance: 9,
+        });
       }
     }
 
@@ -849,6 +926,25 @@ export class Simulation {
       summaries.push(summary);
     }
     return summaries;
+  }
+
+  /**
+   * 组装对话 prompt 的"你们之间实际发生过的"段：
+   * 长期记忆里关于对方的条目 + 关系史最近几条。没有共同历史时返回 undefined（刚认识就是刚认识）。
+   */
+  private _sharedHistoryFor(id: string, partnerId: string, currentTick: number): string | undefined {
+    const formatTime = (tick: number): string => {
+      const gt = tickToGameTime(tick);
+      const hhmm = `${String(gt.hour).padStart(2, "0")}:${String(gt.minute).padStart(2, "0")}`;
+      const dayDiff = tickToGameTime(currentTick).day - gt.day;
+      if (dayDiff <= 0) return hhmm;
+      return dayDiff === 1 ? `昨天${hhmm}` : `${dayDiff}天前${hhmm}`;
+    };
+    return formatSharedHistory({
+      longTermAbout: this.longTerm.getAbout(id, partnerId, 4),
+      relationHistory: this.relationships.get(id, partnerId).history,
+      formatTime,
+    });
   }
 
   /** 把 LLM 返回的 target（可能是 ID 或名字）解析为角色 ID */
@@ -1123,6 +1219,11 @@ export class Simulation {
             relatedCharacterId: other.id,
           });
           addMoodlet(me, "happy", 3, "赴约见到了人", 12, "social", gameTime.tick);
+          this.longTerm.add(me.id, {
+            tick: gameTime.tick, type: "event", importance: 7,
+            content: `你和${other.name}如约在${locName}碰了面`,
+            relatedCharacterId: other.id,
+          });
         }
         console.log(`📅 [约定] 兑现: ${a.proposerId} ↔ ${a.targetId} @ ${locName}`);
         continue;
@@ -1168,6 +1269,17 @@ export class Simulation {
           createdTick: gameTime.tick,
           expiresAt: gameTime.tick + 8,
         });
+        // 爽约进长期记忆——"她上次放过我鸽子"从此可以被真实引用
+        this.longTerm.add(waiter.id, {
+          tick: gameTime.tick, type: "event", importance: 8,
+          content: `${absentee.name}放了你鸽子（说好在${locName}见面，人没来）`,
+          relatedCharacterId: absentee.id,
+        });
+        this.longTerm.add(absentee.id, {
+          tick: gameTime.tick, type: "event", importance: 8,
+          content: `你放了${waiter.name}的鸽子（约在${locName}，你没去）`,
+          relatedCharacterId: waiter.id,
+        });
         console.log(`📅 [约定] 爽约: ${absentee.id} 放了 ${waiter.id} 鸽子 @ ${locName}`);
       } else {
         for (const [me, other] of [[proposer, target], [target, proposer]] as const) {
@@ -1204,18 +1316,20 @@ export class Simulation {
           const locName = this.world.getLocation(a.locationId)?.name ?? a.locationId;
           return `${describeAppointmentTime(a.atTick, gameTime.tick)}在${locName}和${otherName}见面`;
         });
-      const insights = this.memory.getRecentThoughts(id, 6)
-        .filter((t) => t.content.startsWith("[反思]"))
-        .map((t) => t.content.replace(/^\[反思\]\s*/, ""));
+      // 直接读昨晚反思的完整结果（state.lastReflection），
+      // 不再靠 getRecentThoughts 字符串匹配碰运气（记忆被挤出就断链）
+      const lastRef = state.lastReflection && gameTime.day - state.lastReflection.day <= 1
+        ? state.lastReflection
+        : undefined;
 
       const task = generateMorningPlan({
         card: config.card,
         state,
         provider: this._provider,
         modelId: config.modelId,
-        yesterdayWish: state.life?.currentGoal,
-        yesterdayConcern: state.life?.currentConcern,
-        yesterdayInsights: insights,
+        yesterdayWish: lastRef?.wish ?? state.life?.currentGoal,
+        yesterdayConcern: lastRef?.concern ?? state.life?.currentConcern,
+        yesterdayInsights: lastRef?.insights ?? [],
         todayAppointments,
         weather: this.world.weather,
         workplaceName: wpName,

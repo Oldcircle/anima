@@ -110,11 +110,12 @@ export async function runReflection(params: {
       }
     }
 
-    // 存入记忆（高 importance）
+    // 存入记忆（高 importance）。用独立的 reflection 类型：
+    // thought 会被 formatForPrompt 过滤（已单独成段），反思必须进主记忆流参与检索重排
     for (const insight of insights) {
       memory.add(card.id, {
         tick: params.dayEndTick,
-        type: "thought",
+        type: "reflection",
         content: `[反思] ${insight}`,
         importance: 9,
       });
@@ -124,7 +125,7 @@ export async function runReflection(params: {
     if (wish) {
       memory.add(card.id, {
         tick: params.dayEndTick,
-        type: "thought",
+        type: "reflection",
         content: `[愿望] ${wish}`,
         importance: 7,
       });

@@ -126,7 +126,7 @@ if (directorEnabled) {
 // --- 尝试读档 ---
 let startTick = 23;
 if (existsSync(SAVE_FILE)) {
-  const loaded = loadGame(simulation, SAVE_FILE);
+  const loaded = loadGame(simulation, SAVE_FILE, SCENARIO_ID);
   if (loaded) {
     startTick = world.tick - 1; // tick 会在第一次执行时 +1
   }
@@ -149,7 +149,7 @@ const engine = new TickEngine({
 
     // 自动存档（每游戏日）
     if (tick % AUTO_SAVE_INTERVAL === 0) {
-      try { saveGame(simulation, SAVE_FILE); } catch (e) { console.error("存档失败:", e); }
+      try { saveGame(simulation, SAVE_FILE, SCENARIO_ID); } catch (e) { console.error("存档失败:", e); }
     }
   },
 });
@@ -157,7 +157,7 @@ const engine = new TickEngine({
 // 退出时存档
 process.on("SIGINT", () => {
   console.log("\n正在保存...");
-  try { saveGame(simulation, SAVE_FILE); } catch {}
+  try { saveGame(simulation, SAVE_FILE, SCENARIO_ID); } catch {}
   engine.stop();
   process.exit(0);
 });
