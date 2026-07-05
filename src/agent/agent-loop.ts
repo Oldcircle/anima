@@ -21,6 +21,7 @@ import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
 import { buildToolList, type ToolBuildContext } from "./tool-builder.js";
 import { narrateAction } from "../memory/memory-narrator.js";
 import { applySocialModifier } from "./social-modifier.js";
+import { addMoodlet, type MoodletEmotion } from "../world/moodlets.js";
 import { applyNarrativeTags, extractTagsFromArgs, hasAnyTags } from "../narrative/tag-applier.js";
 import { v4 as uuid } from "uuid";
 
@@ -577,6 +578,27 @@ async function executeAction(
           state.life.skills[effect.skill] = Math.min(10, current + effect.delta);
         }
         break;
+      case "relationship_change":
+        if (relationships && effect.delta !== undefined) {
+          const otherId = resolveCharacterId(world, effect.targetId);
+          relationships.modify(card.id, otherId, effect.delta, gameTime.tick, truncateLine(result.description, 40));
+        }
+        break;
+      case "moodlet": {
+        const targetState = world.getCharacter(resolveCharacterId(world, effect.targetId));
+        if (targetState && effect.emotion && effect.reason) {
+          addMoodlet(
+            targetState,
+            effect.emotion as MoodletEmotion,
+            effect.intensity ?? 3,
+            effect.reason,
+            effect.durationTicks ?? 8,
+            "social",
+            gameTime.tick,
+          );
+        }
+        break;
+      }
     }
   }
 
@@ -615,6 +637,15 @@ async function executeAction(
     const stolenAmount = (result as any)._stolenAmount;
     if (typeof stolenAmount === "number") {
       state.gold += stolenAmount;
+      // 偷的是具体的人：钱真的从受害者身上转移（守恒），不再凭空铸币
+      const victimId = (result as any)._stealVictimId;
+      if (typeof victimId === "string") {
+        const victim = world.getCharacter(victimId);
+        if (victim) {
+          const actualLoss = Math.min(victim.gold, stolenAmount);
+          victim.gold -= actualLoss;
+        }
+      }
     }
   } else if (toolCall.name === "beg") {
     const begAmount = (result as any)._begAmount;

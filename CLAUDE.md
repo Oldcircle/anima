@@ -126,6 +126,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 ## 活跃文档
 
 - [STATUS.md](./STATUS.md) — **会话交接文档**（当前进度 + 下次入口 + 跨会话教训），进项目先读这个
+- [AUDIT-aliveness-20260704.md](./AUDIT-aliveness-20260704.md) — **活人感全面体检报告**（93 条验证后发现：6 个实锤 bug + 六大结构性根因 + quick wins/deep work 修复路线），「过家家感」问题以此为准
 - [PLAN-appointments.md](./PLAN-appointments.md) — 约定系统（arrange_meet 工具 + 到点结算赴约/爽约 + 记挂/愧疚钩子），2026-07-03 实现
 - [PLAN-tool-feedback.md](./PLAN-tool-feedback.md) — Tool Feedback Loop 改造（✅ 已实施，保留作设计依据）
 - [PLAN-game-frontend.md](./PLAN-game-frontend.md) — Godot 游戏前端（日式 RPG 像素小镇）。P0~P4 全部完成 + 行为可视化（对话凑近/送礼飞道具）+ mygo 剧本适配（2026-07-03，live 回归通过）；运行见 godot/README.md

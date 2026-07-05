@@ -5,6 +5,23 @@
 
 ## 当前状态（2026-07-03）
 
+### 活人感全面体检（2026-07-04，诊断完成，修复未开工）
+
+用户反馈「太假了，像过家家」→ 23-agent 多路审计 + 独立取证，93 条发现经对抗验证存活，
+完整报告见 **[AUDIT-aliveness-20260704.md](./AUDIT-aliveness-20260704.md)**（含全部 file:line 证据与修复排序）。
+
+**六个实锤 bug（修复入口，均小时级~天级）**：
+1. `agent-loop.ts:549` 效果 switch 缺 `relationship_change` case → argue -15/偷窃被抓 -20/送礼 +5 全是哑弹，关系数学上只能上涨（"全员好人"的机制根源）
+2. `tool-builder.ts:574` argue/comfort 不发 inbox → 被吵的一方无感知、不能还嘴、不留记忆、无 angry moodlet
+3. `scenario-loader.ts:171` seeds 的 `visible_to` 丢失 + `simulation.ts:961` 兜底 `"*"` → 剧本秘密全员泄漏（save.db 已验证）
+4. `database.ts saveAll` memories/LTM 裸 INSERT 无覆盖 → 存档记忆重复堆积（实测短期 74%/长期 86% 重复）；且存档无 scenario 标识 → default 续了 last-ferry 的污染档
+5. `short-term.ts:171` 过滤 thought 类型 → importance-9 反思对检索重排不可见；LTM 检索 API 全仓库零调用 → 48 小时记忆气泡
+6. 语义重复拦截器 = 对话断头台（不看内容、每人 3 句必杀、丢台词代写 thought）
+
+**下一步**：按 AUDIT §4 quick wins 顺序修（1-2 天），然后 §5 deep work 依次立项
+（冲突负反馈 → 语言→状态编译 → 长期记忆演化 → 职业经济闭环 → 跨日 Project → 对话场景化）。
+修复前先跑一次当前阵容的 seven-day 建长线回归基线。
+
 ### 记忆检索接入 · 重要性×时间衰减 + MMR 多样性重排（2026-07-04，活人感优化）
 
 注入 prompt 的记忆此前是**纯 recency**（`short-term.ts formatForPrompt` 取最近 N 条），importance 只参与

@@ -178,7 +178,7 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     tools.push(buildBegTool());
   }
   if (ctx.gold === 0 && (ctx.state.needs.hunger ?? 100) < 20) {
-    tools.push(buildStealTool());
+    tools.push(buildStealTool(ctx));
   }
 
   // 5. Phase-specific 工具 (N6.4)：仅在 active_phase 在剧本白名单中时浮现
@@ -429,8 +429,10 @@ function buildTalkTool(ctx: ToolBuildContext, _talkableCharacters: Array<{ id: s
       const target = args.target as string;
       const message = args.message as string;
       const manner = args.manner as string | undefined;
-      if (!ctx.nearbyCharacters.some((c) => c.id === target)) {
-        return { description: `想和${target}说话，但对方不在这里`, effects: [], success: false };
+      // 用执行时的在场名单校验（actx），不是决策开始时的快照（ctx）——
+      // 并行决策下对方可能同 tick 已离开，旧校验会让角色对着空气说话还留下记忆
+      if (!actx.nearbyCharacters.includes(target)) {
+        return { description: `想和${target}说话，但对方已经不在这里了`, effects: [], success: false };
       }
       const mannerText = manner ? `${manner}，` : "";
       return {
@@ -534,13 +536,19 @@ function buildComfortTool(ctx: ToolBuildContext): ActionDefinition {
       if (!actx.nearbyCharacters.includes(target)) {
         return { description: `想安慰${target}，但对方不在这里`, effects: [], success: false };
       }
+      const words = (args.words as string | undefined)?.trim() || "一切都会好起来的";
+      const selfName = ctx.card.name;
       return {
-        description: `安慰${target}：${args.words ?? "一切都会好起来的"}`,
+        description: `安慰${target}：${words}`,
         effects: [
           { type: "need_change", targetId: target, field: "social", delta: 10 },
           { type: "need_change", targetId: actx.characterId, field: "social", delta: 8 },
           { type: "need_change", targetId: actx.characterId, field: "energy", delta: -5 },
           { type: "need_change", targetId: actx.characterId, field: "fun", delta: -5 },
+          // 被安慰的人要听到安慰的话（能回应），并记得这份好意
+          { type: "inbox_message", targetId: target, fromName: selfName, message: `（放轻了声音）${words}` },
+          { type: "relationship_change", targetId: target, delta: 3 },
+          { type: "moodlet", targetId: target, emotion: "grateful", intensity: 3, reason: `${selfName}安慰了自己`, durationTicks: 10 },
         ],
         duration: 2,
         observableState: `正压低声音安慰${nearbyDisplayName(ctx, target)}，语气放得很轻。`,
@@ -562,6 +570,7 @@ function buildArgueTool(ctx: ToolBuildContext): ActionDefinition {
           thought: { type: "string", description: "你在想什么" },
           target: { type: "string", description: nearbyNames(ctx) },
           reason: { type: "string", description: "吵架的原因" },
+          words: { type: "string", description: "你吵架时说出口的话（对方会听到并可能还嘴）" },
         },
         required: ["target", "reason"],
       },
@@ -571,14 +580,22 @@ function buildArgueTool(ctx: ToolBuildContext): ActionDefinition {
       if (!actx.nearbyCharacters.includes(target)) {
         return { description: `想和${target}吵架，但对方不在`, effects: [], success: false };
       }
+      const reason = args.reason as string;
+      const words = (args.words as string | undefined)?.trim() || reason;
+      const selfName = ctx.card.name;
       return {
-        description: `和${target}吵了起来：${args.reason}`,
+        description: `和${target}吵了起来：${reason}`,
         effects: [
           { type: "need_change", targetId: actx.characterId, field: "fun", delta: 5 },
           { type: "need_change", targetId: target, field: "fun", delta: -15 },
           { type: "need_change", targetId: actx.characterId, field: "energy", delta: -8 },
           { type: "need_change", targetId: actx.characterId, field: "social", delta: 3 },
           { type: "relationship_change", targetId: target, delta: -15 },
+          // 对方必须知道自己被吵了：进 inbox（触发反应轮，能还嘴）
+          { type: "inbox_message", targetId: target, fromName: selfName, message: `（语气冲）${words}` },
+          // 双方情绪都被点燃，吵完不会立刻烟消云散
+          { type: "moodlet", targetId: target, emotion: "angry", intensity: 4, reason: `被${selfName}当面呛了一顿`, durationTicks: 12 },
+          { type: "moodlet", targetId: actx.characterId, emotion: "angry", intensity: 3, reason: `和人吵了一架，火气还没消`, durationTicks: 8 },
         ],
         duration: 2,
         observableState: `和${nearbyDisplayName(ctx, target)}之间的气氛一下绷紧了。`,
@@ -617,11 +634,11 @@ function buildBegTool(): ActionDefinition {
   };
 }
 
-function buildStealTool(): ActionDefinition {
+function buildStealTool(ctx: ToolBuildContext): ActionDefinition {
   return {
     tool: {
       name: "steal",
-      description: "偷东西。你饿到不行了。可能会被抓。",
+      description: "偷东西。你饿到不行了。可能会被抓——被抓到的话，对方不会轻易忘记。",
       parameters: {
         type: "object",
         properties: {
@@ -632,20 +649,45 @@ function buildStealTool(): ActionDefinition {
     handler: (_args, actx): ActionResult => {
       const amount = 20 + Math.floor(Math.random() * 21);
       const caught = Math.random() < 0.4;
+      // 附近有人时偷的是具体的人（真实转移），没人时偷店里的东西
+      const victims = actx.nearbyCharacters;
+      const victimId = victims.length > 0 ? victims[Math.floor(Math.random() * victims.length)]! : undefined;
+      const selfName = ctx.card.name;
       if (caught) {
+        if (victimId) {
+          const victimName = nearbyDisplayName(ctx, victimId);
+          // 被抓是"发生了的事"不是约束失败：后果必须真实落地
+          return {
+            description: `伸手去摸${victimName}的钱袋，被当场抓住了！`,
+            effects: [
+              { type: "relationship_change", targetId: victimId, delta: -20 },
+              { type: "inbox_message", targetId: victimId, fromName: selfName, message: `（你抓住了${selfName}正在偷你东西的手）` },
+              { type: "moodlet", targetId: victimId, emotion: "angry", intensity: 5, reason: `抓到${selfName}偷自己的东西`, durationTicks: 24 },
+              { type: "moodlet", targetId: actx.characterId, emotion: "embarrassed", intensity: 5, reason: "偷东西被当场抓住，没脸见人", durationTicks: 24 },
+            ],
+            duration: 1,
+            observableState: "被人抓住手腕，脸涨得通红——刚才想偷东西被逮个正着。",
+          };
+        }
         return {
-          description: `偷东西被当场抓住了！`,
-          effects: [],
-          success: false,
+          description: `想顺手拿点东西，被店里的人发现赶了出来`,
+          effects: [
+            { type: "moodlet", targetId: actx.characterId, emotion: "embarrassed", intensity: 4, reason: "偷东西被发现赶出来", durationTicks: 16 },
+          ],
+          duration: 1,
+          observableState: "灰头土脸地从店里出来，身后有人在骂。",
         };
       }
       return {
-        description: `悄悄拿走了 ${amount} 金币的东西`,
+        description: victimId
+          ? `趁人不注意，从${nearbyDisplayName(ctx, victimId)}那里摸走了 ${amount} 金币`
+          : `悄悄拿走了 ${amount} 金币的东西`,
         effects: [],
         duration: 1,
         observableState: "动作有些心虚，像是刚做了不想让人知道的事。",
         _stolenAmount: amount,
-      } as ActionResult & { _stolenAmount: number };
+        _stealVictimId: victimId,
+      } as ActionResult & { _stolenAmount: number; _stealVictimId?: string };
     },
   };
 }
