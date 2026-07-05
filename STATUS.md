@@ -3,9 +3,27 @@
 > 每次有实质进展时更新。记录当前进度和下次继续的入口，不是日志。
 > （旧 STATUS.md 因 gitignore 未入仓而丢失，本文件 2026-07-03 重建，开发文档已全部入仓）
 
-## 当前状态（2026-07-03）
+## 当前状态（2026-07-05）
 
-### 活人感全面体检（2026-07-04，诊断完成，修复未开工）
+### 活人感全面修复（2026-07-05，`fix/aliveness-emergence` 分支 7 commits，待合 main）
+
+按 AUDIT-aliveness-20260704.md 做的全面修复 + 4 台涌现引擎，全套 **545 单测绿**，
+live 半天模拟已验证质变（`logs/sim-halfday-20260705-*.md`：涌现出共同吃饭/结伴出门/
+劳动产出流转/困了自己散场，约束失败 0）。经 8-agent 对抗审查（27 条发现）修掉全部确认级问题。
+
+**修复主线（7 commits，每个 commit message 有完整清单）**：
+1. `b06e12e` 反馈回路：relationship_change/moodlet 效果生效、argue/comfort 可感知（inbox+angry moodlet）、steal 真转移、幽灵对话修复
+2. `b00a8b5` 记忆连续性 + 持久化：反思独立类型+锚点进检索池、**LongTermMemoryStore 运行时写入**（反思/冲突/约定结算当刻落 LTM）+ 对话注入「你们之间实际发生过的」+ 防编造历史；seeds visible_to 泄漏修复、saveAll 全量覆盖（重复堆积修复）、存档 scenario 护栏
+3. `44f2a35` 对话表达：断头台改 Jaccard 真重复判定+长对话收尾意图（台词不再丢）、低精力压进对话（"回话必须短可以失礼"）、rival 敌意许可、traitReminder 节流、反思必答"最不顺的事"、narrator 去糖
+4. `58adcbd` 世界机制：openHours 生效（打烊真打烊）、**力竭昏睡**（energy≤3 当场睡着+被目击）、删占位 beats、导演恢复 do_nothing（涌现放大器定位）
+5. `9b53b07` **四台涌现引擎**：①印象"态度"±3→关系（对话内容第一次有机制分量）②对话结束承诺抽取自动落 appointment ③积怨状态机（argue 结疙瘩/见面空气僵/道歉限肇事方/3 天淡化/随档）④prepare 产出进货架+库存卖完+skill_up（晋升复活）
+6. `8b4e6db` 存档按剧本归属（save-<scenario>.db 防覆盖）+ 道歉解疙瘩只认肇事方
+7. `d50771f` 审查修复：力竭乒乓、valence 水位线（同批台词不重复计分）、反应轮 grudge 冻结、steal 守恒、承诺时间基准、库存超卖复检、LTM 注入去重、补货规则（杂货店毒化修复）、argue 边际递减、库存随档
+
+**下次入口**：①跑 `pnpm test:sim` seven-day 建长线基线（关系下降对数/约定兑现数/D1vsD7 行为散度/grudge-和解链）②观察涌现引擎 7 天表现（valence 通胀？约定误报率？）③deep work 剩余项见 AUDIT §5（群聊/tick 解耦/命运事件层/多日 Project/aspiration 落地）
+**注意**：用户旧 data/save.db 是被 last-ferry 污染的档（含重复记忆），建议删掉重开；新档自带 scenario 标识
+
+### 活人感全面体检（2026-07-04，诊断完成 → 已按上节修复）
 
 用户反馈「太假了，像过家家」→ 23-agent 多路审计 + 独立取证，93 条发现经对抗验证存活，
 完整报告见 **[AUDIT-aliveness-20260704.md](./AUDIT-aliveness-20260704.md)**（含全部 file:line 证据与修复排序）。
