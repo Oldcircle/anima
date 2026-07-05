@@ -43,7 +43,7 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **运行时**：Node.js 24 + TypeScript 5.9
 - **LLM**：DeepSeek（默认），支持 OpenAI 兼容端点
 - **存储**：SQLite（世界状态 + 记忆 + 印象 + 长期记忆）
-- **前端**：① `web/` 管理面板（单 HTML + WebSocket）② `godot/` 游戏化观看前端（Godot 4.6，同一条 WS，日式 RPG 像素小镇 + 昼夜氛围 + **四季换装** + 天气特效，美术 = Ninja Adventure CC0；HUD 面板：**Tab 镇民状态名册**（生存血条+金币）、**R 关系网**、生存告警徽章、头顶飘金币、叙事干预、调速；见 godot/README.md）
+- **前端**：① `web/` 管理面板（单 HTML + WebSocket）② `godot/` 游戏化观看前端（Godot 4.6，同一条 WS，日式 RPG 像素小镇 + 昼夜氛围 + **四季换装** + 天气特效，美术 = Ninja Adventure CC0；HUD 面板：**Tab 镇民状态名册**（生存血条+金币）、**R 关系网**、**L 生活记录**（对话/内心/行为/反思/流言时间线）、生存告警徽章、头顶飘金币、叙事干预、调速；**角色走路（跨室内外走门淡出过渡）+ 场景内自动闲逛**，不再瞬移；见 godot/README.md）
 - **测试**：Vitest 4（单元 / live / 模拟测试）
 
 ## 目录结构
