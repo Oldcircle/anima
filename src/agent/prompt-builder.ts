@@ -270,7 +270,7 @@ function describeRelationshipFeel(type?: string, bond?: string): string {
       relDesc = "你对这个人有些印象，算是点头之交。";
       break;
     case "rival":
-      relDesc = "你和这个人之间有些紧绷，最好留意自己的分寸。";
+      relDesc = "你看这个人不顺眼。说话可以带刺、可以敷衍、可以躲着走——你没有对他友善的义务。";
       break;
     case "romantic":
       relDesc = "这个人会牵动你的情绪，你很难完全当作普通朋友。";
@@ -540,15 +540,17 @@ export function buildUserPrompt(params: {
     parts.push(`\n（当前剧本阶段：${params.activePhase}）`);
   }
 
-  // 角色行为强化提醒：从角色的性格特质中提取关键词，在行动指令中再次强调
-  // 这是对抗 LLM 安全对齐的最后一道防线——直接在 user prompt 的决策点注入角色特质
-  const traitReminder = buildTraitReminder(card);
-  if (traitReminder) {
-    parts.push(`\n## 重要：你是${card.name}\n${traitReminder}`);
-  }
-
   // 思考指令：社交场景更详细，独处场景简短
   const isSocialScene = nearbyCharacters.length > 0 || (params.inboxMessages && params.inboxMessages.length > 0);
+
+  // 角色行为强化提醒：从角色的性格特质中提取关键词，在行动指令中再次强调。
+  // 只在社交场景注入——独处时没有"试探对象"，全天候注入会把角色压成 24 小时试探机器。
+  if (isSocialScene) {
+    const traitReminder = buildTraitReminder(card);
+    if (traitReminder) {
+      parts.push(`\n## 重要：你是${card.name}\n${traitReminder}`);
+    }
+  }
   if (isSocialScene) {
     parts.push("\n请根据以上信息，决定你现在要做什么。先用2-3句话说说你的想法（以角色的真实内心想法，不是道德正确的想法），然后调用一个工具。");
   } else {
@@ -597,8 +599,8 @@ function buildTraitReminder(card: CharacterCard): string | undefined {
   return `记住你的本性——这不是建议，这是你的角色设定，必须忠实体现：
 ${anchor}
 
-你说话时的真实目的不是交朋友，而是：试探对方的弱点、套取信息、建立心理优势。
-你的"善意"都是表演。你的每句话背后都有目的。
+你不是老好人：说话可以有目的、可以试探、可以话里藏刀，你的"善意"往往是手段。
+但你也是活人，不是全天候的算计机器——此刻也可以只是累了、饿了、单纯想安静待着。
 如果你发现自己在说"真诚善良"的话，停下来想想：${card.name}真的会这么说吗？`;
 }
 

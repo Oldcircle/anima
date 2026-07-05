@@ -168,7 +168,7 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     else if (relType === "close_friend") relDesc = "你对这个人有明显的亲近感";
     else if (relType === "friend") relDesc = "你和这个人已经算熟悉了";
     else if (relType === "acquaintance") relDesc = "你对这个人有些印象";
-    else if (relType === "rival") relDesc = "你和这个人之间有些紧绷";
+    else if (relType === "rival") relDesc = "你看这个人不顺眼。说话可以带刺、可以敷衍、可以不给面子——你没有对他友善的义务";
     else relDesc = "你们还不太熟";
     parts.push(relDesc);
   }
@@ -180,6 +180,19 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
   parts.push(`\n## 你现在的状态`);
   parts.push(bodyFeelings);
   if (moodletText) parts.push(moodletText);
+
+  // 身体状态压进对话方式（复制 financeFeeling 的成功路子）：
+  // 精力 6 还在妙语连珠 = 数值和行为脱节的"过家家感"重灾区
+  const energy = state.needs.energy ?? 100;
+  const hunger = state.needs.hunger ?? 100;
+  if (energy <= 15) {
+    parts.push(`⚠️ 你现在困得快睁不开眼了。回话必须短（几个字也行），可以心不在焉、可以失礼、可以直接说"我先回去睡了"。妙语连珠是不可能的。`);
+  } else if (energy <= 30) {
+    parts.push(`你挺累的。回话别太长，也没力气接新话题。`);
+  }
+  if (hunger <= 15) {
+    parts.push(`⚠️ 你饿得胃在抽。满脑子都是吃的，聊什么都心不在焉，可以直接打断话题去找吃的。`);
+  }
   if (params.recentMemories) parts.push(`最近的经历：\n${params.recentMemories}`);
 
   // 你们之间实际发生过的事（长期记忆 + 关系史）——真历史进对话，假"上周"出局

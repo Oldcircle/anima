@@ -22,6 +22,7 @@ import { buildToolList, type ToolBuildContext } from "./tool-builder.js";
 import { narrateAction } from "../memory/memory-narrator.js";
 import { applySocialModifier } from "./social-modifier.js";
 import { addMoodlet, type MoodletEmotion } from "../world/moodlets.js";
+import { textSimilarity } from "../memory/mmr.js";
 import { applyNarrativeTags, extractTagsFromArgs, hasAnyTags } from "../narrative/tag-applier.js";
 import { v4 as uuid } from "uuid";
 
@@ -280,9 +281,11 @@ export async function runAgentTick(params: {
   const toolCall = response.toolCalls[0]!;
   const availableNames = dynamicActions.map(a => a.tool.name);
   console.log(`[${card.id}] 工具=${toolCall.name} | 可用=${availableNames.join(",")}`);
-  // 重复拦截 (Bug #4 + semantic repeat fix):
-  // 1. 字面重复：和最近说过的话一模一样
-  // 2. 语义重复：连续 3+ 次 talk 同一人（即使措辞不同，说明对话已陷入循环）
+  // 重复拦截（断头台改造版）：
+  // 旧版"连续 3 次 talk 同一人就强制换行为"不看内容、精确杀死所有深聊于每人 3 句，
+  // 第 4 句台词被静默丢弃 + 代写 thought + 传送回家——对话的断头台。
+  // 新版：只拦"真的在重复"（字面重复 / Jaccard 语义相似），长对话（6+ 句）只注入
+  // 收尾意图让角色自己自然道别，台词照说不丢。
   if (toolCall.name === "talk" && params.memory) {
     const newMessage = (toolCall.arguments.message as string ?? "").trim();
     const newTarget = (toolCall.arguments.target as string ?? "").trim();
@@ -290,23 +293,36 @@ export async function runAgentTick(params: {
       const recent = params.memory.getRecent(card.id, 12);
       let isRepeat = false;
 
-      // 检查 1：字面重复（前 60 字相同）
-      for (let i = recent.length - 1; i >= 0; i--) {
+      // 自己最近对同一人说过的话（用于字面/语义重复判定）
+      const recentOwnLines: string[] = [];
+      for (let i = recent.length - 1; i >= 0 && recentOwnLines.length < 3; i--) {
         const e = recent[i]!;
         if (e.type !== "event" || e.relatedCharacterId !== newTarget) continue;
         const m = e.content.match(/^对.+?说：「(.+?)」$/);
-        if (m && m[1]) {
-          const oldHead = m[1].slice(0, 60);
-          const newHead = newMessage.slice(0, 60);
-          if (oldHead === newHead) {
+        if (m && m[1]) recentOwnLines.push(m[1]);
+      }
+
+      // 检查 1：字面重复（前 60 字相同）
+      for (const oldLine of recentOwnLines) {
+        if (oldLine.slice(0, 60) === newMessage.slice(0, 60)) {
+          isRepeat = true;
+          console.warn(`[${card.id}] ⚠️ 字面重复拦截: 对 ${newTarget}「${newMessage.slice(0, 30)}…」`);
+          break;
+        }
+      }
+
+      // 检查 2：真·语义重复（Jaccard 相似度高 = 换了措辞在说同一句话）
+      if (!isRepeat) {
+        for (const oldLine of recentOwnLines) {
+          if (textSimilarity(oldLine, newMessage) > 0.6) {
             isRepeat = true;
-            console.warn(`[${card.id}] ⚠️ 字面重复拦截: 对 ${newTarget}「${newHead.slice(0, 30)}…」`);
+            console.warn(`[${card.id}] ⚠️ 语义重复拦截: 对 ${newTarget} 换措辞说同一句话（相似度>0.6）`);
             break;
           }
         }
       }
 
-      // 检查 2：连续 talk 同一人 3+ 次（语义重复，对话卡住了）
+      // 检查 3：长对话不拦，注入收尾意图——说完这句自己找个由头收尾
       if (!isRepeat) {
         let consecutive = 0;
         for (let i = recent.length - 1; i >= 0; i--) {
@@ -318,19 +334,29 @@ export async function runAgentTick(params: {
             break; // 中间有其他行为，打断计数
           }
         }
-        if (consecutive >= 3) {
-          isRepeat = true;
-          console.warn(`[${card.id}] ⚠️ 语义重复拦截: 已连续 ${consecutive} 次 talk ${newTarget}，强制换行为`);
+        if (consecutive >= 6) {
+          world.setIntent(card.id, {
+            kind: "plan",
+            source: "action",
+            targetId: newTarget,
+            summary: "这场对话聊得够久了。说完手头这句，找个自然的由头收尾（道别/回去干活/换个事做），别再开新话题。",
+            createdTick: gameTime.tick,
+            expiresAt: gameTime.tick + 2,
+          });
+          console.log(`[${card.id}] 💬 长对话收尾提示: 已连续 ${consecutive} 句 → 注入自然道别意图（台词照说）`);
         }
       }
 
       if (isRepeat) {
-        const fallback = dynamicActions.find((a) => ["go_to", "sit", "stroll", "journal", "use_toilet"].includes(a.tool.name));
+        // 真重复才拦。优先原地做点别的（do_nothing/sit/journal），
+        // 不再默认 go_to 家的"传送惩罚"；thought 保留模型原话，不代写。
+        const fallback = dynamicActions.find((a) => ["do_nothing", "sit", "journal", "stroll", "use_toilet"].includes(a.tool.name))
+          ?? dynamicActions.find((a) => a.tool.name === "go_to");
         if (fallback) {
           toolCall.name = fallback.tool.name;
-          toolCall.arguments = fallback.tool.name === "go_to" ? { location: "家", thought: "聊得差不多了，该做点别的了" } : {};
+          toolCall.arguments = fallback.tool.name === "go_to" ? { location: "家" } : {};
         } else {
-          return { characterId: card.id, thought: thought + "（觉得这个话题已经聊完了，决定先做点别的）", skipped: true, skipReason: "semantic_talk_repeat" };
+          return { characterId: card.id, thought, skipped: true, skipReason: "semantic_talk_repeat" };
         }
       }
     }
