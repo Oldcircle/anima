@@ -648,7 +648,12 @@ export class Simulation {
         const rel = this.relationships.get(r.characterId, targetId);
         if (rel.grudge) {
           const message = (r.action.args.message as string | undefined) ?? (r.action.args.words as string | undefined) ?? "";
-          const isApology = r.action.name !== "talk" || /对不起|抱歉|是我不对|我道歉|别生气|不该那样/.test(message);
+          // 道歉性 talk 只认肇事方（受害者的习惯性"对不起"不构成和解——真嗣的口癖不该替对方免责）；
+          // comfort/give 是主动示好动作，哪边做都算递了台阶
+          const isInstigator = rel.grudge.instigatorId === r.characterId;
+          const isApology = r.action.name !== "talk"
+            ? true
+            : isInstigator && /对不起|抱歉|是我不对|我道歉|别生气|不该那样/.test(message);
           if (isApology) {
             this.relationships.clearGrudge(r.characterId, targetId);
             this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, "把话说开了");

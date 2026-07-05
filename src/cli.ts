@@ -23,7 +23,6 @@ import { addToInventory } from "./world/item-registry.js";
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const PROJECT_ROOT = join(import.meta.dirname, "..");
 const DATA_DIR = join(PROJECT_ROOT, "data");
-const SAVE_FILE = join(DATA_DIR, "save.db");
 const AUTO_SAVE_INTERVAL = 96; // 每游戏日自动存档
 
 // --- 解析 --scenario 参数 ---
@@ -35,6 +34,20 @@ function parseScenarioArg(argv: string[]): string {
   return process.env.ANIMA_SCENARIO ?? "default";
 }
 const SCENARIO_ID = parseScenarioArg(process.argv.slice(2));
+
+// --- 存档文件按剧本归属 ---
+// data/save.db 属于"它里面存的那个剧本"（老档无标识时视为当前剧本，向后兼容）；
+// 剧本不匹配时改用 data/save-<scenario>.db，绝不让新世界的自动存档覆盖别的剧本的档。
+import { peekSaveScenario } from "./persistence/save-load.js";
+function resolveSaveFile(): string {
+  const legacy = join(DATA_DIR, "save.db");
+  const saved = peekSaveScenario(legacy);
+  if (saved === null || saved === undefined || saved === SCENARIO_ID) return legacy;
+  const scoped = join(DATA_DIR, `save-${SCENARIO_ID}.db`);
+  console.log(`📂 data/save.db 属于剧本 ${saved}，当前剧本 ${SCENARIO_ID} 改用 ${scoped}`);
+  return scoped;
+}
+const SAVE_FILE = resolveSaveFile();
 
 // --- 加载 Scenario（角色 + 地点） ---
 const scenario = loadScenario(SCENARIO_ID, { projectRoot: PROJECT_ROOT });

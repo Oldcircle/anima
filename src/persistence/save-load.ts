@@ -8,6 +8,25 @@ import type { World } from "../world/world.js";
 import type { EventBus, WorldEvent } from "../core/event-bus.js";
 import type { Weather } from "../world/types.js";
 
+/**
+ * 轻量探针：只读出存档里的 scenario 标识（不加载世界）。
+ * cli 用它决定存档文件归属，防止"剧本不匹配拒载后，新世界自动存档覆盖旧档"的数据丢失回路。
+ */
+export function peekSaveScenario(dbPath: string): string | undefined | null {
+  try {
+    const db = new AnimaDB(dbPath);
+    try {
+      const ws = db.loadWorldState();
+      if (!ws) return null; // 空档
+      return ws.scenarioId; // undefined = 老档没有标识
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
 /** 保存当前世界状态到 SQLite */
 export function saveGame(sim: Simulation, dbPath: string, scenarioId?: string): void {
   const db = new AnimaDB(dbPath);
