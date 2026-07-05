@@ -57,8 +57,9 @@ describe("impression-updater", () => {
     });
 
     expect(impression).not.toBeNull();
-    expect(impression!.summary.length).toBeGreaterThan(0);
-    expect(impression!.mentalLabel.length).toBeGreaterThan(0);
+    expect(impression!.impression.summary.length).toBeGreaterThan(0);
+    expect(impression!.impression.mentalLabel.length).toBeGreaterThan(0);
+    expect(impression!.valence).toBe(0);
   });
 
   it("模型调用失败时也会保留最低限度的印象连续性", async () => {
@@ -79,6 +80,6 @@ describe("impression-updater", () => {
     });
 
     expect(impression).not.toBeNull();
-    expect(impression!.summary).toContain("要乐奏");
+    expect(impression!.impression.summary).toContain("要乐奏");
   });
 });

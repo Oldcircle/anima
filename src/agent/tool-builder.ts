@@ -96,7 +96,8 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     });
     const shopFood = !locOpen ? [] : (ctx.location.shop ?? []).filter(s => {
       const def = getItemDef(s.id);
-      return def && def.effects && def.type === "consumable" && ctx.gold >= s.price;
+      const hasStock = ctx.location.stock?.[s.id] === undefined || ctx.location.stock[s.id]! > 0;
+      return def && def.effects && def.type === "consumable" && ctx.gold >= s.price && hasStock;
     });
     if (bagFood.length > 0 || shopFood.length > 0) {
       tools.push(buildEatTool(bagFood, shopFood, ctx));
@@ -777,15 +778,21 @@ function buildPrepareTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefini
       if (!shopItem) {
         return { description: `不知道怎么做${rawItem}`, effects: [], success: false };
       }
+      const effects: ActionResult["effects"] = [
+        { type: "need_change", targetId: actx.characterId, field: "energy", delta: -2 },
+      ];
+      // 劳动出技能：40-80 次真实劳动升一级，晋升系统从死路复活
+      if (actx.workSkill) {
+        effects.push({ type: "skill_up", targetId: actx.characterId, skill: actx.workSkill, delta: 0.05 });
+      }
       return {
-        description: `做了一份${shopItem.name}`,
-        effects: [
-          { type: "need_change", targetId: actx.characterId, field: "energy", delta: -2 },
-        ],
+        description: `做了一份${shopItem.name}，摆上了货架`,
+        effects,
         duration: 1,
         observableState: `正在做一份${shopItem.name}，动作熟练得像条件反射。`,
-        _buyItem: { defId: shopItem.id, price: 0 }, // 员工免费
-      } as ActionResult & { _buyItem: { defId: string; price: number } };
+        // 产出进店铺货架（早晨烤的面包别人真能买到），不再无中生有进自己口袋
+        _stockItem: { defId: shopItem.id },
+      } as ActionResult & { _stockItem: { defId: string } };
     },
   };
 }
@@ -795,9 +802,11 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
   const season = ctx.season ?? "spring";
   const priceOf = (s: ShopItem) => effectivePrice(s.price, s.id, season);
 
-  // 只列出买得起的物品
-  const affordable = shop.filter(s => ctx.gold >= priceOf(s));
+  // 只列出买得起且有货的物品（追踪库存的店卖一件少一件，卖完就是卖完）
+  const inStock = (s: ShopItem) => ctx.location.stock?.[s.id] === undefined || ctx.location.stock[s.id]! > 0;
+  const affordable = shop.filter(s => ctx.gold >= priceOf(s) && inStock(s));
   if (affordable.length === 0) return null;
+  const soldOut = shop.filter(s => !inStock(s)).map(s => s.name);
 
   const itemList = affordable.map(s => {
     const def = getItemDef(s.id);
@@ -810,7 +819,7 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
   return {
     tool: {
       name: "buy",
-      description: `买东西带走。店里有：${itemList}`,
+      description: `买东西带走。店里有：${itemList}${soldOut.length > 0 ? `。（${soldOut.join("、")}已经卖完了）` : ""}`,
       parameters: {
         type: "object",
         properties: {
@@ -1105,12 +1114,16 @@ function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefin
       },
     },
     handler: (_args, actx): ActionResult => {
-      const effects = Object.entries(lt.effects).map(([field, delta]) => ({
+      const effects: ActionResult["effects"] = Object.entries(lt.effects).map(([field, delta]) => ({
         type: "need_change" as const,
         targetId: actx.characterId,
         field,
         delta,
       }));
+      // 员工工具（带 income 的）附带技能成长——工作不再是无成长的哑剧
+      if (lt.income && actx.workSkill) {
+        effects.push({ type: "skill_up", targetId: actx.characterId, skill: actx.workSkill, delta: 0.05 });
+      }
       const result: ActionResult & { _cost?: number; _workerIncome?: number } = {
         description: lt.description.replace(/（.*?）/, ""),
         effects,

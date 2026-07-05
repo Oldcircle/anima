@@ -30,7 +30,13 @@ export interface ImpressionUpdateParams {
  * 为一个角色生成/更新对另一个角色的印象。
  * 返回新的 CharacterImpression，调用者负责存入 ImpressionStore。
  */
-export async function generateImpression(params: ImpressionUpdateParams): Promise<CharacterImpression | null> {
+export interface ImpressionWithValence {
+  impression: CharacterImpression;
+  /** 这次互动带来的好感增量（-3..+3），对话内容第一次对关系有真实分量 */
+  valence: number;
+}
+
+export async function generateImpression(params: ImpressionUpdateParams): Promise<ImpressionWithValence | null> {
   const { observerCard, targetCard, exchanges, existingImpression, provider, modelId, tick } = params;
 
   if (exchanges.length === 0) return null;
@@ -57,6 +63,7 @@ ${observerCard.personality.coreTraits ?? observerCard.personality.traits.join("�
 总结：（一句话概括对方给你的整体印象）
 观察：（这次互动中你注意到的 1-2 个细节，用分号隔开）
 标签：（你心中给对方的一个标签，2-4个字）
+态度：（-3 到 +3 的整数。这次互动后你对TA的好感变化：被冒犯/被敷衍/失望给负数，被打动/被帮到给正数，平平常常就是 0。别客气——真觉得不舒服就给负数）
 疑惑：（如果有的话，对方让你好奇或不解的地方，没有就写"无"）`;
 
   const user = `${existingCtx}
@@ -72,11 +79,23 @@ ${dialogueLines}
       modelId,
     );
 
-    return parseImpressionResponse(response.content, targetCard.id, tick)
-      ?? buildFallbackImpression(targetCard.id, targetCard.name, exchanges, existingImpression, tick);
+    const parsed = parseImpressionResponse(response.content, targetCard.id, tick);
+    if (parsed) {
+      return { impression: parsed, valence: parseValence(response.content) };
+    }
+    return { impression: buildFallbackImpression(targetCard.id, targetCard.name, exchanges, existingImpression, tick), valence: 0 };
   } catch {
-    return buildFallbackImpression(targetCard.id, targetCard.name, exchanges, existingImpression, tick);
+    return { impression: buildFallbackImpression(targetCard.id, targetCard.name, exchanges, existingImpression, tick), valence: 0 };
   }
+}
+
+/** 解析"态度: -3..+3"行；解析失败按 0（不动关系） */
+function parseValence(text: string): number {
+  const m = text.match(/态度[:：]\s*([+-]?\d+)/);
+  if (!m) return 0;
+  const v = parseInt(m[1]!, 10);
+  if (Number.isNaN(v)) return 0;
+  return Math.max(-3, Math.min(3, v));
 }
 
 /** 解析 LLM 返回的印象文本 */
@@ -189,6 +208,8 @@ export async function updateImpressionsBidirectional(params: {
   provider: LLMProvider;
   modelId: string;
   tick: number;
+  /** 传入时把双方"态度"增量落到关系上（对话内容不再对机制透明） */
+  relationships?: import("../world/relationships.js").RelationshipManager;
 }): Promise<void> {
   const { cardA, cardB, exchanges, impressions, provider, modelId, tick } = params;
 
@@ -210,6 +231,21 @@ export async function updateImpressionsBidirectional(params: {
     }),
   ]);
 
-  if (impAtoB) impressions.merge(cardA.id, impAtoB);
-  if (impBtoA) impressions.merge(cardB.id, impBtoA);
+  if (impAtoB) impressions.merge(cardA.id, impAtoB.impression);
+  if (impBtoA) impressions.merge(cardB.id, impBtoA.impression);
+
+  // 态度落地：双方 valence 求和作用于（对称的）关系值。
+  // 辱骂性的"聊天"从此是净负资产：flat +1 压不过 -3 的态度。
+  if (params.relationships && (impAtoB || impBtoA)) {
+    const total = (impAtoB?.valence ?? 0) + (impBtoA?.valence ?? 0);
+    if (total !== 0) {
+      const summary = total <= -2
+        ? `${cardA.name}和${cardB.name}这次谈话不欢而散`
+        : total >= 2
+          ? `${cardA.name}和${cardB.name}聊得很投缘`
+          : undefined;
+      params.relationships.modify(cardA.id, cardB.id, total, tick, summary);
+      console.log(`💗 [态度] ${cardA.id}↔${cardB.id} 对话 valence ${total > 0 ? "+" : ""}${total}`);
+    }
+  }
 }

@@ -165,13 +165,17 @@ export function loadGame(sim: Simulation, dbPath: string, scenarioId?: string): 
     const savedAppointments = db.loadAppointments();
     sim.world.restoreAppointments(savedAppointments);
 
-    // 恢复关系
+    // 恢复关系（含关系史和未解开的疙瘩）
     const savedRels = db.loadRelationships();
     for (const r of savedRels) {
       sim.relationships.set(r.charA, r.charB, r.level, r.type as any);
       if (r.bond) {
         sim.relationships.setBond(r.charA, r.charB, r.bond as any, 0);
       }
+      const rel = sim.relationships.get(r.charA, r.charB);
+      rel.history = r.history ?? [];
+      rel.lastInteraction = r.lastInteraction ?? 0;
+      if (r.grudge) rel.grudge = r.grudge;
     }
 
     // 恢复记忆

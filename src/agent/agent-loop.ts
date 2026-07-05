@@ -105,7 +105,11 @@ export async function runAgentTick(params: {
       const observable = world.getObservableState(c.id, gameTime.tick);
       const currentAction = observable?.summary
         ?? (c.currentAction ? describeObservableAction(c.name, c.currentAction.name) : undefined);
-      return { id: c.id, name: c.name, gender: c.gender, relationship: rel ? { level: rel.level, type: rel.type, bond: rel.bond } : undefined, currentAction };
+      return {
+        id: c.id, name: c.name, gender: c.gender,
+        relationship: rel ? { level: rel.level, type: rel.type, bond: rel.bond, grudge: rel.grudge } : undefined,
+        currentAction,
+      };
     });
 
   const recentEvents = eventBus.query({ actorId: card.id, limit: 5 });
@@ -680,11 +684,22 @@ async function executeAction(
     }
   }
 
+  // 库存效果：员工 prepare 的产出进店铺货架（劳动第一次留下能被别人买到的东西）
+  const stockItem = (result as any)?._stockItem;
+  if (stockItem && typeof stockItem === "object" && location) {
+    location.stock = location.stock ?? {};
+    location.stock[stockItem.defId] = Math.min(8, (location.stock[stockItem.defId] ?? 0) + 1);
+  }
+
   // 物品效果
   const buyItem = (result as any)?._buyItem;
   const eatImmediate = (result as any)?._eatImmediate;
   if (buyItem && typeof buyItem === "object") {
     state.gold = Math.max(0, state.gold - buyItem.price);
+    // 卖一件少一件（只对追踪库存的店生效）
+    if (location?.stock && location.stock[buyItem.defId] !== undefined) {
+      location.stock[buyItem.defId] = Math.max(0, location.stock[buyItem.defId]! - 1);
+    }
     if (!eatImmediate) {
       // 普通购买：物品入背包
       const { addToInventory } = await import("../world/item-registry.js");

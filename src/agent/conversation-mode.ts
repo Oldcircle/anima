@@ -88,6 +88,22 @@ export class ConversationTracker {
     }
   }
 
+  /**
+   * 找出即将过期（本 tick 会被 cleanup 清掉）的对话——这是"对话结束"的时刻，
+   * 承诺抽取在这里触发（对话完整、且只触发一次）。
+   */
+  getEndingConversations(currentTick: number): Array<{ charA: string; charB: string; history: ConversationExchange[] }> {
+    const out: Array<{ charA: string; charB: string; history: ConversationExchange[] }> = [];
+    for (const [key, lastTick] of this._lastTick) {
+      if (currentTick - lastTick > 8) {
+        const [a, b] = key.split(":") as [string, string];
+        const history = this._exchanges.get(key) ?? [];
+        if (history.length > 0) out.push({ charA: a, charB: b, history: [...history] });
+      }
+    }
+    return out;
+  }
+
   /** 对话结束时清除记录 */
   clear(charA: string, charB: string): void {
     const key = this._pairKey(charA, charB);
@@ -116,7 +132,7 @@ export interface ConversationPromptParams {
   /** 天气 */
   weather?: Weather;
   /** 关系信息 */
-  relationship?: { level: number; type: string };
+  relationship?: { level: number; type: string; grudge?: { reason: string; instigatorId: string; sinceTick: number } };
   /** 已有的印象 */
   impressionText?: string;
   /** 角色最近记忆 */
@@ -202,6 +218,13 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     parts.push(`\n（你和${partnerCard.name}之间还没有什么值得一提的共同经历。）`);
   }
   parts.push(`⚠️ 不要编造上面没有列出的具体共同经历——不存在的"上周我们…"、"你每次都…"、"平时你总是…"。刚认识就是刚认识。`);
+
+  // 未解开的疙瘩：对话的底色是僵的
+  if (params.relationship?.grudge) {
+    const g = params.relationship.grudge;
+    const mine = g.instigatorId === card.id;
+    parts.push(`\n⚡ 你和${partnerCard.name}之间有没解开的疙瘩（${g.reason}）。${mine ? "是你先发的火。想和好就得先低头（道歉/递个台阶），装没事人只会更僵。" : "对方冲你发过火还没道歉。你可以冷淡、敷衍、阴阳怪气，或者等一句道歉——不必假装热络。"}`);
+  }
 
   // 随身物品（对话中可能会给对方东西）
   if (state.inventory && state.inventory.length > 0) {
@@ -302,7 +325,7 @@ export function buildConversationRequest(params: {
   locationName: string;
   atmosphere?: LocationAtmosphere;
   weather?: Weather;
-  relationship?: { level: number; type: string };
+  relationship?: { level: number; type: string; grudge?: { reason: string; instigatorId: string; sinceTick: number } };
   impressionText?: string;
   recentMemories?: string;
   sharedHistory?: string;

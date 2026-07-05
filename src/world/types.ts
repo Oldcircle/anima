@@ -39,6 +39,8 @@ export interface Location {
   summary?: string;
   /** 开放时间（小时），null = 24 小时开放 */
   openHours?: { open: number; close: number } | null;
+  /** 店铺库存（劳动产出闭环）：undefined=不追踪（无限），有员工的店每日重置+prepare 增补，卖一件少一件 */
+  stock?: Record<string, number>;
   /** 当前在此地点的角色 ID */
   presentCharacters: string[];
   /** 感官描述（按时段/天气） */

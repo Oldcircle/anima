@@ -60,6 +60,7 @@ export class AnimaDB {
         bond TEXT,
         last_interaction INTEGER DEFAULT 0,
         history TEXT DEFAULT '[]',
+        grudge_json TEXT,
         PRIMARY KEY (char_a, char_b)
       );
 
@@ -129,6 +130,13 @@ export class AnimaDB {
     addColumn("current_intent_json", "TEXT");
     addColumn("inbox_json", "TEXT");
     addColumn("last_reflection_json", "TEXT");
+
+    const relCols = new Set(
+      (this.db.prepare("PRAGMA table_info(relationships)").all() as Array<{ name: string }>).map((r) => r.name),
+    );
+    if (!relCols.has("grudge_json")) {
+      this.db.exec("ALTER TABLE relationships ADD COLUMN grudge_json TEXT");
+    }
   }
 
   // --- 世界状态 ---
@@ -236,20 +244,21 @@ export class AnimaDB {
 
   // --- 关系 ---
 
-  saveRelationship(a: string, b: string, level: number, type: string, lastInteraction: number, history: string[], bond?: string) {
+  saveRelationship(a: string, b: string, level: number, type: string, lastInteraction: number, history: string[], bond?: string, grudge?: { reason: string; instigatorId: string; sinceTick: number }) {
     const [charA, charB] = a < b ? [a, b] : [b, a];
     this.db.prepare(`
-      INSERT OR REPLACE INTO relationships (char_a, char_b, level, type, bond, last_interaction, history)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(charA, charB, level, type, bond ?? null, lastInteraction, JSON.stringify(history));
+      INSERT OR REPLACE INTO relationships (char_a, char_b, level, type, bond, last_interaction, history, grudge_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(charA, charB, level, type, bond ?? null, lastInteraction, JSON.stringify(history), grudge ? JSON.stringify(grudge) : null);
   }
 
-  loadRelationships(): Array<{ charA: string; charB: string; level: number; type: string; bond?: string; lastInteraction: number; history: string[] }> {
+  loadRelationships(): Array<{ charA: string; charB: string; level: number; type: string; bond?: string; lastInteraction: number; history: string[]; grudge?: { reason: string; instigatorId: string; sinceTick: number } }> {
     const rows = this.db.prepare("SELECT * FROM relationships").all() as any[];
     return rows.map((r) => ({
       charA: r.char_a, charB: r.char_b, level: r.level, type: r.type,
       bond: r.bond ?? undefined,
       lastInteraction: r.last_interaction, history: JSON.parse(r.history),
+      grudge: r.grudge_json ? JSON.parse(r.grudge_json) : undefined,
     }));
   }
 
@@ -368,7 +377,7 @@ export class AnimaDB {
       this.db.exec("DELETE FROM long_term_memories");
       for (const c of params.characters) this.saveCharacter(c);
       for (const r of params.relationships) {
-        this.saveRelationship(r.characterA, r.characterB, r.level, r.type, r.lastInteraction, r.history, r.bond);
+        this.saveRelationship(r.characterA, r.characterB, r.level, r.type, r.lastInteraction, r.history, r.bond, r.grudge);
       }
       for (const m of params.memories) {
         this.saveMemory(m.characterId, m.tick, m.type, m.content, m.importance);

@@ -289,7 +289,7 @@ export function buildUserPrompt(params: {
     id: string;
     name: string;
     gender?: string;
-    relationship?: { level: number; type: string; bond?: string };
+    relationship?: { level: number; type: string; bond?: string; grudge?: { reason: string; instigatorId: string; sinceTick: number } };
     /** 当前可观察到的状态 */
     currentAction?: string;
   }>;
@@ -369,6 +369,15 @@ export function buildUserPrompt(params: {
     }).join("\n");
     parts.push(`\n## 你现在看见了谁\n${visiblePeople}`);
     parts.push("你只能根据对方此刻的表情、动作、语气和过往记忆来判断他们，不要把猜测当成事实。");
+
+    // 未解开的疙瘩：见面时的空气是僵的
+    for (const c of nearbyCharacters) {
+      if (c.relationship?.grudge) {
+        const g = c.relationship.grudge;
+        const mine = g.instigatorId === card.id;
+        parts.push(`⚡ 你和${c.name}之间还有没解开的疙瘩（${g.reason}）。${mine ? "是你先发的火——要不要找机会把话说开，还是装没事，随你。" : "对方冲你发过火，这事你还记着。可以冷着、可以呛回去、也可以等对方先低头。"}见面的空气是僵的，别演成没事人。`);
+      }
+    }
 
     const hasAnyImpression = params.impressions && nearbyCharacters.some((c) =>
       params.impressions!.get(card.id, c.id),

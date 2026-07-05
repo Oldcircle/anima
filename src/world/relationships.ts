@@ -16,6 +16,12 @@ export interface Relationship {
   bond?: BondType;
   history: string[];    // 关键事件摘要
   lastInteraction: number; // 上次互动的 tick
+  /**
+   * 未解开的疙瘩（积怨状态机）：吵完架不是下一 tick 就忘。
+   * 存在期间：见面时注入"你们上次不欢而散"、talk 的 flat 好感被冻结；
+   * 道歉/安慰/送礼解开（+和好回弹），3 游戏天无事自然淡化。
+   */
+  grudge?: { reason: string; instigatorId: string; sinceTick: number };
 }
 
 export type RelationType =
@@ -95,6 +101,18 @@ export class RelationshipManager {
         rel.history = rel.history.slice(-20);
       }
     }
+  }
+
+  /** 结下疙瘩（吵架/被偷等冲突后调用） */
+  setGrudge(a: string, b: string, reason: string, instigatorId: string, tick: number): void {
+    const rel = this.get(a, b);
+    rel.grudge = { reason, instigatorId, sinceTick: tick };
+  }
+
+  /** 解开疙瘩（道歉/安慰/送礼/时间淡化） */
+  clearGrudge(a: string, b: string): void {
+    const rel = this.get(a, b);
+    rel.grudge = undefined;
   }
 
   /** 获取某个角色的所有关系 */
