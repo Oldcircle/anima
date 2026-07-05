@@ -99,6 +99,11 @@ export function saveGame(sim: Simulation, dbPath: string, scenarioId?: string): 
       appointments,
       narrativeJson: JSON.stringify(sim.world.narrative.getSnapshot()),
       scenarioId,
+      locationStockJson: JSON.stringify(
+        Object.fromEntries(
+          sim.world.getAllLocations().filter((l) => l.stock).map((l) => [l.id, l.stock]),
+        ),
+      ),
     });
 
     console.log(`💾 已保存到 ${dbPath} (tick=${sim.world.tick}, ${characters.length} 角色, ${memories.length} 记忆, ${relationships.length} 关系, ${appointments.length} 约定)`);
@@ -180,6 +185,19 @@ export function loadGame(sim: Simulation, dbPath: string, scenarioId?: string): 
       }
     }
 
+    // 恢复店铺库存（不随档会在读档后全体回到"无限"，直到次日 06:00）
+    if (worldState.locationStockJson) {
+      try {
+        const stocks = JSON.parse(worldState.locationStockJson) as Record<string, Record<string, number>>;
+        for (const [locId, stock] of Object.entries(stocks)) {
+          const loc = sim.world.getLocation(locId);
+          if (loc) loc.stock = stock;
+        }
+      } catch (e) {
+        console.warn(`⚠️  location_stock 读档失败: ${(e as Error).message}`);
+      }
+    }
+
     // 恢复约定（世界级）
     const savedAppointments = db.loadAppointments();
     sim.world.restoreAppointments(savedAppointments);
@@ -197,12 +215,17 @@ export function loadGame(sim: Simulation, dbPath: string, scenarioId?: string): 
       if (r.grudge) rel.grudge = r.grudge;
     }
 
-    // 恢复记忆
+    // 恢复记忆（记录已回填的条目指纹，供下方 LTM 注入去重——
+    // 否则每次重启 top-LTM 都再注入一份，saveAll 快照语义下 memories 表逐次膨胀成复读机）
+    const seenMemoryKeys = new Map<string, Set<string>>();
     for (const sc of savedChars) {
       const memories = db.loadMemories(sc.id, 30);
+      const keys = new Set<string>();
       for (const m of memories.reverse()) {
         sim.memory.add(sc.id, m);
+        keys.add(`${m.tick}|${m.content}`);
       }
+      seenMemoryKeys.set(sc.id, keys);
     }
 
     // 恢复印象
@@ -221,7 +244,9 @@ export function loadGame(sim: Simulation, dbPath: string, scenarioId?: string): 
         importance: m.importance, relatedCharacterId: m.relatedCharacterId,
       })));
       ltmCount += allLtm.length;
+      const seen = seenMemoryKeys.get(sc.id) ?? new Set<string>();
       for (const m of allLtm.slice(0, 10).reverse()) {
+        if (seen.has(`${m.tick}|${m.content}`)) continue; // 已在短期记忆里，不重复注入
         sim.memory.add(sc.id, {
           tick: m.tick,
           type: m.type as any,

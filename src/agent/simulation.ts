@@ -83,6 +83,10 @@ export class Simulation {
   phaseTools: Record<string, ActionDefinition[]> = {};
   /** 上一次扫描 beats 的 game day（避免同一天扫多次） */
   private _lastBeatScanDay = -1;
+  /** 印象更新在飞标记（防同一对并发重复计分） */
+  private _impressionPending = new Set<string>();
+  /** valence 已计分水位：每对角色已评过态度的交换条数（防同一批台词反复计分） */
+  private _valenceWatermark = new Map<string, number>();
   /** 上一次跑日节奏检查的 game day */
   private _lastPacingDay = -1;
 
@@ -394,12 +398,15 @@ export class Simulation {
           this.relationships.clearGrudge(rel.characterA, rel.characterB);
         }
       }
-      // 店铺每日补货：有员工的店以 2 为基础量重置（当日鲜货），员工 prepare 可以往上加
+      // 店铺每日补货：有员工工具的店 + 任何已开始追踪库存的店（prepare 会让无 workerTools 的店
+      // 进入追踪——不补货就会毒化成永久缺货）。补足到 2 而非覆盖写 2：员工备到 8 的货不隔夜蒸发。
       for (const loc of this.world.getAllLocations()) {
-        if (loc.shop && loc.shop.length > 0 && loc.workerTools && loc.workerTools.length > 0) {
+        const tracked = loc.stock !== undefined;
+        const hasWorkers = !!(loc.workerTools && loc.workerTools.length > 0);
+        if (loc.shop && loc.shop.length > 0 && (hasWorkers || tracked)) {
           loc.stock = loc.stock ?? {};
           for (const item of loc.shop) {
-            loc.stock[item.id] = 2;
+            loc.stock[item.id] = Math.max(loc.stock[item.id] ?? 0, 2);
           }
         }
       }
@@ -646,7 +653,7 @@ export class Simulation {
       if (targetRaw && ["talk", "comfort", "give"].includes(r.action.name)) {
         const targetId = this._resolveCharacterId(targetRaw);
         const rel = this.relationships.get(r.characterId, targetId);
-        if (rel.grudge) {
+        if (rel.grudge && gameTime.tick - rel.grudge.sinceTick >= 2) {
           const message = (r.action.args.message as string | undefined) ?? (r.action.args.words as string | undefined) ?? "";
           // 道歉性 talk 只认肇事方（受害者的习惯性"对不起"不构成和解——真嗣的口癖不该替对方免责）；
           // comfort/give 是主动示好动作，哪边做都算递了台阶
@@ -690,6 +697,7 @@ export class Simulation {
             content: `你抓到${actorName}偷你的东西`,
             relatedCharacterId: r.characterId,
           });
+          this.relationships.setGrudge(r.characterId, victim.id, "偷东西被当场抓住", r.characterId, gameTime.tick);
         }
       }
     }
@@ -719,6 +727,8 @@ export class Simulation {
         const state = this.world.getCharacter(id);
         if (!state) continue;
         if (state.inbox.length === 0) continue;
+        // 力竭昏睡叫不醒：不进反应轮（消息留到醒后消费，也避免双重扣 remainingTicks）
+        if (state.currentAction?.name === "collapse_asleep") continue;
         // 有信箱消息时，即使在执行多 tick 行为也允许进入反应轮
         // （agent-loop 会中断行为来回应）
         // 检查对话对的交换次数限制 + 跨 tick 冷却
@@ -823,7 +833,11 @@ export class Simulation {
         if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
           hasNewTalk = true;
           const targetId = this._resolveCharacterId(r.action.args.target as string);
-          this.relationships.modify(r.characterId, targetId, 1, gameTime.tick, r.result?.description ?? "回复");
+          // 与主轮一致：疙瘩没解开期间冻结"开口就+1"（对话大头在反应轮，这里漏了冻结就等于没冻结），
+          // 也不再把每句回复灌进 rel.history
+          if (!this.relationships.get(r.characterId, targetId).grudge) {
+            this.relationships.modify(r.characterId, targetId, 1, gameTime.tick);
+          }
           const charState = this.world.getCharacter(r.characterId);
           this.conversations.recordTalk(
             r.characterId,
@@ -866,11 +880,18 @@ export class Simulation {
         const existingImp = this.impressions.get(r.characterId, targetId);
         const minExchanges = existingImp ? 4 : 2;
         const cooldownOk = !existingImp || (gameTime.tick - existingImp.lastUpdated) >= 4;
-        if (history.length >= minExchanges && cooldownOk) {
+        // 在飞门：上一次更新还没返回时不再调度（防同批台词并发计分两份）
+        if (history.length >= minExchanges && cooldownOk && !this._impressionPending.has(pairKey)) {
           processedPairs.add(pairKey);
           const cardA = this._configs.get(r.characterId)?.card;
           const cardB = this._configs.get(targetId)?.card;
           if (cardA && cardB) {
+            // valence 水位线：态度只评上次计分之后新增的台词——
+            // 印象可以看全量上下文，但同一批台词不能反复推高/压低关系
+            const prevMark = this._valenceWatermark.get(pairKey) ?? 0;
+            const newSince = history.length > prevMark ? history.length - prevMark : history.length;
+            this._valenceWatermark.set(pairKey, history.length);
+            this._impressionPending.add(pairKey);
             impressionPromises.push(
               updateImpressionsBidirectional({
                 cardA, cardB,
@@ -880,7 +901,8 @@ export class Simulation {
                 modelId: this._configs.get(r.characterId)!.modelId,
                 tick: gameTime.tick,
                 relationships: this.relationships,
-              }),
+                valenceOnLastN: Math.max(1, newSince),
+              }).finally(() => this._impressionPending.delete(pairKey)),
             );
           }
         }
@@ -901,6 +923,8 @@ export class Simulation {
    */
   private _schedulePromiseExtraction(gameTime: GameTime): void {
     for (const conv of this.conversations.getEndingConversations(gameTime.tick)) {
+      // 对话真正结束：valence 水位清零，下一场对话从头计
+      this._valenceWatermark.delete([conv.charA, conv.charB].sort().join(":"));
       if (!mightContainPromise(conv.history)) continue;
       const cardA = this._configs.get(conv.charA)?.card;
       const cardB = this._configs.get(conv.charB)?.card;
@@ -919,10 +943,14 @@ export class Simulation {
         charAId: cardA.id, charAName: cardA.name,
         charBId: cardB.id, charBName: cardB.name,
         locations: publicLocations,
-        currentTick: gameTime.tick,
+        // 时间基准 = 说最后一句话的时刻（抽取发生在对话结束后 9+ tick，
+        // 用抽取时刻解析会把"今晚18:00"静默滚到明天）
+        currentTick: conv.history[conv.history.length - 1]?.tick ?? gameTime.tick,
         provider: this._provider,
         modelId: this._modelId,
       }).then((p) => {
+        // 约定时刻已经过去（对话拖太久/边界情况）：宁可丢弃也不错记到明天
+        if (p && p.atTick <= gameTime.tick) return;
         if (!p) return;
         const ok = this.world.addAppointment({
           id: `promise_${gameTime.tick}_${p.proposerId}_${p.targetId}`,

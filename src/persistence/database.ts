@@ -141,7 +141,7 @@ export class AnimaDB {
 
   // --- 世界状态 ---
 
-  saveWorldState(tick: number, weather: string, narrativeJson?: string, scenarioId?: string) {
+  saveWorldState(tick: number, weather: string, narrativeJson?: string, scenarioId?: string, locationStockJson?: string) {
     const upsert = this.db.prepare("INSERT OR REPLACE INTO world_state (key, value) VALUES (?, ?)");
     upsert.run("tick", String(tick));
     upsert.run("weather", weather);
@@ -151,9 +151,12 @@ export class AnimaDB {
     if (scenarioId !== undefined) {
       upsert.run("scenario_id", scenarioId);
     }
+    if (locationStockJson !== undefined) {
+      upsert.run("location_stock", locationStockJson);
+    }
   }
 
-  loadWorldState(): { tick: number; weather: string; narrativeJson?: string; scenarioId?: string } | null {
+  loadWorldState(): { tick: number; weather: string; narrativeJson?: string; scenarioId?: string; locationStockJson?: string } | null {
     const get = this.db.prepare("SELECT key, value FROM world_state");
     const rows = get.all() as Array<{ key: string; value: string }>;
     if (rows.length === 0) return null;
@@ -163,6 +166,7 @@ export class AnimaDB {
       weather: map.weather ?? "sunny",
       narrativeJson: map.narrative_state,
       scenarioId: map.scenario_id,
+      locationStockJson: map.location_stock,
     };
   }
 
@@ -367,9 +371,10 @@ export class AnimaDB {
     appointments?: import("../world/types.js").Appointment[];
     narrativeJson?: string;
     scenarioId?: string;
+    locationStockJson?: string;
   }) {
     const tx = this.db.transaction(() => {
-      this.saveWorldState(params.tick, params.weather, params.narrativeJson, params.scenarioId);
+      this.saveWorldState(params.tick, params.weather, params.narrativeJson, params.scenarioId, params.locationStockJson);
       // 全量覆盖：memories/long_term_memories/appointments 都是完整快照，
       // 裸 INSERT 会让每次自动存档重复追加一遍（实测重复率 74%/86%，读档后角色变复读机）
       this.db.exec("DELETE FROM appointments");

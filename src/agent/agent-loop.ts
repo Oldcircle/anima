@@ -69,13 +69,18 @@ export async function runAgentTick(params: {
   // - 没有消息时继续执行
   if (state.currentAction && state.currentAction.remainingTicks > 0) {
     const hasInboxMessages = state.inbox.length > 0;
-    if (!hasInboxMessages) {
+    // 力竭昏睡叫不醒：不被 inbox 打断（打断即清 currentAction → 下 tick energy 仍≤3 再倒，
+    // 无恢复的乒乓循环 + 重复昏倒事件刷屏）。消息留在信箱，醒来再看。
+    const unwakeable = state.currentAction.name === "collapse_asleep";
+    if (!hasInboxMessages || unwakeable) {
       state.currentAction.remainingTicks--;
       return {
         characterId: card.id,
         thought: `继续${state.currentAction.name}`,
         skipped: true,
-        skipReason: `执行中: ${state.currentAction.name} (还剩 ${state.currentAction.remainingTicks} tick)`,
+        skipReason: unwakeable
+          ? `昏睡中叫不醒 (还剩 ${state.currentAction.remainingTicks} tick)`
+          : `执行中: ${state.currentAction.name} (还剩 ${state.currentAction.remainingTicks} tick)`,
       };
     }
     // 有人对我说话了 — 中断当前行为来回应
@@ -611,7 +616,13 @@ async function executeAction(
       case "relationship_change":
         if (relationships && effect.delta !== undefined) {
           const otherId = resolveCharacterId(world, effect.targetId);
-          relationships.modify(card.id, otherId, effect.delta, gameTime.tick, truncateLine(result.description, 40));
+          // 负向边际递减：疙瘩还没解开时再次冲突，伤害减半——
+          // 上行被冻结 + 下行 -15/次 的棘轮会让一对关系单向滑向 -100
+          let delta = effect.delta;
+          if (delta < 0 && relationships.get(card.id, otherId).grudge) {
+            delta = Math.ceil(delta / 2);
+          }
+          relationships.modify(card.id, otherId, delta, gameTime.tick, truncateLine(result.description, 40));
         }
         break;
       case "moodlet": {
@@ -666,15 +677,15 @@ async function executeAction(
   } else if (toolCall.name === "steal") {
     const stolenAmount = (result as any)._stolenAmount;
     if (typeof stolenAmount === "number") {
-      state.gold += stolenAmount;
-      // 偷的是具体的人：钱真的从受害者身上转移（守恒），不再凭空铸币
+      // 偷的是具体的人：先算受害者真掏得出多少，小偷只进账这么多（严格守恒，不铸币）
       const victimId = (result as any)._stealVictimId;
-      if (typeof victimId === "string") {
-        const victim = world.getCharacter(victimId);
-        if (victim) {
-          const actualLoss = Math.min(victim.gold, stolenAmount);
-          victim.gold -= actualLoss;
-        }
+      const victim = typeof victimId === "string" ? world.getCharacter(victimId) : undefined;
+      if (victim) {
+        const actualLoss = Math.min(victim.gold, stolenAmount);
+        victim.gold -= actualLoss;
+        state.gold += actualLoss;
+      } else {
+        state.gold += stolenAmount; // 偷店（无具体受害者）维持原样
       }
     }
   } else if (toolCall.name === "beg") {

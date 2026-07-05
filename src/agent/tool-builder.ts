@@ -844,6 +844,10 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
       if (actx.gold < price) {
         return { description: `钱不够买${shopItem.name}`, effects: [], success: false };
       }
+      // 执行时复检库存：并行决策下最后一件可能同 tick 刚被别人买走（ctx.location 是活引用）
+      if (ctx.location.stock && ctx.location.stock[shopItem.id] !== undefined && ctx.location.stock[shopItem.id]! <= 0) {
+        return { description: `想买${shopItem.name}，结果刚好卖完了`, effects: [], success: false };
+      }
       return {
         description: `买了${shopItem.name}`,
         effects: [],
@@ -932,6 +936,10 @@ function buildEatTool(
           _useItem: itemId,
         } as ActionResult & { _useItem: string };
       } else if (shopItem) {
+        // 执行时复检库存（并行决策下最后一份可能同 tick 刚被买走）
+        if (ctx.location.stock && ctx.location.stock[itemId] !== undefined && ctx.location.stock[itemId]! <= 0) {
+          return { description: `想买${def.name}吃，结果刚好卖完了`, effects: [], success: false };
+        }
         return {
           description: `买了${def.name}吃`,
           effects,
