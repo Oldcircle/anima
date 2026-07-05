@@ -10,6 +10,7 @@ const DetailPanel := preload("res://ui/DetailPanel.gd")
 const NarrativePanel := preload("res://ui/NarrativePanel.gd")
 const StatusRoster := preload("res://ui/StatusRoster.gd")
 const RelationWeb := preload("res://ui/RelationWeb.gd")
+const ActivityLog := preload("res://ui/ActivityLog.gd")
 
 # 7 角色 → Ninja Adventure 精灵皮肤（assets/ninja_adventure/characters/）
 const CHAR_SKINS := {
@@ -110,6 +111,7 @@ var _speed_btns := {}      # speed(float) -> Button
 var _narrative: CanvasLayer
 var _roster: CanvasLayer
 var _relweb: CanvasLayer
+var _log: CanvasLayer
 
 # 生存告警：需求 → 中文单字 + [urgent 阈值, moderate 阈值]（与后端 need-definitions 对齐）
 const NEED_CN := {
@@ -171,13 +173,19 @@ func _ready() -> void:
 	add_child(_relweb)
 	_relweb.set_skin_resolver(Callable(self, "_skin_for"))
 
+	_log = ActivityLog.new()
+	add_child(_log)
+	_log.set_skin_resolver(Callable(self, "_skin_for"))
+
 	net.connected.connect(func():
 		_net_open = true
 		print("[Main] ✅ 后端已连接"))
 	net.disconnected.connect(func(): _net_open = false)
 	net.snapshot.connect(_on_snapshot)
 	net.tick.connect(_on_tick)
-	net.beat_ready.connect(func(d): _show_banner("🎬 " + str(d.get("description", ""))))
+	net.beat_ready.connect(func(d):
+		_show_banner("🎬 " + str(d.get("description", "")))
+		_log.add_entry("beat", "", str(d.get("description", "")), _log_stamp(_clock.text if _clock else ""), ""))
 	net.character_detail.connect(func(d): _detail.show_detail(d, _skin_for(str(d.get("id", "")))))
 	print("[Main] 世界 2.0 — 等待后端 @ ws://localhost:3001 …")
 	get_tree().create_timer(3.0).timeout.connect(_maybe_offline_demo)
@@ -211,7 +219,7 @@ func _build_hud() -> void:
 	panel.add_child(_clock)
 
 	_hint = Label.new()
-	_hint.text = "拖拽平移 · 滚轮缩放 · 点角色跟随 · 点建筑进室内 · Tab 名册 · R 关系 · M 音乐 · N 叙事"
+	_hint.text = "拖拽平移 · 滚轮缩放 · 点角色跟随 · 点建筑进室内 · Tab 名册 · R 关系 · L 记录 · N 叙事 · M 音乐"
 	_hint.add_theme_font_size_override("font_size", 12)
 	_hint.add_theme_color_override("font_color", Color(0.9, 0.88, 0.8, 0.75))
 	_hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
@@ -255,7 +263,7 @@ func _build_speed_panel(layer: CanvasLayer) -> void:
 	panel.add_theme_stylebox_override("panel", _jrpg_box())
 	panel.anchor_left = 1.0
 	panel.anchor_right = 1.0
-	panel.offset_left = -262
+	panel.offset_left = -330
 	panel.offset_right = -12
 	panel.offset_top = 12
 	layer.add_child(panel)
@@ -283,6 +291,12 @@ func _build_speed_panel(layer: CanvasLayer) -> void:
 	wb.focus_mode = Control.FOCUS_NONE
 	wb.pressed.connect(func() -> void: _relweb.toggle())
 	hb.add_child(wb)
+	var lb := Button.new()
+	lb.text = "记录"
+	lb.add_theme_font_size_override("font_size", 13)
+	lb.focus_mode = Control.FOCUS_NONE
+	lb.pressed.connect(func() -> void: _log.toggle())
+	hb.add_child(lb)
 	var nb := Button.new()
 	nb.text = "叙事"
 	nb.add_theme_font_size_override("font_size", 13)
@@ -451,6 +465,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_relweb.close()
 			elif _roster.is_open():
 				_roster.close()
+			elif _log.is_open():
+				_log.close()
 			elif _space != "town":
 				_exit_room()
 		elif event.keycode == KEY_M:
@@ -462,6 +478,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_R:
 			_relweb.toggle()                  # R 开关关系网
+		elif event.keycode == KEY_L:
+			_log.toggle()                     # L 开关生活记录
 
 func _zoom_at(screen_pos: Vector2, factor: float) -> void:
 	var z: float = clampf(_cam.zoom.x * factor, ZOOM_MIN, ZOOM_MAX)
@@ -539,6 +557,8 @@ func _capture_and_quit() -> void:
 		_roster.toggle()
 	if "--relweb" in args:
 		_relweb.toggle()
+	if "--log" in args:
+		_log.toggle()
 	var di := args.find("--detail")
 	if di != -1 and di + 1 < args.size():
 		var cid: String = args[di + 1]
@@ -600,8 +620,25 @@ func _maybe_offline_demo() -> void:
 				{"characterId": "light", "action": "give_gift", "success": true,
 					"args": {"target": "asuka", "item": "热可可"},
 					"description": "送了热可可给明日香"},
+				# 内心独白（想法气泡 + 记录）
+				{"characterId": "shinji", "action": "do_nothing",
+					"thought": "父亲会不会又皱眉……还是先把面包烤好吧。"},
+				# 走去海边（行为记录）
+				{"characterId": "shinji", "action": "go_to", "success": true,
+					"args": {"location": "beach"}, "description": "去海边走走"},
 				# 发呆 "…"
 				{"characterId": "rei", "skipped": true},
+			],
+			# 反思 / 流言 / 随机事件 —— 这三类此前从不显示，现在进生活记录
+			"reflections": [
+				{"characterId": "senjougahara", "insights": ["今天话说得太冲了，其实鲁鲁修没恶意"],
+					"mood": "有点懊恼", "wish": "明天道个歉", "concern": "别把关系弄僵"},
+			],
+			"gossips": [
+				{"from": "l_lawliet", "to": "light", "about": "听说明日香偷偷给鲁鲁修烤了可颂"},
+			],
+			"randomEvents": [
+				{"name": "海风忽起", "description": "一阵海风卷过广场，卷走了谁的帽子"},
 			]})
 	)
 
@@ -678,7 +715,9 @@ func _on_tick(data: Dictionary) -> void:
 	_roster.update_roster(chars)
 	_relweb.update_web(chars, data.get("relationships", []))
 	_update_badges(chars)
-	var counts := _apply_bubbles(data.get("events", []))
+	var stamp := _log_stamp(str(data.get("formattedTime", "")))
+	var counts := _apply_bubbles(data.get("events", []), stamp)
+	_log_narrative(data, stamp)
 	_update_clock(data)
 	print("[tick %s] %s %s | 想法=%d 对话=%d" % [
 		data.get("tick", "?"), data.get("formattedTime", "?"),
@@ -711,31 +750,98 @@ func _place_all(chars: Array, animated: bool) -> void:
 		var loc: String = str(c.get("locationId", ""))
 		if not _views.has(id):
 			continue
+		var v = _views[id]
 		# 金币增减 → 头顶飘字（挣钱绿 / 花钱·房租红），diff 上一 tick 的 gold
 		var prev = _last_chars.get(id, null)
 		if animated and prev != null:
 			var dg: int = int(c.get("gold", 0)) - int(prev.get("gold", 0))
 			if dg != 0:
-				_views[id].float_text(("+%d" % dg) if dg > 0 else str(dg),
+				v.float_text(("+%d" % dg) if dg > 0 else str(dg),
 					Color("6fdc8c") if dg > 0 else Color("e07a6a"))
 		_last_chars[id] = c
 		var idx: int = counts.get(loc, 0)
 		counts[loc] = idx + 1
-		var v = _views[id]
 		var target: Vector2 = _town.slot(loc, idx)
 		var new_space: String = _town.space_of(loc)
-		var old_space: String = v.get_meta("space", "town")
+		# cur_space = 角色「当前实际所在」的空间（过渡结束后由 warp 落定）。
+		# 用它而非 moved 判分支：这样即便过渡中途改了目的地、留下 space≠loc 的错位，
+		# 下一 tick 也会补一段过渡，而不是直线穿过室内外之间的空隙（#1 回归）。
+		var cur_space: String = str(v.get_meta("space", "town"))
 		var moved: bool = v.location_id != loc
 		v.location_id = loc
 		v.set_name_stagger(idx % 2 == 1)
-		v.set_meta("space", new_space)
-		if not animated or (moved and new_space != old_space):
-			v.place_at(target)          # 初始化 / 进出室内：瞬移
+		# 场景内闲逛锚点每 tick 跟随站点更新（睡觉时不逛）
+		_configure_wander(v, c, loc, new_space, target)
+		# 跨空间过渡进行中：别打断，等它自己走完
+		if v.is_transitioning():
+			continue
+		if not animated:
+			v.set_meta("space", new_space)
+			v.place_at(target)
+		elif cur_space != new_space:
+			# 所在空间 ≠ 目标空间（跨空间移动 / 过渡遗留错位）→ 走门过渡，取代生硬瞬移或穿墙直线
+			v.run_move_plan(_transition_plan(v, loc, cur_space, new_space, target))
 		elif moved and new_space == "town":
+			v.set_meta("space", new_space)
 			v.walk_path(_town.path_points(v.position, target))
 		elif v.position.distance_to(target) > 2.0:
+			v.set_meta("space", new_space)
 			v.walk_path(PackedVector2Array([target]))   # 室内挪位 / 同地点换槽
+		else:
+			v.set_meta("space", new_space)
 	# 变化后的占位徽章会在 _update_badges 里刷新
+
+## 每 tick 更新角色的场景内闲逛参数（睡觉时静止；室内限房间内、户外限可走格）
+func _configure_wander(v, c: Dictionary, loc: String, space: String, anchor: Vector2) -> void:
+	var act := _action_name_of(c)
+	if act == "sleep" or act == "nap" or act.ends_with("_asleep"):
+		v.configure_wander(anchor, 0.0, Callable())   # 睡着 / 力竭昏睡（collapse_asleep）不闲逛
+		return
+	if space == "town":
+		v.configure_wander(anchor, 26.0, Callable(_town, "is_walkable_px"))
+	else:
+		var rect: Rect2 = _town.room_wander_rect(loc)
+		if rect.size.x <= 4.0:
+			v.configure_wander(anchor, 0.0, Callable())
+		else:
+			v.configure_wander(anchor, 20.0, func(px: Vector2) -> bool: return rect.has_point(px))
+
+func _action_name_of(c: Dictionary) -> String:
+	var obs = c.get("observableState", null)
+	if obs is Dictionary and str(obs.get("actionName", "")) != "":
+		return str(obs.get("actionName", ""))
+	var ca = c.get("currentAction", null)
+	if ca is Dictionary:
+		return str(ca.get("name", ""))
+	return ""
+
+## 跨空间移动编排：把「小镇↔室内」拆成 走到门 → 淡出换位 → 走进 的多段计划。
+## 步骤：["walk", 途径点, budget] / ["warp", 落点, 新空间]。
+func _transition_plan(v, dst: String, old_space: String, new_space: String, final_target: Vector2) -> Array:
+	var to_interior: bool = new_space != "town"
+	var from_interior: bool = old_space != "town"
+	if not from_interior and to_interior:
+		# 小镇 → 室内 dst：走到门口 → 进门现身 → 走到室内站点
+		return [
+			["walk", _town.path_points(v.position, _town.town_door(dst)), 1.6],
+			["warp", _town.room_door(dst), dst],
+			["walk", PackedVector2Array([final_target]), 1.0],
+		]
+	if from_interior and not to_interior:
+		# 室内 old → 小镇：走到室内门厅 → 出门现身 → 走去户外站点
+		return [
+			["walk", PackedVector2Array([_town.room_door(old_space)]), 1.0],
+			["warp", _town.town_door(old_space), "town"],
+			["walk", _town.path_points(_town.town_door(old_space), final_target), 1.6],
+		]
+	# 室内 old → 室内 dst：出旧门 → 穿过小镇 → 进新门
+	return [
+		["walk", PackedVector2Array([_town.room_door(old_space)]), 1.0],
+		["warp", _town.town_door(old_space), "town"],
+		["walk", _town.path_points(_town.town_door(old_space), _town.town_door(dst)), 1.8],
+		["warp", _town.room_door(dst), dst],
+		["walk", PackedVector2Array([final_target]), 1.0],
+	]
 
 func _update_badges(chars: Array) -> void:
 	var by_loc := {}
@@ -799,8 +905,8 @@ const PAIR_ACTIONS := ["talk", "gossip", "comfort", "argue", "share_secret", "in
 # 动作 → 头顶瞬时 emote（睡觉/打盹 → 困）
 const ACTION_EMOTES := {"sleep": "emote14", "nap": "emote14"}
 
-func _apply_bubbles(events: Array) -> Vector2i:
-	# 工具调用 → 画面表现：对话凑近+气泡、送礼飞道具、吵架/安慰 emote、发呆 "…"
+func _apply_bubbles(events: Array, stamp: String) -> Vector2i:
+	# 工具调用 → 画面表现 + 生活记录：对话凑近+气泡、送礼飞道具、吵架/安慰 emote、发呆 "…"
 	var thoughts := 0
 	var talks := 0
 	for e in events:
@@ -808,26 +914,32 @@ func _apply_bubbles(events: Array) -> Vector2i:
 		var v = _views.get(cid, null)
 		if v == null:
 			continue
+		var who := _name_of(cid)
 		var action := str(e.get("action", ""))
 		var args = e.get("args", null)
 		var success: bool = e.get("success", true)
-		var tv = null   # 互动对象
+		var desc := str(e.get("description", ""))
+		var tid := ""
 		if args is Dictionary:
-			tv = _views.get(str(args.get("target", "")), null)
+			tid = str(args.get("target", ""))
+		var tv = _views.get(tid, null)   # 互动对象
+		var target_name := _name_of(tid) if tid != "" else ""
 
-		if bool(e.get("skipped", false)):
+		var skipped := bool(e.get("skipped", false))
+		if skipped:
 			v.flash_emote("emote20", 3.0)   # 这个 tick 在发呆
 
-		if tv != null and action in PAIR_ACTIONS and success:
+		# 互动凑近（说话者走到对方身边）——跨空间过渡中的角色不打断，
+		# 否则 walk_path 会 kill 掉过渡正在 await 的 tween（kill 不发 finished）→ 永久卡在 transitioning
+		if tv != null and action in PAIR_ACTIONS and success and not v.is_transitioning() and not tv.is_transitioning():
 			_pair_up(v, tv)
 
 		match action:
 			"give_gift":
 				if success and tv != null:
 					_fly_gift(v, tv)
-					var desc := str(e.get("description", ""))
 					if desc != "":
-						_show_dialog(cid, _name_of(cid), desc)
+						_show_dialog(cid, who, desc)
 			"argue":
 				if tv != null:
 					v.flash_emote("emote7", 4.0)    # 怒
@@ -843,14 +955,73 @@ func _apply_bubbles(events: Array) -> Vector2i:
 			var msg := str(args.get("message", "")) if args is Dictionary else ""
 			if msg != "":
 				v.say("「%s」" % msg, "talk")
-				_show_dialog(cid, _name_of(cid), msg)
+				_show_dialog(cid, who, msg)
+				var line := ("对 %s 说：%s" % [target_name, msg]) if target_name != "" else ("说：" + msg)
+				_log.add_entry("talk", who, line, stamp, cid)
 				talks += 1
 				continue
+
+		# 非对话动作：把有意义的描述记进生活记录（行为历史）。
+		# 跳过 skipped 占位事件（否则 str(null)=="<null>" 会刷屏，且 continue-sleep 无意义）
+		if not skipped and action != "" and action != "<null>" and action != "do_nothing" and action != "observe" and desc != "" and desc != "<null>":
+			_log.add_entry("action", who, desc, stamp, cid)
+
 		var thought = e.get("thought", null)
 		if thought != null and str(thought) != "":
 			v.say(str(thought), "thought")
 			thoughts += 1
+			# 只把「真的做了点什么时的念头」写进记录；skipped（如"继续sleep"）只飘气泡不刷记录
+			if not skipped:
+				_log.add_entry("thought", who, str(thought), stamp, cid)
 	return Vector2i(thoughts, talks)
+
+## 反思 / 流言 / 随机事件 → 生活记录（此前这些「内心与世界的活动」完全没被渲染）
+func _log_narrative(data: Dictionary, stamp: String) -> void:
+	for ref in data.get("reflections", []):
+		if not (ref is Dictionary):
+			continue
+		var rid := str(ref.get("characterId", ""))
+		var bits: Array = []
+		var ins = ref.get("insights", [])
+		if ins is Array and not ins.is_empty():
+			bits.append(str(ins[0]))
+		if str(ref.get("wish", "")) != "":
+			bits.append("期盼：" + str(ref["wish"]))
+		if str(ref.get("concern", "")) != "":
+			bits.append("挂心：" + str(ref["concern"]))
+		var mood := str(ref.get("mood", ""))
+		if bits.is_empty() and mood == "":
+			continue
+		var text := " ｜ ".join(bits)
+		if mood != "":
+			text += "（%s）" % mood
+		_log.add_entry("reflection", _name_of(rid), "睡前反思 " + text, stamp, rid)
+	for g in data.get("gossips", []):
+		if not (g is Dictionary):
+			continue
+		var frm := str(g.get("from", ""))
+		_log.add_entry("gossip", _name_of(frm),
+			"向 %s 说起：%s" % [_name_of(str(g.get("to", ""))), str(g.get("about", ""))], stamp, frm)
+	for rev in data.get("randomEvents", []):
+		if not (rev is Dictionary):
+			continue
+		_log.add_entry("event", "", str(rev.get("description", rev.get("name", ""))), stamp, "")
+
+var _stamp_re := {}
+## formattedTime（"Y1 spring D1 清晨 06:15" 或中文 "春 第1天 · 清晨 06:15"）→ 紧凑 "D1 06:15"
+func _log_stamp(formatted: String) -> String:
+	if _stamp_re.is_empty():
+		_stamp_re["d"] = RegEx.create_from_string("D(\\d+).*?(\\d{1,2}:\\d{2})")
+		_stamp_re["cn"] = RegEx.create_from_string("第(\\d+)天.*?(\\d{1,2}:\\d{2})")
+		_stamp_re["t"] = RegEx.create_from_string("(\\d{1,2}:\\d{2})")
+	var m: RegExMatch = _stamp_re["d"].search(formatted)
+	if m != null:
+		return "D%s %s" % [m.get_string(1), m.get_string(2)]
+	m = _stamp_re["cn"].search(formatted)
+	if m != null:
+		return "D%s %s" % [m.get_string(1), m.get_string(2)]
+	m = _stamp_re["t"].search(formatted)
+	return m.get_string(1) if m != null else ""
 
 func _name_of(cid: String) -> String:
 	return str(_last_chars.get(cid, {}).get("name", cid))

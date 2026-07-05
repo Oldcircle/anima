@@ -34,6 +34,12 @@ var _need_tween: Tween
 var _action_lbl: Label
 var _name_lbl: Label
 var _name_y := 0.0
+var _transitioning := false      # 正在跨空间过渡（走到门→淡出→现身→走进）——期间外部别再指派移动
+# 场景内自动闲逛（站着不动太假）：锚点 + 半径 + 落点可行性校验
+var _wander_anchor := Vector2.INF
+var _wander_radius := 0.0
+var _wander_check: Callable = Callable()
+var _wander_cd := 0.0
 
 func setup(id: String, display_name: String, skin: String) -> void:
 	char_id = id
@@ -151,6 +157,82 @@ func walk_path(points: PackedVector2Array, budget: float = 3.2, face_pos: Vector
 			_sprite.play("idle_" + _dir)
 	)
 
+func is_walking() -> bool:
+	return _tween != null and _tween.is_running()
+
+func is_transitioning() -> bool:
+	return _transitioning
+
+## 走一段路并等它走完（供跨空间过渡串联使用）。
+## 用计时器兜底而非 await _tween.finished——tween 若被外部 kill 不会发 finished，
+## 那样会让整段过渡永久卡在 transitioning。walk_path 实际时长 ≤ budget，故 budget+ 余量必然覆盖。
+func _walk_await(points: PackedVector2Array, budget: float, face_pos: Vector2 = Vector2.INF) -> void:
+	if points.is_empty():
+		return
+	walk_path(points, budget, face_pos)
+	if _tween != null and _tween.is_running():
+		await get_tree().create_timer(budget + 0.2).timeout
+
+func _fade_to(a: float, t: float) -> void:
+	var tw := create_tween()
+	tw.tween_property(self, "modulate:a", a, t)
+	await tw.finished
+
+## 跨空间过渡：一串「走 / 淡出换位」步骤串起来——
+## 小镇↔室内是空间不连续的，用「走到门口 → 淡出 → 在另一侧门口现身 → 走进去」代替生硬瞬移。
+## steps: [["walk", PackedVector2Array, budget, face], ["warp", Vector2 pos, String new_space], ...]
+func run_move_plan(steps: Array) -> void:
+	if _transitioning:
+		return
+	_transitioning = true
+	_wander_cd = 3.0   # 过渡后别马上闲逛
+	for step in steps:
+		if not is_instance_valid(self):
+			return
+		match step[0]:
+			"walk":
+				var face: Vector2 = step[3] if step.size() > 3 else Vector2.INF
+				await _walk_await(step[1], step[2], face)
+			"warp":
+				await _fade_to(0.0, 0.16)
+				position = step[1]
+				if step.size() > 2:
+					set_meta("space", step[2])
+				_dir = "down"
+				if _sprite:
+					_sprite.play("idle_down")
+				await _fade_to(1.0, 0.16)
+		if not _transitioning:   # 被外部打断（罕见）
+			return
+	_transitioning = false
+
+# ---------------- 场景内自动闲逛 ----------------
+
+## 每 tick 由 Main 更新：anchor=当前站点、radius=闲逛半径、check(px)->bool 落点可行性
+func configure_wander(anchor: Vector2, radius: float, check: Callable) -> void:
+	_wander_anchor = anchor
+	_wander_radius = radius
+	_wander_check = check
+
+func _process(delta: float) -> void:
+	if _transitioning or is_walking() or _wander_radius <= 0.0 or _wander_anchor == Vector2.INF:
+		return
+	_wander_cd -= delta
+	if _wander_cd > 0.0:
+		return
+	_wander_cd = randf_range(2.8, 6.5)
+	# 在锚点附近随机挑个落点
+	var ang := randf() * TAU
+	var dist := randf_range(7.0, _wander_radius)
+	var target := _wander_anchor + Vector2(cos(ang), sin(ang)) * dist
+	# 沿直线段采样校验（闲逛不走寻路），任一点不可走就这轮不走——
+	# 防户外穿墙/穿树/穿水；室内用凸的房间 rect 判定，端点在内则整段在内，天然通过
+	if _wander_check.is_valid():
+		for t in [0.34, 0.67, 1.0]:
+			if not bool(_wander_check.call(position.lerp(target, t))):
+				return
+	walk_path(PackedVector2Array([target]), 1.8)
+
 ## 面向某个世界坐标（对话/送礼时转身）
 func face_towards(pos: Vector2) -> void:
 	var delta := pos - position
@@ -249,14 +331,61 @@ func say(text: String, kind: String) -> void:
 	add_child(b)
 	_bubble = b
 	b.modulate.a = 0.0
+	# 等一帧让容器算出尺寸，再水平居中到头顶 + 贴 JRPG 小尾巴
+	await get_tree().process_frame
+	if not is_instance_valid(b):
+		return
+	b.position = Vector2(-b.size.x / 2.0, -34.0 - b.size.y)
+	_attach_tail(b, kind)
 	create_tween().tween_property(b, "modulate:a", 1.0, 0.18)
-	var timer := get_tree().create_timer(4.5)
+	var hold := 5.0 if kind == "talk" else 4.0
+	var timer := get_tree().create_timer(hold)
 	timer.timeout.connect(func() -> void:
 		if is_instance_valid(b):
 			var out := create_tween()
 			out.tween_property(b, "modulate:a", 0.0, 0.25)
 			out.tween_callback(b.queue_free)
 	)
+
+## 气泡小尾巴：台词=向下白描三角，想法=三个渐小的小圆点
+func _attach_tail(panel: Control, kind: String) -> void:
+	var cx: float = panel.size.x / 2.0
+	if kind == "talk":
+		var tail := Polygon2D.new()
+		tail.polygon = PackedVector2Array([Vector2(-5, -1), Vector2(5, -1), Vector2(0, 8)])
+		tail.color = Color(0.07, 0.08, 0.18, 0.94)
+		tail.position = Vector2(cx, panel.size.y)
+		panel.add_child(tail)
+		var edge := Line2D.new()
+		edge.points = PackedVector2Array([Vector2(-5, -1), Vector2(0, 8), Vector2(5, -1)])
+		edge.width = 2.0
+		edge.default_color = Color("f5f0e8")
+		edge.position = Vector2(cx, panel.size.y)
+		panel.add_child(edge)
+	else:
+		for i in 3:
+			var dot := _dot(3.2 - i * 0.7, Color(0.95, 0.92, 0.83, 0.94), Color(0.45, 0.4, 0.32))
+			dot.position = Vector2(cx - 5 + i * 3, panel.size.y + 3 + i * 6)
+			panel.add_child(dot)
+
+func _dot(radius: float, fill: Color, border: Color) -> Node2D:
+	var n := Node2D.new()
+	var pts := PackedVector2Array()
+	for i in 10:
+		var a := TAU * i / 10.0
+		pts.append(Vector2(cos(a), sin(a)) * radius)
+	var poly := Polygon2D.new()
+	poly.polygon = pts
+	poly.color = fill
+	n.add_child(poly)
+	var ln := Line2D.new()
+	var loop := pts.duplicate()
+	loop.append(pts[0])
+	ln.points = loop
+	ln.width = 1.0
+	ln.default_color = border
+	n.add_child(ln)
+	return n
 
 func _build_bubble(text: String, kind: String) -> Control:
 	# JRPG 对话框：台词 = 深蓝底白字白框；想法 = 羊皮纸底深字
@@ -269,7 +398,7 @@ func _build_bubble(text: String, kind: String) -> Control:
 		sb.bg_color = Color(0.95, 0.92, 0.83, 0.94)
 		sb.border_color = Color(0.45, 0.4, 0.32)
 	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(3)
+	sb.set_corner_radius_all(3 if kind == "talk" else 9)   # 想法更圆润像云朵
 	sb.set_content_margin_all(7)
 	panel.add_theme_stylebox_override("panel", sb)
 
