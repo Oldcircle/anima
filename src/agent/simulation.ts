@@ -391,13 +391,16 @@ export class Simulation {
       }
     }
 
-    // 0c. 每天 06:00 疙瘩淡化（3 游戏天没解开就自然淡了）+ 店铺补货
+    // 0c. 每天 06:00 疙瘩淡化（3 游戏天没解开就自然淡了）+ 关系空窗衰减 + 店铺补货
     if (gameTime.hour === 6 && gameTime.minute === 0) {
       for (const rel of this.relationships.getAll()) {
         if (rel.grudge && gameTime.tick - rel.grudge.sinceTick > 288) {
           this.relationships.clearGrudge(rel.characterA, rel.characterB);
         }
       }
+      // 关系空窗衰减：超过 1 游戏天（96 tick）无任何互动的对，每天向 0 回落 1.5。
+      // 与 talk 递减收益 + per-tick 去重合起来打破 valence 正向通胀——关系要维护，不是只涨不跌。
+      this.relationships.applyIdleDecay(gameTime.tick, 96, 1.5);
       // 店铺每日补货：有员工工具的店 + 任何已开始追踪库存的店（prepare 会让无 workerTools 的店
       // 进入追踪——不补货就会毒化成永久缺货）。补足到 2 而非覆盖写 2：员工备到 8 的货不隔夜蒸发。
       for (const loc of this.world.getAllLocations()) {
@@ -541,13 +544,9 @@ export class Simulation {
     for (const r of results) {
       if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
         const targetId = this._resolveCharacterId(r.action.args.target as string);
-        // RelationshipManager 是对称关系，同一条 talk 只应推动一次，
-        // 否则会因为“你对我说话 / 我对你说话”被重复加分，亲密度涨得过快。
-        // 疙瘩没解开期间冻结"开口就+1"——尬聊不等于和好（和好走道歉/安慰/送礼路径）
-        const hasGrudge = !!this.relationships.get(r.characterId, targetId).grudge;
-        if (!hasGrudge) {
-          this.relationships.modify(r.characterId, targetId, 1, gameTime.tick);
-        }
+        // talk 推动关系：按水位递减 + 每对每 tick 只计一次（防反应轮级联棘轮），
+        // 疙瘩期冻结加分——全部收敛进 registerTalk（尬聊不等于和好，和好走道歉/安慰/送礼）
+        this.relationships.registerTalk(r.characterId, targetId, gameTime.tick);
         const charState = this.world.getCharacter(r.characterId);
         this.conversations.recordTalk(
           r.characterId,
@@ -833,11 +832,9 @@ export class Simulation {
         if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
           hasNewTalk = true;
           const targetId = this._resolveCharacterId(r.action.args.target as string);
-          // 与主轮一致：疙瘩没解开期间冻结"开口就+1"（对话大头在反应轮，这里漏了冻结就等于没冻结），
-          // 也不再把每句回复灌进 rel.history
-          if (!this.relationships.get(r.characterId, targetId).grudge) {
-            this.relationships.modify(r.characterId, targetId, 1, gameTime.tick);
-          }
+          // 与主轮一致收敛进 registerTalk：疙瘩冻结 + 递减 + 每对每 tick 只计一次。
+          // 对话大头在反应轮，per-tick 去重就靠这条兜住（同一 tick 主轮已计则这里自动跳过）
+          this.relationships.registerTalk(r.characterId, targetId, gameTime.tick);
           const charState = this.world.getCharacter(r.characterId);
           this.conversations.recordTalk(
             r.characterId,

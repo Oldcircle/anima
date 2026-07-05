@@ -22,6 +22,8 @@ export interface Relationship {
    * 道歉/安慰/送礼解开（+和好回弹），3 游戏天无事自然淡化。
    */
   grudge?: { reason: string; instigatorId: string; sinceTick: number };
+  /** 本对上一次因 talk 加分的 tick（同一 tick 内主轮+反应轮级联只计一次，防棘轮） */
+  lastTalkTick?: number;
 }
 
 export type RelationType =
@@ -48,6 +50,18 @@ function typeFromLevel(level: number): RelationType {
   if (level < 60) return "friend";
   if (level < 85) return "close_friend";
   return "best_friend";
+}
+
+/**
+ * talk 对关系的边际收益：随当前水位递减，让关系「深了要维护、不是聊得越多越无脑涨」。
+ * 陌生→点头之交给满分推力，越亲近增得越慢，best_friend 几乎只靠维持。
+ * 这是打破 valence 正向通胀的核心之一（配合 per-tick 去重 + idle 衰减）。
+ */
+export function talkGain(level: number): number {
+  if (level < 30) return 1.0;   // stranger / acquaintance：破冰阶段涨得快
+  if (level < 60) return 0.5;   // friend：变慢
+  if (level < 85) return 0.25;  // close_friend：更慢
+  return 0.1;                   // best_friend：基本只维持
 }
 
 function relationshipKey(a: string, b: string): string {
@@ -101,6 +115,50 @@ export class RelationshipManager {
         rel.history = rel.history.slice(-20);
       }
     }
+  }
+
+  /**
+   * talk 推动关系：按当前水位递减（talkGain）+ 每对每 tick 只计一次。
+   * 后者是关键——对话大头在反应轮，一个 tick 内 A↔B 你来我往好几句，
+   * 若每句 +1 就是棘轮；这里级联只算一次，把「一次对话」折成「一次关系微调」。
+   * 疙瘩期冻结加分（尬聊不等于和好），但仍更新 lastInteraction 免得同时被 idle 衰减。
+   * 返回实际增量（0 = 被冻结/本 tick 已计），供上层记账/日志。
+   */
+  registerTalk(a: string, b: string, tick: number): number {
+    const rel = this.get(a, b);
+    if (rel.grudge) {
+      rel.lastInteraction = tick;
+      return 0;
+    }
+    if (rel.lastTalkTick === tick) {
+      rel.lastInteraction = tick;
+      return 0;
+    }
+    rel.lastTalkTick = tick;
+    const gain = talkGain(rel.level);
+    rel.level = Math.max(-100, Math.min(100, rel.level + gain));
+    rel.type = typeFromLevel(rel.level);
+    rel.lastInteraction = tick;
+    return gain;
+  }
+
+  /**
+   * 空窗关系每（游戏）天向 0 轻微回落——关系要维护，不是只涨不跌的累加器。
+   * 只动「超过 idleTicks 没互动」的对，向 0 收（正的降、负的升），幅度不超过其绝对值。
+   * 疙瘩另有淡化逻辑，跳过。不更新 lastInteraction（否则永远 decay 不动）。
+   */
+  applyIdleDecay(tick: number, idleTicks: number, amount: number): number {
+    let touched = 0;
+    for (const rel of this._relationships.values()) {
+      if (rel.grudge) continue;
+      if (tick - rel.lastInteraction < idleTicks) continue;
+      if (Math.abs(rel.level) < 0.5) continue;
+      const step = Math.min(amount, Math.abs(rel.level));
+      rel.level += rel.level > 0 ? -step : step;
+      rel.type = typeFromLevel(rel.level);
+      touched++;
+    }
+    return touched;
   }
 
   /** 结下疙瘩（吵架/被偷等冲突后调用） */
