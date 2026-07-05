@@ -1014,6 +1014,7 @@ function truncateLine(text: string, maxChars: number): string {
 function describeInterruptedAction(actionName: string): string {
   const interrupted: Record<string, string> = {
     sleep: "睡觉",
+    collapse_asleep: "累晕睡着",
     cook: "做饭",
     read: "看书",
     work: "忙工作",
@@ -1049,6 +1050,7 @@ export function describeObservableAction(name: string, action: string): string {
   const descriptions: Record<string, string> = {
     eat: "正在吃东西",
     sleep: "在睡觉",
+    collapse_asleep: "累得趴着睡着了，叫不太醒",
     work: "在工作",
     read: "在看书",
     hobby: "在做自己的事",

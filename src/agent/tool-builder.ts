@@ -54,8 +54,12 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
   // 1. 通用工具：go_to（永远可用）
   tools.push(buildGoToTool(ctx));
 
+  // 营业状态：打烊的商铺不提供顾客侧服务（员工可以进来备货）
+  const locOpen = isLocationOpen(ctx.location, ctx.hour);
+  const isWorkerHere = (ctx.state.life?.workplace ?? ctx.card.life?.workplace) === ctx.location.id;
+
   // 2. 地点工具（从当前地点 YAML 读取）
-  if (ctx.location.tools) {
+  if (ctx.location.tools && (locOpen || isWorkerHere || ctx.location.type !== "commercial")) {
     for (const lt of ctx.location.tools) {
       const action = buildLocationTool(lt, ctx);
       if (action) tools.push(action);
@@ -78,8 +82,8 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     tools.push(buildPrepareTool(ctx.location.shop, ctx));
   }
 
-  // 2c. 商店工具（地点有 shop 时浮现 buy）
-  if (ctx.location.shop && ctx.location.shop.length > 0) {
+  // 2c. 商店工具（地点有 shop 且在营业时浮现 buy）
+  if (ctx.location.shop && ctx.location.shop.length > 0 && locOpen) {
     const buyTool = buildBuyTool(ctx.location.shop, ctx);
     if (buyTool) tools.push(buyTool);
   }
@@ -90,7 +94,7 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
       const def = getItemDef(i.defId);
       return def && def.effects && (def.type === "consumable" || (def.type === "gift" && def.effects));
     });
-    const shopFood = (ctx.location.shop ?? []).filter(s => {
+    const shopFood = !locOpen ? [] : (ctx.location.shop ?? []).filter(s => {
       const def = getItemDef(s.id);
       return def && def.effects && def.type === "consumable" && ctx.gold >= s.price;
     });
@@ -242,6 +246,7 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
       let desc = l.name;
       if (l.summary) desc += `——${l.summary}`;
       if (l.id === workplace) desc += "（你的工作地点）";
+      if (!isLocationOpen(l, ctx.hour) && l.type === "commercial" && l.id !== workplace) desc += "（这个点已打烊）";
       // 显示那里有谁（排除自己）
       const peopleHere = l.presentCharacters
         .filter((cid) => cid !== ctx.card.id)
@@ -345,6 +350,15 @@ function nearbyNames(ctx: ToolBuildContext): string {
   return ctx.nearbyCharacters
     .map((c) => `${c.name}(${c.id})`)
     .join("、");
+}
+
+/** 营业时间判断：openHours 数据早就在 YAML 里，此前零消费——深夜也能买拿铁 */
+export function isLocationOpen(loc: Location, hour?: number): boolean {
+  if (hour === undefined || !loc.openHours) return true;
+  const { open, close } = loc.openHours;
+  if (open === close) return true;
+  if (open < close) return hour >= open && hour < close;
+  return hour >= open || hour < close; // 跨夜营业（酒吧 17-2）
 }
 
 function nearbyDisplayName(ctx: ToolBuildContext, id: string): string {

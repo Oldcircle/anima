@@ -309,6 +309,9 @@ export class Simulation {
     // 1.0f 气候压力 + moodlet 管理 + 行为链检测
     this._applyClimateAndMoodlets(gameTime);
 
+    // 1.0g 力竭昏睡：energy 逼近 0 的角色当场撑不住睡着（needs 第一次真正咬人）
+    this._applyExhaustionCollapse(gameTime);
+
     // 1.5 随机事件
     const triggeredEvents = this._rollRandomEvents(gameTime);
 
@@ -532,6 +535,58 @@ export class Simulation {
           addMoodlet(targetState, "happy", 1, "有人找我说话", 8, "social", gameTime.tick);
         }
       }
+    }
+  }
+
+  /**
+   * 1.0g 力竭昏睡：energy ≤ 3 的角色当场撑不住睡着——needs 归零第一次有机制后果。
+   * 此前 energy 0 和满值的行为空间几乎一样（4/7 角色精力 0 还在完整敬语寒暄）。
+   * 昏睡 8 tick（2 游戏小时），期间每 tick 恢复少量精力；在公共场合睡着会被人看见、留下记忆。
+   */
+  private _applyExhaustionCollapse(gameTime: GameTime): void {
+    for (const state of this.world.getAllCharacters()) {
+      // 昏睡中：每 tick 恢复一点精力（按时长摊销，不是一次性满电）
+      if (state.currentAction?.name === "collapse_asleep") {
+        this.world.modifyNeed(state.id, "energy", 9);
+        continue;
+      }
+      const energy = state.needs.energy ?? 100;
+      if (energy > 3) continue;
+      if (state.currentAction?.name === "sleep" || state.currentAction?.name === "nap") continue;
+
+      state.currentAction = { name: "collapse_asleep", remainingTicks: 8 };
+      const loc = this.world.getLocation(state.locationId);
+      const isPublic = loc?.type !== "residential";
+      this.memory.add(state.id, {
+        tick: gameTime.tick, type: "event",
+        content: isPublic ? `你累得当场撑不住，在${loc?.name ?? "外面"}睡着了` : "你累得撑不住，倒头就睡着了",
+        importance: 8,
+      });
+      this.longTerm.add(state.id, {
+        tick: gameTime.tick, type: "event", importance: 8,
+        content: isPublic ? `你在${loc?.name ?? "外面"}当众累晕睡着（那天真的透支了）` : "你累到直接晕睡过去",
+      });
+      if (isPublic) {
+        addMoodlet(state, "embarrassed", 3, "在外面当众睡着了", 16, "need", gameTime.tick);
+        this.world.setObservableState(state.id, {
+          actionName: "collapse_asleep",
+          source: "action",
+          summary: "撑不住趴在那里睡着了，怎么都叫不太醒。",
+          createdTick: gameTime.tick,
+          expiresAt: gameTime.tick + 8,
+        });
+        // 在场者亲眼看见（进各自记忆——可谈论、可传八卦）
+        for (const otherId of this.world.getCharactersAtLocation(state.locationId)) {
+          if (otherId === state.id) continue;
+          this.memory.add(otherId, {
+            tick: gameTime.tick, type: "observation",
+            content: `${state.name}累得当场睡着了，就趴在${loc?.name ?? "那里"}`,
+            importance: 6,
+            relatedCharacterId: state.id,
+          });
+        }
+      }
+      console.log(`😵 [力竭] ${state.name} 在 ${loc?.name ?? state.locationId} 撑不住睡着了 (energy=${energy})`);
     }
   }
 

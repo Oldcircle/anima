@@ -236,11 +236,10 @@ export class Director {
     for (let step = 0; step < maxSteps; step++) {
       stepsUsed = step + 1;
 
-      // beat_ready 且还没写过工具时，从 tool list 移除 do_nothing 防止 LLM 逃避
+      // 导演有"此刻不该有事"的权利：do_nothing 永远在工具表里。
+      // 旧版 beat_ready 时移除 do_nothing 强制写入 → 日历驱动的假戏（无中生有的干预比没有干预更假）
       const isBeatMustWrite = params.trigger === "beat_ready" && writeCallCount === 0;
-      const stepTools = isBeatMustWrite
-        ? tools.filter((t) => t.tool.name !== "do_nothing")
-        : tools;
+      const stepTools = tools;
 
       let response;
       try {
@@ -274,7 +273,7 @@ export class Director {
             { role: "assistant", content: response.content || "(无)" },
             {
               role: "user",
-              content: "你没有调用任何工具。这是一个 beat_ready 触发——你**必须**调用至少一个写工具（inject_intent 是最有效的选择）让这个 beat 在世界里发生。请现在调用。",
+              content: "你没有调用任何工具。这是一个 beat_ready 触发——如果你判断此刻确实该有事发生，请调用写工具让它发生；如果你判断这个 beat 已经在自然发生、或者时机完全不对，请显式调用 do_nothing 并说明理由（不调用任何工具会被当作失误）。",
             },
           );
           continue;
@@ -374,7 +373,7 @@ export class Director {
         content:
           writeCallCount === 0
             ? isBeatReady
-              ? "继续。你已经 read 了，现在**必须**调用至少一个写工具（首选 inject_intent）让这个 beat 在世界里发生。还没到调 do_nothing 的时候。"
+              ? "继续。你已经 read 了。如果 read 显示时机成熟，调用写工具让 beat 发生；如果 read 显示它已在自然发生或时机不对，调 do_nothing 并说明理由。"
               : "继续。如果信息够了，请调用 1-2 个写工具，或调 do_nothing 结束。"
             : "继续。你已经做出了改动，可以再补一个写工具或不再调用工具来结束。",
       });
@@ -466,7 +465,7 @@ ${charLines}
 1. 你**不能**让角色直接说话。你没有任何 talk/say 工具。台词永远由角色自己产出。
 2. 所有角色 id 必须来自下面列出的"角色"列表，**绝不允许**编造或使用动漫角色名。
 3. **先看后写**：在调用任何写工具之前，**至少先调用一次 read_character 或 read_scene** 调查相关角色/场景的真实状态。世界快照里只有 id 列表，详情必须自己 read。
-4. **beat_ready 必须介入**：beat 触发就意味着这一刻该有事发生。read 完之后你**必须**至少调用一个写工具。do_nothing 仅在你确认这个 beat 已经在世界里自然发生（read 看到了证据）时才允许。
+4. **beat_ready 先判断再介入**：beat 触发 = 值得看一眼，不 = 必须制造。read 之后：世界里已有苗头 → 轻推放大它；毫无因果基础 → do_nothing 并说明（无中生有的剧情比没有剧情更伤真实感）。你是涌现的放大器，不是剧情制造机。
 5. 写工具（每次调用最多用 3 个）：
    - **inject_intent**（最有效，首选）: 给角色注入念头，直接影响下一 tick 行为
    - **inject_observation**: 让角色注意到某事
@@ -486,7 +485,7 @@ ${charLines}
     const hintText = beatHint?.director_hint ?? beatHint?.hint ?? event.description ?? "";
     const reasonText =
       event.reason === "fallback_deadline"
-        ? "⚠️ 这是 fallback 强制触发——意味着原本预期的前置条件没满足，但 deadline 到了，必须让它发生。"
+        ? "⚠️ 这是 fallback 触发——前置条件没满足但 deadline 到了。优先播种条件（seed_topic/inject_intent 让前置更可能自然发生），硬把结果按日历砸下去是最后手段；时机完全不对就 do_nothing。"
         : "前置条件已自然满足。";
 
     const user = `${this.buildWorldSnapshot(world)}
