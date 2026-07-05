@@ -88,6 +88,22 @@ export class ConversationTracker {
     }
   }
 
+  /**
+   * 找出即将过期（本 tick 会被 cleanup 清掉）的对话——这是"对话结束"的时刻，
+   * 承诺抽取在这里触发（对话完整、且只触发一次）。
+   */
+  getEndingConversations(currentTick: number): Array<{ charA: string; charB: string; history: ConversationExchange[] }> {
+    const out: Array<{ charA: string; charB: string; history: ConversationExchange[] }> = [];
+    for (const [key, lastTick] of this._lastTick) {
+      if (currentTick - lastTick > 8) {
+        const [a, b] = key.split(":") as [string, string];
+        const history = this._exchanges.get(key) ?? [];
+        if (history.length > 0) out.push({ charA: a, charB: b, history: [...history] });
+      }
+    }
+    return out;
+  }
+
   /** 对话结束时清除记录 */
   clear(charA: string, charB: string): void {
     const key = this._pairKey(charA, charB);
@@ -116,11 +132,13 @@ export interface ConversationPromptParams {
   /** 天气 */
   weather?: Weather;
   /** 关系信息 */
-  relationship?: { level: number; type: string };
+  relationship?: { level: number; type: string; grudge?: { reason: string; instigatorId: string; sinceTick: number } };
   /** 已有的印象 */
   impressionText?: string;
   /** 角色最近记忆 */
   recentMemories?: string;
+  /** 你和对方之间实际发生过的事（长期记忆 + 关系史），防编造共同历史 */
+  sharedHistory?: string;
   /** D3: director 注入的"想聊的话题" */
   wantToDiscuss?: Array<{ topic: string; urgency: "low" | "med" | "high"; targetChar?: string }>;
 }
@@ -166,7 +184,7 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     else if (relType === "close_friend") relDesc = "你对这个人有明显的亲近感";
     else if (relType === "friend") relDesc = "你和这个人已经算熟悉了";
     else if (relType === "acquaintance") relDesc = "你对这个人有些印象";
-    else if (relType === "rival") relDesc = "你和这个人之间有些紧绷";
+    else if (relType === "rival") relDesc = "你看这个人不顺眼。说话可以带刺、可以敷衍、可以不给面子——你没有对他友善的义务";
     else relDesc = "你们还不太熟";
     parts.push(relDesc);
   }
@@ -178,7 +196,35 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
   parts.push(`\n## 你现在的状态`);
   parts.push(bodyFeelings);
   if (moodletText) parts.push(moodletText);
+
+  // 身体状态压进对话方式（复制 financeFeeling 的成功路子）：
+  // 精力 6 还在妙语连珠 = 数值和行为脱节的"过家家感"重灾区
+  const energy = state.needs.energy ?? 100;
+  const hunger = state.needs.hunger ?? 100;
+  if (energy <= 15) {
+    parts.push(`⚠️ 你现在困得快睁不开眼了。回话必须短（几个字也行），可以心不在焉、可以失礼、可以直接说"我先回去睡了"。妙语连珠是不可能的。`);
+  } else if (energy <= 30) {
+    parts.push(`你挺累的。回话别太长，也没力气接新话题。`);
+  }
+  if (hunger <= 15) {
+    parts.push(`⚠️ 你饿得胃在抽。满脑子都是吃的，聊什么都心不在焉，可以直接打断话题去找吃的。`);
+  }
   if (params.recentMemories) parts.push(`最近的经历：\n${params.recentMemories}`);
+
+  // 你们之间实际发生过的事（长期记忆 + 关系史）——真历史进对话，假"上周"出局
+  if (params.sharedHistory) {
+    parts.push(`\n## 你和${partnerCard.name}之间实际发生过的\n${params.sharedHistory}\n（可以自然地提起这些真实发生过的事。）`);
+  } else {
+    parts.push(`\n（你和${partnerCard.name}之间还没有什么值得一提的共同经历。）`);
+  }
+  parts.push(`⚠️ 不要编造上面没有列出的具体共同经历——不存在的"上周我们…"、"你每次都…"、"平时你总是…"。刚认识就是刚认识。`);
+
+  // 未解开的疙瘩：对话的底色是僵的
+  if (params.relationship?.grudge) {
+    const g = params.relationship.grudge;
+    const mine = g.instigatorId === card.id;
+    parts.push(`\n⚡ 你和${partnerCard.name}之间有没解开的疙瘩（${g.reason}）。${mine ? "是你先发的火。想和好就得先低头（道歉/递个台阶），装没事人只会更僵。" : "对方冲你发过火还没道歉。你可以冷淡、敷衍、阴阳怪气，或者等一句道歉——不必假装热络。"}`);
+  }
 
   // 随身物品（对话中可能会给对方东西）
   if (state.inventory && state.inventory.length > 0) {
@@ -279,9 +325,10 @@ export function buildConversationRequest(params: {
   locationName: string;
   atmosphere?: LocationAtmosphere;
   weather?: Weather;
-  relationship?: { level: number; type: string };
+  relationship?: { level: number; type: string; grudge?: { reason: string; instigatorId: string; sinceTick: number } };
   impressionText?: string;
   recentMemories?: string;
+  sharedHistory?: string;
   actions: ActionDefinition[];
   workplaceName?: string;
   colleagueNames?: string[];
@@ -302,6 +349,7 @@ export function buildConversationRequest(params: {
     relationship: params.relationship,
     impressionText: params.impressionText,
     recentMemories: params.recentMemories,
+    sharedHistory: params.sharedHistory,
     wantToDiscuss: params.wantToDiscuss,
   });
 

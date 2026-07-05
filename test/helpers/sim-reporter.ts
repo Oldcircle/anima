@@ -13,7 +13,7 @@
 import type { World } from "../../src/world/world.js";
 import type { Simulation, TickSummary } from "../../src/agent/simulation.js";
 import type { AgentTickResult } from "../../src/agent/agent-loop.js";
-import { formatGameTime } from "../../src/core/tick-engine.js";
+import { formatGameTime, tickToGameTime } from "../../src/core/tick-engine.js";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 
@@ -82,6 +82,21 @@ export class SimReporter {
   private timelineLines: string[] = [];
   private startWall = Date.now();
 
+  // ── 涌现引擎长线信号（多日弧线） ──
+  private lastDay = -1;
+  /** 每天关系水位快照（检测 valence 正向通胀） */
+  private relSnapshots: { day: number; tick: number; sumLevel: number; positive: number; negative: number; pairs: Record<string, number> }[] = [];
+  /** 当前活跃积怨：pairKey → 这一段积怨的 sinceTick（换了 sinceTick = 又结了一段新的） */
+  private grudgeEpoch = new Map<string, number>();
+  /** 积怨-和解弧线（reEscalated=旧疙瘩没解就又结新的） */
+  private grudgeArcs: { pair: string; formedTick: number; formedTime: string; reason: string; resolvedTick?: number; resolvedTime?: string; durationTicks?: number; reEscalated?: boolean }[] = [];
+  /** 约定 id → 最近见到的状态 */
+  private apptStatus = new Map<string, "pending" | "kept" | "missed">();
+  /** pending 约定被同对新约替换、永不结算的数量（解释 创建 > 兑现+爽约 的缺口） */
+  private apptReplaced = 0;
+  /** 约定事件流（创建/兑现/爽约） */
+  private apptEvents: { day: number; time: string; kind: "created" | "kept" | "missed"; proposer: string; target: string; activity: string }[] = [];
+
   // ID → 显示名缓存
   private nameCache = new Map<string, string>();
 
@@ -136,6 +151,7 @@ export class SimReporter {
   /** 每 tick 回调 — 实时输出 */
   private onTick(summary: TickSummary): void {
     this.ticksProcessed++;
+    this.trackEmergence(summary);
     const time = this.fmtTime(summary.gameTime);
     const gt = formatGameTime(summary.gameTime);
 
@@ -250,6 +266,174 @@ export class SimReporter {
     }
   }
 
+  /** 每 tick 采集涌现引擎长线信号：关系水位快照 + 积怨弧线 + 约定结算 */
+  private trackEmergence(summary: TickSummary): void {
+    const tick = summary.tick;
+    const time = this.fmtTime(summary.gameTime);
+    const day = summary.gameTime.day;
+
+    // 1) 每天头一个 tick 采一次关系水位快照（用于检测 valence 是否只涨不跌）
+    if (day !== this.lastDay) {
+      this.lastDay = day;
+      const rels = this.sim.relationships.getAll();
+      let sumLevel = 0, positive = 0, negative = 0;
+      const pairs: Record<string, number> = {};
+      for (const rel of rels) {
+        sumLevel += rel.level;
+        if (rel.level > 0) positive += rel.level;
+        else if (rel.level < 0) negative += rel.level;
+        pairs[`${rel.characterA}|${rel.characterB}`] = rel.level;
+      }
+      this.relSnapshots.push({ day, tick, sumLevel, positive, negative, pairs });
+    }
+
+    // 2) 积怨-和解弧线：按 (pair + grudge.sinceTick) 分段——同一对再次结怨（sinceTick 变）
+    //    要算作新一段，否则第二段的起因/和解会被静默吞进第一段。
+    const rels = this.sim.relationships.getAll();
+    const activeNow = new Set<string>();
+    for (const rel of rels) {
+      if (!rel.grudge) continue;
+      const key = `${this.name(rel.characterA)} ↔ ${this.name(rel.characterB)}`;
+      activeNow.add(key);
+      const epoch = rel.grudge.sinceTick;
+      const seen = this.grudgeEpoch.get(key);
+      if (seen === epoch) continue;   // 同一段，已记
+      if (seen !== undefined) {
+        // 旧疙瘩没解就又结了新的一段：先给旧弧线收口（标记为再度激化，非真和解）
+        const old = this.grudgeArcs.find((x) => x.pair === key && x.resolvedTick === undefined);
+        if (old) { old.resolvedTick = tick; old.resolvedTime = `D${day + 1} ${time}（再度激化）`; old.durationTicks = tick - old.formedTick; old.reEscalated = true; }
+      }
+      this.grudgeEpoch.set(key, epoch);
+      this.grudgeArcs.push({ pair: key, formedTick: epoch, formedTime: `D${day + 1} ${time}`, reason: rel.grudge.reason });
+    }
+    for (const [key] of [...this.grudgeEpoch]) {
+      if (activeNow.has(key)) continue;
+      this.grudgeEpoch.delete(key);
+      const arc = this.grudgeArcs.find((a) => a.pair === key && a.resolvedTick === undefined);
+      if (arc) {
+        arc.resolvedTick = tick;
+        arc.resolvedTime = `D${day + 1} ${time}`;
+        arc.durationTicks = tick - arc.formedTick;
+      }
+    }
+
+    // 3) 约定：创建 / 兑现 / 爽约 / 被改约替换
+    const liveIds = new Set<string>();
+    for (const a of this.world.getAllAppointments()) {
+      liveIds.add(a.id);
+      const prev = this.apptStatus.get(a.id);
+      const activity = a.activity ?? "见面";
+      if (prev === undefined) {
+        this.apptStatus.set(a.id, a.status);
+        // 创建时间用约定自带的 createdTick（读档/跨 tick 才被观察到时也准）
+        const ct = tickToGameTime(a.createdTick);
+        this.apptEvents.push({ day: ct.day + 1, time: this.fmtTime(ct), kind: "created", proposer: this.name(a.proposerId), target: this.name(a.targetId), activity });
+        if (a.status === "kept" || a.status === "missed") {
+          this.apptEvents.push({ day: day + 1, time, kind: a.status, proposer: this.name(a.proposerId), target: this.name(a.targetId), activity });
+        }
+      } else if (prev !== a.status && (a.status === "kept" || a.status === "missed")) {
+        this.apptStatus.set(a.id, a.status);
+        this.apptEvents.push({ day: day + 1, time, kind: a.status, proposer: this.name(a.proposerId), target: this.name(a.targetId), activity });
+      }
+    }
+    // 记过、如今 pending 却从清单消失 = 被同对新约替换，永不结算（解释创建>结算的缺口）
+    for (const [id, status] of [...this.apptStatus]) {
+      if (status === "pending" && !liveIds.has(id)) {
+        this.apptStatus.delete(id);
+        this.apptReplaced++;
+      }
+    }
+  }
+
+  /** 涌现引擎长线信号的文字化（console + md 共用） */
+  private emergenceReport(): string[] {
+    const out: string[] = [];
+
+    // valence 通胀检测：关键判据是「已存在的关系对是否曾日间回落」，而不是首末 delta——
+    // 本世界关系从零涌现，新出现的关系对天然从 0 涨起，用首末 delta 会把正常涌现误判成通胀。
+    out.push("### valence 轨迹（关系水位，检测正向通胀）");
+    out.push("");
+    if (this.relSnapshots.length >= 2) {
+      out.push("| 天 | Σ水位 | 正向和 | 负向和 | 关系对数 |");
+      out.push("|----|-------|--------|--------|----------|");
+      for (const s of this.relSnapshots) {
+        out.push(`| D${s.day + 1} | ${s.sumLevel} | ${s.positive} | ${s.negative} | ${Object.keys(s.pairs).length} |`);
+      }
+      out.push("");
+      // 日间下行：某对已存在的关系在相邻两天快照间掉了 >1（真正的"回落"，新对出现不算）
+      let dayDrops = 0;
+      const dropEx: string[] = [];
+      for (let i = 1; i < this.relSnapshots.length; i++) {
+        const prev = this.relSnapshots[i - 1]!, cur = this.relSnapshots[i]!;
+        for (const key of Object.keys(prev.pairs)) {
+          if (cur.pairs[key] === undefined) continue;
+          const d = cur.pairs[key]! - prev.pairs[key]!;
+          if (d < -1) {
+            dayDrops++;
+            if (dropEx.length < 4) dropEx.push(`${key.replace("|", " ↔ ")} D${prev.day + 1}→D${cur.day + 1} ${prev.pairs[key]}→${cur.pairs[key]}`);
+          }
+        }
+      }
+      const negEver = this.relSnapshots.some((s) => s.negative < 0);
+      const first = this.relSnapshots[0]!, last = this.relSnapshots[this.relSnapshots.length - 1]!;
+      const inflation = dayDrops === 0 && !negEver;
+      out.push(`- 关系对日间下行事件：**${dayDrops}** 次${dropEx.length ? "（例：" + dropEx.join("；") + "）" : ""}`);
+      out.push(`- 全程是否出现过负向水位：**${negEver ? "是" : "否"}**`);
+      out.push(`- Σ水位 D1→末：${first.sumLevel} → ${last.sumLevel}（Δ${last.sumLevel - first.sumLevel}，含新涌现关系）`);
+      out.push("");
+      out.push(inflation
+        ? "**判定**：⚠️ 疑似正向通胀——已存在的关系对**从不日间回落**、全程无负向水位，水位像棘轮只涨不跌。复核 impression 态度是否只加不减 / 冲突负反馈是否落到关系轴 / 是否缺时间衰减。"
+        : `**判定**：✅ 双向流动——观测到 ${dayDrops} 次关系日间回落${negEver ? "、且出现过负向水位" : ""}，valence 不是单向棘轮。`);
+    } else {
+      out.push("_快照不足（需 ≥2 天）_");
+    }
+    out.push("");
+
+    // 积怨弧线
+    out.push("### 积怨-和解弧线");
+    out.push("");
+    if (this.grudgeArcs.length === 0) {
+      out.push("_全程无积怨形成_");
+    } else {
+      const resolved = this.grudgeArcs.filter((a) => a.resolvedTick !== undefined && !a.reEscalated);
+      const reesc = this.grudgeArcs.filter((a) => a.reEscalated).length;
+      out.push(`积怨形成 **${this.grudgeArcs.length}** 次，真和解 **${resolved.length}** 次${reesc ? `，再度激化 ${reesc} 次` : ""}。`);
+      out.push("");
+      out.push("| 关系 | 结疙瘩 | 起因 | 和解 | 持续(游戏小时) |");
+      out.push("|------|--------|------|------|----------------|");
+      for (const a of this.grudgeArcs) {
+        const dur = a.durationTicks !== undefined ? (a.durationTicks / 4).toFixed(1) : "未和解";
+        out.push(`| ${a.pair} | ${a.formedTime} | ${a.reason} | ${a.resolvedTime ?? "—"} | ${dur} |`);
+      }
+    }
+    out.push("");
+
+    // 约定
+    out.push("### 约定兑现 / 爽约");
+    out.push("");
+    const created = this.apptEvents.filter((e) => e.kind === "created").length;
+    const kept = this.apptEvents.filter((e) => e.kind === "kept").length;
+    const missed = this.apptEvents.filter((e) => e.kind === "missed").length;
+    const settled = kept + missed;
+    const keptRate = settled > 0 ? ((kept / settled) * 100).toFixed(0) : "—";
+    const stillPending = created - settled - this.apptReplaced;
+    const gapNote = this.apptReplaced > 0 || stillPending > 0
+      ? `（其中 ${this.apptReplaced} 被改约替换、${Math.max(0, stillPending)} 到收尾仍未到点）`
+      : "";
+    out.push(`约定创建 **${created}** · 兑现 **${kept}** · 爽约 **${missed}**（兑现率 ${keptRate}%）${gapNote}。`);
+    if (this.apptEvents.length > 0) {
+      out.push("");
+      out.push("| 天 | 时间 | 事件 | 发起 → 对象 | 活动 |");
+      out.push("|----|------|------|-------------|------|");
+      const icon = { created: "📮 约定", kept: "✅ 兑现", missed: "💔 爽约" } as const;
+      for (const e of this.apptEvents) {
+        out.push(`| D${e.day} | ${e.time} | ${icon[e.kind]} | ${e.proposer} → ${e.target} | ${e.activity} |`);
+      }
+    }
+    out.push("");
+    return out;
+  }
+
   /** 打印最终摘要 */
   printSummary(): void {
     const elapsed = ((Date.now() - this.startWall) / 1000).toFixed(1);
@@ -345,6 +529,23 @@ export class SimReporter {
     } else {
       console.log("");
       console.log(c.green("  ✅ 无明显异常"));
+    }
+
+    // 涌现引擎长线信号（约定/积怨/valence）
+    if (this.relSnapshots.length >= 2 || this.apptEvents.length > 0 || this.grudgeArcs.length > 0) {
+      console.log("");
+      console.log(c.bold("  涌现引擎长线信号"));
+      const first = this.relSnapshots[0];
+      const last = this.relSnapshots[this.relSnapshots.length - 1];
+      if (first && last) {
+        console.log(`    valence Σ水位: ${first.sumLevel} → ${c.bold(String(last.sumLevel))} (Δ${last.sumLevel - first.sumLevel})`);
+      }
+      const kept = this.apptEvents.filter((e) => e.kind === "kept").length;
+      const missed = this.apptEvents.filter((e) => e.kind === "missed").length;
+      const created = this.apptEvents.filter((e) => e.kind === "created").length;
+      console.log(`    约定: 创建 ${created} · ${c.green("兑现 " + kept)} · ${c.red("爽约 " + missed)}`);
+      const resolved = this.grudgeArcs.filter((a) => a.resolvedTick !== undefined && !a.reEscalated).length;
+      console.log(`    积怨: 形成 ${this.grudgeArcs.length} · 真和解 ${resolved}`);
     }
 
     console.log("");
@@ -478,6 +679,11 @@ export class SimReporter {
       }
     }
 
+    // 涌现引擎长线信号（约定兑现/爽约 · 积怨-和解弧线 · valence 通胀检测）
+    md.push("## 涌现引擎长线信号");
+    md.push("");
+    for (const line of this.emergenceReport()) md.push(line);
+
     // 时间线
     md.push("## 时间线");
     md.push("");
@@ -507,6 +713,9 @@ export class SimReporter {
       actionCounts: this.actionCounts,
       charActionCounts: this.charActionCounts,
       elapsedMs: Date.now() - this.startWall,
+      relSnapshots: this.relSnapshots,
+      grudgeArcs: this.grudgeArcs,
+      apptEvents: this.apptEvents,
     };
   }
 }

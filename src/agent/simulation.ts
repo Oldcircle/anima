@@ -9,6 +9,7 @@ import type { World } from "../world/world.js";
 import type { EventBus } from "../core/event-bus.js";
 import type { WorldEvent } from "../core/event-bus.js";
 import type { GameTime } from "../core/tick-engine.js";
+import { tickToGameTime } from "../core/tick-engine.js";
 import type { LLMProvider } from "../providers/types.js";
 import type { ActionDefinition } from "../actions/types.js";
 import { RelationshipManager } from "../world/relationships.js";
@@ -19,9 +20,11 @@ import { rollRandomEvents, type RandomEvent } from "../world/events.js";
 import { processGossipSpread, type GossipItem } from "../world/gossip.js";
 import { getTodayFestival, type Festival } from "../world/festivals.js";
 import { ShortTermMemory } from "../memory/short-term.js";
+import { LongTermMemoryStore, formatSharedHistory } from "../memory/long-term.js";
 import { runAgentTick, describeObservableAction, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest } from "./conversation-mode.js";
+import { extractPromise, mightContainPromise } from "./promise-extractor.js";
 import { ImpressionStore } from "../memory/impressions.js";
 import { updateImpressionsBidirectional } from "./impression-updater.js";
 import { shouldObserve, generateObservation, type ObservationResult } from "./observation-reasoning.js";
@@ -69,6 +72,7 @@ export class Simulation {
   eventBus: EventBus;
   relationships: RelationshipManager;
   memory: ShortTermMemory;
+  longTerm: LongTermMemoryStore;
   conversations: ConversationTracker;
   impressions: ImpressionStore;
   /** N3：规则导演 */
@@ -79,6 +83,10 @@ export class Simulation {
   phaseTools: Record<string, ActionDefinition[]> = {};
   /** 上一次扫描 beats 的 game day（避免同一天扫多次） */
   private _lastBeatScanDay = -1;
+  /** 印象更新在飞标记（防同一对并发重复计分） */
+  private _impressionPending = new Set<string>();
+  /** valence 已计分水位：每对角色已评过态度的交换条数（防同一批台词反复计分） */
+  private _valenceWatermark = new Map<string, number>();
   /** 上一次跑日节奏检查的 game day */
   private _lastPacingDay = -1;
 
@@ -91,6 +99,7 @@ export class Simulation {
     this.eventBus = eventBus;
     this.relationships = new RelationshipManager();
     this.memory = new ShortTermMemory();
+    this.longTerm = new LongTermMemoryStore();
     this.conversations = new ConversationTracker();
     this.impressions = new ImpressionStore();
     this.beatEngine = new BeatEngine();
@@ -305,6 +314,9 @@ export class Simulation {
     // 1.0f 气候压力 + moodlet 管理 + 行为链检测
     this._applyClimateAndMoodlets(gameTime);
 
+    // 1.0g 力竭昏睡：energy 逼近 0 的角色当场撑不住睡着（needs 第一次真正咬人）
+    this._applyExhaustionCollapse(gameTime);
+
     // 1.5 随机事件
     const triggeredEvents = this._rollRandomEvents(gameTime);
 
@@ -317,8 +329,12 @@ export class Simulation {
     // 3.5 反应轮：信箱有新消息的角色获得额外决策机会
     await this._runReactionRounds(results, gameTime);
 
-    // 3.6 互动后印象更新（fire-and-forget）+ 清理过期对话
+    // 3.55 冲突当刻晋升长期记忆：吵架/偷窃被抓不该 48 小时后蒸发
+    this._promoteConflictsToLongTerm(results, gameTime);
+
+    // 3.6 互动后印象更新（fire-and-forget）+ 承诺抽取（对话结束时）+ 清理过期对话
     this._scheduleImpressionUpdates(results, gameTime);
+    this._schedulePromiseExtraction(gameTime);
     this.conversations.cleanup(gameTime.tick);
 
     // 3.7 社会观察推理（fire-and-forget）
@@ -372,6 +388,27 @@ export class Simulation {
     if (gameTime.hour === 7 && gameTime.minute === 0) {
       for (const c of this.world.getAllCharacters()) {
         applyDailyUpkeep(c, gameTime.tick, this.memory);
+      }
+    }
+
+    // 0c. 每天 06:00 疙瘩淡化（3 游戏天没解开就自然淡了）+ 店铺补货
+    if (gameTime.hour === 6 && gameTime.minute === 0) {
+      for (const rel of this.relationships.getAll()) {
+        if (rel.grudge && gameTime.tick - rel.grudge.sinceTick > 288) {
+          this.relationships.clearGrudge(rel.characterA, rel.characterB);
+        }
+      }
+      // 店铺每日补货：有员工工具的店 + 任何已开始追踪库存的店（prepare 会让无 workerTools 的店
+      // 进入追踪——不补货就会毒化成永久缺货）。补足到 2 而非覆盖写 2：员工备到 8 的货不隔夜蒸发。
+      for (const loc of this.world.getAllLocations()) {
+        const tracked = loc.stock !== undefined;
+        const hasWorkers = !!(loc.workerTools && loc.workerTools.length > 0);
+        if (loc.shop && loc.shop.length > 0 && (hasWorkers || tracked)) {
+          loc.stock = loc.stock ?? {};
+          for (const item of loc.shop) {
+            loc.stock[item.id] = Math.max(loc.stock[item.id] ?? 0, 2);
+          }
+        }
       }
     }
   }
@@ -477,6 +514,7 @@ export class Simulation {
               .map((r) => this.world.getCharacter(r.otherId)?.name)
               .filter((n): n is string => !!n),
             wantToDiscuss: this.world.getWantToDiscuss(id, gameTime.tick, activePartnerId),
+            sharedHistory: this._sharedHistoryFor(id, activePartnerId, gameTime.tick),
           });
         }
       }
@@ -505,7 +543,11 @@ export class Simulation {
         const targetId = this._resolveCharacterId(r.action.args.target as string);
         // RelationshipManager 是对称关系，同一条 talk 只应推动一次，
         // 否则会因为“你对我说话 / 我对你说话”被重复加分，亲密度涨得过快。
-        this.relationships.modify(r.characterId, targetId, 1, gameTime.tick, r.result?.description ?? "聊天");
+        // 疙瘩没解开期间冻结"开口就+1"——尬聊不等于和好（和好走道歉/安慰/送礼路径）
+        const hasGrudge = !!this.relationships.get(r.characterId, targetId).grudge;
+        if (!hasGrudge) {
+          this.relationships.modify(r.characterId, targetId, 1, gameTime.tick);
+        }
         const charState = this.world.getCharacter(r.characterId);
         this.conversations.recordTalk(
           r.characterId,
@@ -522,6 +564,140 @@ export class Simulation {
         const targetState = this.world.getCharacter(targetId);
         if (targetState) {
           addMoodlet(targetState, "happy", 1, "有人找我说话", 8, "social", gameTime.tick);
+        }
+      }
+    }
+  }
+
+  /**
+   * 1.0g 力竭昏睡：energy ≤ 3 的角色当场撑不住睡着——needs 归零第一次有机制后果。
+   * 此前 energy 0 和满值的行为空间几乎一样（4/7 角色精力 0 还在完整敬语寒暄）。
+   * 昏睡 8 tick（2 游戏小时），期间每 tick 恢复少量精力；在公共场合睡着会被人看见、留下记忆。
+   */
+  private _applyExhaustionCollapse(gameTime: GameTime): void {
+    for (const state of this.world.getAllCharacters()) {
+      // 昏睡中：每 tick 恢复一点精力（按时长摊销，不是一次性满电）
+      if (state.currentAction?.name === "collapse_asleep") {
+        this.world.modifyNeed(state.id, "energy", 9);
+        continue;
+      }
+      const energy = state.needs.energy ?? 100;
+      if (energy > 3) continue;
+      if (state.currentAction?.name === "sleep" || state.currentAction?.name === "nap") continue;
+
+      state.currentAction = { name: "collapse_asleep", remainingTicks: 8 };
+      const loc = this.world.getLocation(state.locationId);
+      const isPublic = loc?.type !== "residential";
+      this.memory.add(state.id, {
+        tick: gameTime.tick, type: "event",
+        content: isPublic ? `你累得当场撑不住，在${loc?.name ?? "外面"}睡着了` : "你累得撑不住，倒头就睡着了",
+        importance: 8,
+      });
+      this.longTerm.add(state.id, {
+        tick: gameTime.tick, type: "event", importance: 8,
+        content: isPublic ? `你在${loc?.name ?? "外面"}当众累晕睡着（那天真的透支了）` : "你累到直接晕睡过去",
+      });
+      if (isPublic) {
+        addMoodlet(state, "embarrassed", 3, "在外面当众睡着了", 16, "need", gameTime.tick);
+        this.world.setObservableState(state.id, {
+          actionName: "collapse_asleep",
+          source: "action",
+          summary: "撑不住趴在那里睡着了，怎么都叫不太醒。",
+          createdTick: gameTime.tick,
+          expiresAt: gameTime.tick + 8,
+        });
+        // 在场者亲眼看见（进各自记忆——可谈论、可传八卦）
+        for (const otherId of this.world.getCharactersAtLocation(state.locationId)) {
+          if (otherId === state.id) continue;
+          this.memory.add(otherId, {
+            tick: gameTime.tick, type: "observation",
+            content: `${state.name}累得当场睡着了，就趴在${loc?.name ?? "那里"}`,
+            importance: 6,
+            relatedCharacterId: state.id,
+          });
+        }
+      }
+      console.log(`😵 [力竭] ${state.name} 在 ${loc?.name ?? state.locationId} 撑不住睡着了 (energy=${energy})`);
+    }
+  }
+
+  /**
+   * 3.55 冲突当刻晋升长期记忆：argue / steal 被抓这类"有重量的事"直接写入 LTM（双方视角），
+   * 之后对话时会作为"你们之间实际发生过的"注入——上周的架不会像没吵过一样。
+   */
+  private _promoteConflictsToLongTerm(results: AgentTickResult[], gameTime: GameTime): void {
+    for (const r of results) {
+      if (r.result?.success === false || !r.action) continue;
+      const targetRaw = r.action.args.target as string | undefined;
+
+      if (r.action.name === "argue" && targetRaw) {
+        const targetId = this._resolveCharacterId(targetRaw);
+        const actorName = this.world.getCharacter(r.characterId)?.name ?? r.characterId;
+        const targetName = this.world.getCharacter(targetId)?.name ?? targetId;
+        const reason = (r.action.args.reason as string | undefined) ?? "";
+        this.longTerm.add(r.characterId, {
+          tick: gameTime.tick, type: "event", importance: 8,
+          content: `你和${targetName}大吵了一架${reason ? `（${reason}）` : ""}`,
+          relatedCharacterId: targetId,
+        });
+        this.longTerm.add(targetId, {
+          tick: gameTime.tick, type: "event", importance: 8,
+          content: `${actorName}当面冲你发了火${reason ? `（${reason}）` : ""}`,
+          relatedCharacterId: r.characterId,
+        });
+        // 结下疙瘩：吵完不是下一 tick 就忘
+        this.relationships.setGrudge(r.characterId, targetId, reason || "那次不欢而散", r.characterId, gameTime.tick);
+      }
+
+      // 疙瘩的解开：道歉性的 talk / comfort / give 都算把话说开了
+      if (targetRaw && ["talk", "comfort", "give"].includes(r.action.name)) {
+        const targetId = this._resolveCharacterId(targetRaw);
+        const rel = this.relationships.get(r.characterId, targetId);
+        if (rel.grudge && gameTime.tick - rel.grudge.sinceTick >= 2) {
+          const message = (r.action.args.message as string | undefined) ?? (r.action.args.words as string | undefined) ?? "";
+          // 道歉性 talk 只认肇事方（受害者的习惯性"对不起"不构成和解——真嗣的口癖不该替对方免责）；
+          // comfort/give 是主动示好动作，哪边做都算递了台阶
+          const isInstigator = rel.grudge.instigatorId === r.characterId;
+          const isApology = r.action.name !== "talk"
+            ? true
+            : isInstigator && /对不起|抱歉|是我不对|我道歉|别生气|不该那样/.test(message);
+          if (isApology) {
+            this.relationships.clearGrudge(r.characterId, targetId);
+            this.relationships.modify(r.characterId, targetId, 3, gameTime.tick, "把话说开了");
+            const actorName = this.world.getCharacter(r.characterId)?.name ?? r.characterId;
+            const targetName = this.world.getCharacter(targetId)?.name ?? targetId;
+            for (const [meId, text] of [
+              [r.characterId, `你主动跟${targetName}把之前的疙瘩说开了`],
+              [targetId, `${actorName}主动来把之前的疙瘩说开了`],
+            ] as const) {
+              this.memory.add(meId, { tick: gameTime.tick, type: "event", content: text, importance: 7, relatedCharacterId: meId === r.characterId ? targetId : r.characterId });
+              this.longTerm.add(meId, { tick: gameTime.tick, type: "event", content: text, importance: 7, relatedCharacterId: meId === r.characterId ? targetId : r.characterId });
+            }
+            console.log(`🕊️ [和解] ${r.characterId} ↔ ${targetId}（${r.action.name}）`);
+          }
+        }
+      }
+
+      if (r.action.name === "steal" && r.result?.description?.includes("抓住")) {
+        // 被抓的偷窃：受害者在 description 里（"伸手去摸XX的钱袋"）
+        const m = r.result.description.match(/伸手去摸(.+?)的钱袋/);
+        const victimName = m?.[1];
+        const victim = victimName
+          ? this.world.getAllCharacters().find((c) => c.name === victimName)
+          : undefined;
+        const actorName = this.world.getCharacter(r.characterId)?.name ?? r.characterId;
+        this.longTerm.add(r.characterId, {
+          tick: gameTime.tick, type: "event", importance: 9,
+          content: `你偷${victimName ?? "别人"}的东西被当场抓住了`,
+          relatedCharacterId: victim?.id,
+        });
+        if (victim) {
+          this.longTerm.add(victim.id, {
+            tick: gameTime.tick, type: "event", importance: 9,
+            content: `你抓到${actorName}偷你的东西`,
+            relatedCharacterId: r.characterId,
+          });
+          this.relationships.setGrudge(r.characterId, victim.id, "偷东西被当场抓住", r.characterId, gameTime.tick);
         }
       }
     }
@@ -551,6 +727,8 @@ export class Simulation {
         const state = this.world.getCharacter(id);
         if (!state) continue;
         if (state.inbox.length === 0) continue;
+        // 力竭昏睡叫不醒：不进反应轮（消息留到醒后消费，也避免双重扣 remainingTicks）
+        if (state.currentAction?.name === "collapse_asleep") continue;
         // 有信箱消息时，即使在执行多 tick 行为也允许进入反应轮
         // （agent-loop 会中断行为来回应）
         // 检查对话对的交换次数限制 + 跨 tick 冷却
@@ -610,6 +788,7 @@ export class Simulation {
                 .map((r) => this.world.getCharacter(r.otherId)?.name)
                 .filter((n): n is string => !!n),
               wantToDiscuss: this.world.getWantToDiscuss(id, gameTime.tick, partnerId),
+              sharedHistory: this._sharedHistoryFor(id, partnerId, gameTime.tick),
             });
             r = await runAgentTick({
               config,
@@ -654,7 +833,11 @@ export class Simulation {
         if (r.action?.name === "talk" && r.action.args.target && r.result?.success !== false) {
           hasNewTalk = true;
           const targetId = this._resolveCharacterId(r.action.args.target as string);
-          this.relationships.modify(r.characterId, targetId, 1, gameTime.tick, r.result?.description ?? "回复");
+          // 与主轮一致：疙瘩没解开期间冻结"开口就+1"（对话大头在反应轮，这里漏了冻结就等于没冻结），
+          // 也不再把每句回复灌进 rel.history
+          if (!this.relationships.get(r.characterId, targetId).grudge) {
+            this.relationships.modify(r.characterId, targetId, 1, gameTime.tick);
+          }
           const charState = this.world.getCharacter(r.characterId);
           this.conversations.recordTalk(
             r.characterId,
@@ -697,11 +880,18 @@ export class Simulation {
         const existingImp = this.impressions.get(r.characterId, targetId);
         const minExchanges = existingImp ? 4 : 2;
         const cooldownOk = !existingImp || (gameTime.tick - existingImp.lastUpdated) >= 4;
-        if (history.length >= minExchanges && cooldownOk) {
+        // 在飞门：上一次更新还没返回时不再调度（防同批台词并发计分两份）
+        if (history.length >= minExchanges && cooldownOk && !this._impressionPending.has(pairKey)) {
           processedPairs.add(pairKey);
           const cardA = this._configs.get(r.characterId)?.card;
           const cardB = this._configs.get(targetId)?.card;
           if (cardA && cardB) {
+            // valence 水位线：态度只评上次计分之后新增的台词——
+            // 印象可以看全量上下文，但同一批台词不能反复推高/压低关系
+            const prevMark = this._valenceWatermark.get(pairKey) ?? 0;
+            const newSince = history.length > prevMark ? history.length - prevMark : history.length;
+            this._valenceWatermark.set(pairKey, history.length);
+            this._impressionPending.add(pairKey);
             impressionPromises.push(
               updateImpressionsBidirectional({
                 cardA, cardB,
@@ -710,7 +900,9 @@ export class Simulation {
                 provider: this._provider,
                 modelId: this._configs.get(r.characterId)!.modelId,
                 tick: gameTime.tick,
-              }),
+                relationships: this.relationships,
+                valenceOnLastN: Math.max(1, newSince),
+              }).finally(() => this._impressionPending.delete(pairKey)),
             );
           }
         }
@@ -721,6 +913,72 @@ export class Simulation {
       this._trackBackgroundTask(Promise.all(impressionPromises)).catch((err) => {
         console.warn(`[tick ${gameTime.tick}] 印象生成失败:`, err?.message ?? err);
       });
+    }
+  }
+
+  /**
+   * 3.65 承诺抽取（fire-and-forget）：对话结束时检查双方有没有"说定"的见面承诺，
+   * 有就自动落成 appointment——「明天中午咖啡馆见」不再说完就蒸发。
+   * 预过滤（≥4 句 + 含时间词）控制成本；已有约定的对不重复抽。
+   */
+  private _schedulePromiseExtraction(gameTime: GameTime): void {
+    for (const conv of this.conversations.getEndingConversations(gameTime.tick)) {
+      // 对话真正结束：valence 水位清零，下一场对话从头计
+      this._valenceWatermark.delete([conv.charA, conv.charB].sort().join(":"));
+      if (!mightContainPromise(conv.history)) continue;
+      const cardA = this._configs.get(conv.charA)?.card;
+      const cardB = this._configs.get(conv.charB)?.card;
+      if (!cardA || !cardB) continue;
+      // 这对角色已有 pending 约定就不再抽（arrange_meet 或上次对话已经定过）
+      const existing = this.world.getUpcomingAppointments(conv.charA, gameTime.tick)
+        .some((a) => a.proposerId === conv.charB || a.targetId === conv.charB);
+      if (existing) continue;
+
+      const publicLocations = this.world.getAllLocations()
+        .filter((l) => l.type !== "residential")
+        .map((l) => ({ id: l.id, name: l.name }));
+
+      const task = extractPromise({
+        history: conv.history,
+        charAId: cardA.id, charAName: cardA.name,
+        charBId: cardB.id, charBName: cardB.name,
+        locations: publicLocations,
+        // 时间基准 = 说最后一句话的时刻（抽取发生在对话结束后 9+ tick，
+        // 用抽取时刻解析会把"今晚18:00"静默滚到明天）
+        currentTick: conv.history[conv.history.length - 1]?.tick ?? gameTime.tick,
+        provider: this._provider,
+        modelId: this._modelId,
+      }).then((p) => {
+        // 约定时刻已经过去（对话拖太久/边界情况）：宁可丢弃也不错记到明天
+        if (p && p.atTick <= gameTime.tick) return;
+        if (!p) return;
+        const ok = this.world.addAppointment({
+          id: `promise_${gameTime.tick}_${p.proposerId}_${p.targetId}`,
+          proposerId: p.proposerId,
+          targetId: p.targetId,
+          locationId: p.locationId,
+          atTick: p.atTick,
+          activity: p.activity,
+          status: "pending",
+          createdTick: gameTime.tick,
+        });
+        if (!ok) return;
+        const proposerName = this.world.getCharacter(p.proposerId)?.name ?? p.proposerId;
+        const targetName = this.world.getCharacter(p.targetId)?.name ?? p.targetId;
+        for (const [meId, otherName] of [[p.proposerId, targetName], [p.targetId, proposerName]] as const) {
+          this.memory.add(meId, {
+            tick: gameTime.tick,
+            type: "event",
+            content: `你和${otherName}说好了${p.timeText}在${p.locationName}见面${p.activity ? `（${p.activity}）` : ""}`,
+            importance: 7,
+            relatedCharacterId: meId === p.proposerId ? p.targetId : p.proposerId,
+          });
+        }
+        console.log(`🤝 [承诺→约定] ${proposerName} ↔ ${targetName}: ${p.timeText} @ ${p.locationName}${p.activity ? ` (${p.activity})` : ""}`);
+      }).catch((err: any) => {
+        console.warn(`🤝 [承诺抽取] ${conv.charA}↔${conv.charB} 失败:`, err?.message ?? err);
+      });
+      this._trackBackgroundTask(task);
     }
   }
 
@@ -818,12 +1076,30 @@ export class Simulation {
     });
     const reflections = await Promise.all(reflectionPromises);
 
-    // 反思结果回写 life state（愿望/担忧）
+    // 反思结果回写 life state（愿望/担忧）+ lastReflection（晨间打算直接读它）+ 长期记忆
     for (const r of reflections) {
       const charState = this.world.getCharacter(r.characterId);
       if (charState?.life) {
         if (r.wish) charState.life.currentGoal = r.wish;
         if (r.concern) charState.life.currentConcern = r.concern;
+      }
+      if (charState) {
+        charState.lastReflection = {
+          day: gameTime.day,
+          insights: r.insights,
+          mood: r.mood,
+          wish: r.wish,
+          concern: r.concern,
+        };
+      }
+      // 反思在发生当刻进入长期记忆——人生从此有跨越 48 小时的传记
+      for (const insight of r.insights) {
+        this.longTerm.add(r.characterId, {
+          tick: gameTime.tick,
+          type: "reflection",
+          content: `[反思] ${insight}`,
+          importance: 9,
+        });
       }
     }
 
@@ -849,6 +1125,25 @@ export class Simulation {
       summaries.push(summary);
     }
     return summaries;
+  }
+
+  /**
+   * 组装对话 prompt 的"你们之间实际发生过的"段：
+   * 长期记忆里关于对方的条目 + 关系史最近几条。没有共同历史时返回 undefined（刚认识就是刚认识）。
+   */
+  private _sharedHistoryFor(id: string, partnerId: string, currentTick: number): string | undefined {
+    const formatTime = (tick: number): string => {
+      const gt = tickToGameTime(tick);
+      const hhmm = `${String(gt.hour).padStart(2, "0")}:${String(gt.minute).padStart(2, "0")}`;
+      const dayDiff = tickToGameTime(currentTick).day - gt.day;
+      if (dayDiff <= 0) return hhmm;
+      return dayDiff === 1 ? `昨天${hhmm}` : `${dayDiff}天前${hhmm}`;
+    };
+    return formatSharedHistory({
+      longTermAbout: this.longTerm.getAbout(id, partnerId, 4),
+      relationHistory: this.relationships.get(id, partnerId).history,
+      formatTime,
+    });
   }
 
   /** 把 LLM 返回的 target（可能是 ID 或名字）解析为角色 ID */
@@ -1123,6 +1418,11 @@ export class Simulation {
             relatedCharacterId: other.id,
           });
           addMoodlet(me, "happy", 3, "赴约见到了人", 12, "social", gameTime.tick);
+          this.longTerm.add(me.id, {
+            tick: gameTime.tick, type: "event", importance: 7,
+            content: `你和${other.name}如约在${locName}碰了面`,
+            relatedCharacterId: other.id,
+          });
         }
         console.log(`📅 [约定] 兑现: ${a.proposerId} ↔ ${a.targetId} @ ${locName}`);
         continue;
@@ -1168,6 +1468,17 @@ export class Simulation {
           createdTick: gameTime.tick,
           expiresAt: gameTime.tick + 8,
         });
+        // 爽约进长期记忆——"她上次放过我鸽子"从此可以被真实引用
+        this.longTerm.add(waiter.id, {
+          tick: gameTime.tick, type: "event", importance: 8,
+          content: `${absentee.name}放了你鸽子（说好在${locName}见面，人没来）`,
+          relatedCharacterId: absentee.id,
+        });
+        this.longTerm.add(absentee.id, {
+          tick: gameTime.tick, type: "event", importance: 8,
+          content: `你放了${waiter.name}的鸽子（约在${locName}，你没去）`,
+          relatedCharacterId: waiter.id,
+        });
         console.log(`📅 [约定] 爽约: ${absentee.id} 放了 ${waiter.id} 鸽子 @ ${locName}`);
       } else {
         for (const [me, other] of [[proposer, target], [target, proposer]] as const) {
@@ -1204,18 +1515,20 @@ export class Simulation {
           const locName = this.world.getLocation(a.locationId)?.name ?? a.locationId;
           return `${describeAppointmentTime(a.atTick, gameTime.tick)}在${locName}和${otherName}见面`;
         });
-      const insights = this.memory.getRecentThoughts(id, 6)
-        .filter((t) => t.content.startsWith("[反思]"))
-        .map((t) => t.content.replace(/^\[反思\]\s*/, ""));
+      // 直接读昨晚反思的完整结果（state.lastReflection），
+      // 不再靠 getRecentThoughts 字符串匹配碰运气（记忆被挤出就断链）
+      const lastRef = state.lastReflection && gameTime.day - state.lastReflection.day <= 1
+        ? state.lastReflection
+        : undefined;
 
       const task = generateMorningPlan({
         card: config.card,
         state,
         provider: this._provider,
         modelId: config.modelId,
-        yesterdayWish: state.life?.currentGoal,
-        yesterdayConcern: state.life?.currentConcern,
-        yesterdayInsights: insights,
+        yesterdayWish: lastRef?.wish ?? state.life?.currentGoal,
+        yesterdayConcern: lastRef?.concern ?? state.life?.currentConcern,
+        yesterdayInsights: lastRef?.insights ?? [],
         todayAppointments,
         weather: this.world.weather,
         workplaceName: wpName,

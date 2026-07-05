@@ -66,14 +66,16 @@ export async function runReflection(params: {
 
 现在是晚上，你在回顾今天发生的事。请：
 1. 总结今天最重要的 2-3 件事（每条一句话）
-2. 说说你现在的心情（一个词或短语）
-3. 基于今天的经历，你现在最想做的一件事是什么？（一句话）
-4. 有什么让你担心的事吗？（一句话，没有就说"没有"）
+2. 今天最不顺的一件事是什么？谁让你不舒服了？（必答。真没有才写"没有"，别硬找温馨结论）
+3. 说说你现在的心情（一个词或短语）
+4. 基于今天的经历，你现在最想做的一件事是什么？（一句话）
+5. 有什么让你担心的事吗？（一句话，没有就说"没有"）
 
-用第一人称，保持你的性格和说话风格。回复格式：
+用第一人称，保持你的性格和说话风格。写实的日子不是日记美文——
+允许委屈、后悔、烦躁、看谁不顺眼；禁止"虽然…但也是温暖的一天"式强行升华。回复格式：
 洞察1: ...
 洞察2: ...
-洞察3: ...
+不顺: ...
 心情: ...
 愿望: ...
 担忧: ...`;
@@ -99,6 +101,9 @@ export async function runReflection(params: {
       const trimmed = line.trim();
       if (trimmed.startsWith("洞察") || trimmed.startsWith("- ")) {
         insights.push(trimmed.replace(/^洞察\d+[:：]\s*/, "").replace(/^-\s*/, ""));
+      } else if (trimmed.startsWith("不顺")) {
+        const raw = trimmed.replace(/^不顺[:：]\s*/, "");
+        if (raw && raw !== "没有" && raw !== "无") insights.push(raw);
       } else if (trimmed.startsWith("心情")) {
         mood = trimmed.replace(/^心情[:：]\s*/, "");
       } else if (trimmed.startsWith("愿望")) {
@@ -110,11 +115,12 @@ export async function runReflection(params: {
       }
     }
 
-    // 存入记忆（高 importance）
+    // 存入记忆（高 importance）。用独立的 reflection 类型：
+    // thought 会被 formatForPrompt 过滤（已单独成段），反思必须进主记忆流参与检索重排
     for (const insight of insights) {
       memory.add(card.id, {
         tick: params.dayEndTick,
-        type: "thought",
+        type: "reflection",
         content: `[反思] ${insight}`,
         importance: 9,
       });
@@ -124,7 +130,7 @@ export async function runReflection(params: {
     if (wish) {
       memory.add(card.id, {
         tick: params.dayEndTick,
-        type: "thought",
+        type: "reflection",
         content: `[愿望] ${wish}`,
         importance: 7,
       });

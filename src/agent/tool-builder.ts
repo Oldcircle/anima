@@ -54,8 +54,12 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
   // 1. 通用工具：go_to（永远可用）
   tools.push(buildGoToTool(ctx));
 
+  // 营业状态：打烊的商铺不提供顾客侧服务（员工可以进来备货）
+  const locOpen = isLocationOpen(ctx.location, ctx.hour);
+  const isWorkerHere = (ctx.state.life?.workplace ?? ctx.card.life?.workplace) === ctx.location.id;
+
   // 2. 地点工具（从当前地点 YAML 读取）
-  if (ctx.location.tools) {
+  if (ctx.location.tools && (locOpen || isWorkerHere || ctx.location.type !== "commercial")) {
     for (const lt of ctx.location.tools) {
       const action = buildLocationTool(lt, ctx);
       if (action) tools.push(action);
@@ -78,8 +82,8 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     tools.push(buildPrepareTool(ctx.location.shop, ctx));
   }
 
-  // 2c. 商店工具（地点有 shop 时浮现 buy）
-  if (ctx.location.shop && ctx.location.shop.length > 0) {
+  // 2c. 商店工具（地点有 shop 且在营业时浮现 buy）
+  if (ctx.location.shop && ctx.location.shop.length > 0 && locOpen) {
     const buyTool = buildBuyTool(ctx.location.shop, ctx);
     if (buyTool) tools.push(buyTool);
   }
@@ -90,9 +94,10 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
       const def = getItemDef(i.defId);
       return def && def.effects && (def.type === "consumable" || (def.type === "gift" && def.effects));
     });
-    const shopFood = (ctx.location.shop ?? []).filter(s => {
+    const shopFood = !locOpen ? [] : (ctx.location.shop ?? []).filter(s => {
       const def = getItemDef(s.id);
-      return def && def.effects && def.type === "consumable" && ctx.gold >= s.price;
+      const hasStock = ctx.location.stock?.[s.id] === undefined || ctx.location.stock[s.id]! > 0;
+      return def && def.effects && def.type === "consumable" && ctx.gold >= s.price && hasStock;
     });
     if (bagFood.length > 0 || shopFood.length > 0) {
       tools.push(buildEatTool(bagFood, shopFood, ctx));
@@ -178,7 +183,7 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     tools.push(buildBegTool());
   }
   if (ctx.gold === 0 && (ctx.state.needs.hunger ?? 100) < 20) {
-    tools.push(buildStealTool());
+    tools.push(buildStealTool(ctx));
   }
 
   // 5. Phase-specific 工具 (N6.4)：仅在 active_phase 在剧本白名单中时浮现
@@ -242,6 +247,7 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
       let desc = l.name;
       if (l.summary) desc += `——${l.summary}`;
       if (l.id === workplace) desc += "（你的工作地点）";
+      if (!isLocationOpen(l, ctx.hour) && l.type === "commercial" && l.id !== workplace) desc += "（这个点已打烊）";
       // 显示那里有谁（排除自己）
       const peopleHere = l.presentCharacters
         .filter((cid) => cid !== ctx.card.id)
@@ -347,6 +353,15 @@ function nearbyNames(ctx: ToolBuildContext): string {
     .join("、");
 }
 
+/** 营业时间判断：openHours 数据早就在 YAML 里，此前零消费——深夜也能买拿铁 */
+export function isLocationOpen(loc: Location, hour?: number): boolean {
+  if (hour === undefined || !loc.openHours) return true;
+  const { open, close } = loc.openHours;
+  if (open === close) return true;
+  if (open < close) return hour >= open && hour < close;
+  return hour >= open || hour < close; // 跨夜营业（酒吧 17-2）
+}
+
 function nearbyDisplayName(ctx: ToolBuildContext, id: string): string {
   return ctx.nearbyCharacters.find((c) => c.id === id)?.name ?? id;
 }
@@ -429,8 +444,10 @@ function buildTalkTool(ctx: ToolBuildContext, _talkableCharacters: Array<{ id: s
       const target = args.target as string;
       const message = args.message as string;
       const manner = args.manner as string | undefined;
-      if (!ctx.nearbyCharacters.some((c) => c.id === target)) {
-        return { description: `想和${target}说话，但对方不在这里`, effects: [], success: false };
+      // 用执行时的在场名单校验（actx），不是决策开始时的快照（ctx）——
+      // 并行决策下对方可能同 tick 已离开，旧校验会让角色对着空气说话还留下记忆
+      if (!actx.nearbyCharacters.includes(target)) {
+        return { description: `想和${target}说话，但对方已经不在这里了`, effects: [], success: false };
       }
       const mannerText = manner ? `${manner}，` : "";
       return {
@@ -534,13 +551,19 @@ function buildComfortTool(ctx: ToolBuildContext): ActionDefinition {
       if (!actx.nearbyCharacters.includes(target)) {
         return { description: `想安慰${target}，但对方不在这里`, effects: [], success: false };
       }
+      const words = (args.words as string | undefined)?.trim() || "一切都会好起来的";
+      const selfName = ctx.card.name;
       return {
-        description: `安慰${target}：${args.words ?? "一切都会好起来的"}`,
+        description: `安慰${target}：${words}`,
         effects: [
           { type: "need_change", targetId: target, field: "social", delta: 10 },
           { type: "need_change", targetId: actx.characterId, field: "social", delta: 8 },
           { type: "need_change", targetId: actx.characterId, field: "energy", delta: -5 },
           { type: "need_change", targetId: actx.characterId, field: "fun", delta: -5 },
+          // 被安慰的人要听到安慰的话（能回应），并记得这份好意
+          { type: "inbox_message", targetId: target, fromName: selfName, message: `（放轻了声音）${words}` },
+          { type: "relationship_change", targetId: target, delta: 3 },
+          { type: "moodlet", targetId: target, emotion: "grateful", intensity: 3, reason: `${selfName}安慰了自己`, durationTicks: 10 },
         ],
         duration: 2,
         observableState: `正压低声音安慰${nearbyDisplayName(ctx, target)}，语气放得很轻。`,
@@ -562,6 +585,7 @@ function buildArgueTool(ctx: ToolBuildContext): ActionDefinition {
           thought: { type: "string", description: "你在想什么" },
           target: { type: "string", description: nearbyNames(ctx) },
           reason: { type: "string", description: "吵架的原因" },
+          words: { type: "string", description: "你吵架时说出口的话（对方会听到并可能还嘴）" },
         },
         required: ["target", "reason"],
       },
@@ -571,14 +595,22 @@ function buildArgueTool(ctx: ToolBuildContext): ActionDefinition {
       if (!actx.nearbyCharacters.includes(target)) {
         return { description: `想和${target}吵架，但对方不在`, effects: [], success: false };
       }
+      const reason = args.reason as string;
+      const words = (args.words as string | undefined)?.trim() || reason;
+      const selfName = ctx.card.name;
       return {
-        description: `和${target}吵了起来：${args.reason}`,
+        description: `和${target}吵了起来：${reason}`,
         effects: [
           { type: "need_change", targetId: actx.characterId, field: "fun", delta: 5 },
           { type: "need_change", targetId: target, field: "fun", delta: -15 },
           { type: "need_change", targetId: actx.characterId, field: "energy", delta: -8 },
           { type: "need_change", targetId: actx.characterId, field: "social", delta: 3 },
           { type: "relationship_change", targetId: target, delta: -15 },
+          // 对方必须知道自己被吵了：进 inbox（触发反应轮，能还嘴）
+          { type: "inbox_message", targetId: target, fromName: selfName, message: `（语气冲）${words}` },
+          // 双方情绪都被点燃，吵完不会立刻烟消云散
+          { type: "moodlet", targetId: target, emotion: "angry", intensity: 4, reason: `被${selfName}当面呛了一顿`, durationTicks: 12 },
+          { type: "moodlet", targetId: actx.characterId, emotion: "angry", intensity: 3, reason: `和人吵了一架，火气还没消`, durationTicks: 8 },
         ],
         duration: 2,
         observableState: `和${nearbyDisplayName(ctx, target)}之间的气氛一下绷紧了。`,
@@ -617,11 +649,11 @@ function buildBegTool(): ActionDefinition {
   };
 }
 
-function buildStealTool(): ActionDefinition {
+function buildStealTool(ctx: ToolBuildContext): ActionDefinition {
   return {
     tool: {
       name: "steal",
-      description: "偷东西。你饿到不行了。可能会被抓。",
+      description: "偷东西。你饿到不行了。可能会被抓——被抓到的话，对方不会轻易忘记。",
       parameters: {
         type: "object",
         properties: {
@@ -632,20 +664,45 @@ function buildStealTool(): ActionDefinition {
     handler: (_args, actx): ActionResult => {
       const amount = 20 + Math.floor(Math.random() * 21);
       const caught = Math.random() < 0.4;
+      // 附近有人时偷的是具体的人（真实转移），没人时偷店里的东西
+      const victims = actx.nearbyCharacters;
+      const victimId = victims.length > 0 ? victims[Math.floor(Math.random() * victims.length)]! : undefined;
+      const selfName = ctx.card.name;
       if (caught) {
+        if (victimId) {
+          const victimName = nearbyDisplayName(ctx, victimId);
+          // 被抓是"发生了的事"不是约束失败：后果必须真实落地
+          return {
+            description: `伸手去摸${victimName}的钱袋，被当场抓住了！`,
+            effects: [
+              { type: "relationship_change", targetId: victimId, delta: -20 },
+              { type: "inbox_message", targetId: victimId, fromName: selfName, message: `（你抓住了${selfName}正在偷你东西的手）` },
+              { type: "moodlet", targetId: victimId, emotion: "angry", intensity: 5, reason: `抓到${selfName}偷自己的东西`, durationTicks: 24 },
+              { type: "moodlet", targetId: actx.characterId, emotion: "embarrassed", intensity: 5, reason: "偷东西被当场抓住，没脸见人", durationTicks: 24 },
+            ],
+            duration: 1,
+            observableState: "被人抓住手腕，脸涨得通红——刚才想偷东西被逮个正着。",
+          };
+        }
         return {
-          description: `偷东西被当场抓住了！`,
-          effects: [],
-          success: false,
+          description: `想顺手拿点东西，被店里的人发现赶了出来`,
+          effects: [
+            { type: "moodlet", targetId: actx.characterId, emotion: "embarrassed", intensity: 4, reason: "偷东西被发现赶出来", durationTicks: 16 },
+          ],
+          duration: 1,
+          observableState: "灰头土脸地从店里出来，身后有人在骂。",
         };
       }
       return {
-        description: `悄悄拿走了 ${amount} 金币的东西`,
+        description: victimId
+          ? `趁人不注意，从${nearbyDisplayName(ctx, victimId)}那里摸走了 ${amount} 金币`
+          : `悄悄拿走了 ${amount} 金币的东西`,
         effects: [],
         duration: 1,
         observableState: "动作有些心虚，像是刚做了不想让人知道的事。",
         _stolenAmount: amount,
-      } as ActionResult & { _stolenAmount: number };
+        _stealVictimId: victimId,
+      } as ActionResult & { _stolenAmount: number; _stealVictimId?: string };
     },
   };
 }
@@ -721,15 +778,21 @@ function buildPrepareTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefini
       if (!shopItem) {
         return { description: `不知道怎么做${rawItem}`, effects: [], success: false };
       }
+      const effects: ActionResult["effects"] = [
+        { type: "need_change", targetId: actx.characterId, field: "energy", delta: -2 },
+      ];
+      // 劳动出技能：40-80 次真实劳动升一级，晋升系统从死路复活
+      if (actx.workSkill) {
+        effects.push({ type: "skill_up", targetId: actx.characterId, skill: actx.workSkill, delta: 0.05 });
+      }
       return {
-        description: `做了一份${shopItem.name}`,
-        effects: [
-          { type: "need_change", targetId: actx.characterId, field: "energy", delta: -2 },
-        ],
+        description: `做了一份${shopItem.name}，摆上了货架`,
+        effects,
         duration: 1,
         observableState: `正在做一份${shopItem.name}，动作熟练得像条件反射。`,
-        _buyItem: { defId: shopItem.id, price: 0 }, // 员工免费
-      } as ActionResult & { _buyItem: { defId: string; price: number } };
+        // 产出进店铺货架（早晨烤的面包别人真能买到），不再无中生有进自己口袋
+        _stockItem: { defId: shopItem.id },
+      } as ActionResult & { _stockItem: { defId: string } };
     },
   };
 }
@@ -739,9 +802,11 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
   const season = ctx.season ?? "spring";
   const priceOf = (s: ShopItem) => effectivePrice(s.price, s.id, season);
 
-  // 只列出买得起的物品
-  const affordable = shop.filter(s => ctx.gold >= priceOf(s));
+  // 只列出买得起且有货的物品（追踪库存的店卖一件少一件，卖完就是卖完）
+  const inStock = (s: ShopItem) => ctx.location.stock?.[s.id] === undefined || ctx.location.stock[s.id]! > 0;
+  const affordable = shop.filter(s => ctx.gold >= priceOf(s) && inStock(s));
   if (affordable.length === 0) return null;
+  const soldOut = shop.filter(s => !inStock(s)).map(s => s.name);
 
   const itemList = affordable.map(s => {
     const def = getItemDef(s.id);
@@ -754,7 +819,7 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
   return {
     tool: {
       name: "buy",
-      description: `买东西带走。店里有：${itemList}`,
+      description: `买东西带走。店里有：${itemList}${soldOut.length > 0 ? `。（${soldOut.join("、")}已经卖完了）` : ""}`,
       parameters: {
         type: "object",
         properties: {
@@ -778,6 +843,10 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
       const price = priceOf(shopItem);
       if (actx.gold < price) {
         return { description: `钱不够买${shopItem.name}`, effects: [], success: false };
+      }
+      // 执行时复检库存：并行决策下最后一件可能同 tick 刚被别人买走（ctx.location 是活引用）
+      if (ctx.location.stock && ctx.location.stock[shopItem.id] !== undefined && ctx.location.stock[shopItem.id]! <= 0) {
+        return { description: `想买${shopItem.name}，结果刚好卖完了`, effects: [], success: false };
       }
       return {
         description: `买了${shopItem.name}`,
@@ -867,6 +936,10 @@ function buildEatTool(
           _useItem: itemId,
         } as ActionResult & { _useItem: string };
       } else if (shopItem) {
+        // 执行时复检库存（并行决策下最后一份可能同 tick 刚被买走）
+        if (ctx.location.stock && ctx.location.stock[itemId] !== undefined && ctx.location.stock[itemId]! <= 0) {
+          return { description: `想买${def.name}吃，结果刚好卖完了`, effects: [], success: false };
+        }
         return {
           description: `买了${def.name}吃`,
           effects,
@@ -1049,12 +1122,16 @@ function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefin
       },
     },
     handler: (_args, actx): ActionResult => {
-      const effects = Object.entries(lt.effects).map(([field, delta]) => ({
+      const effects: ActionResult["effects"] = Object.entries(lt.effects).map(([field, delta]) => ({
         type: "need_change" as const,
         targetId: actx.characterId,
         field,
         delta,
       }));
+      // 员工工具（带 income 的）附带技能成长——工作不再是无成长的哑剧
+      if (lt.income && actx.workSkill) {
+        effects.push({ type: "skill_up", targetId: actx.characterId, skill: actx.workSkill, delta: 0.05 });
+      }
       const result: ActionResult & { _cost?: number; _workerIncome?: number } = {
         description: lt.description.replace(/（.*?）/, ""),
         effects,

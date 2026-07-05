@@ -39,6 +39,8 @@ export interface Location {
   summary?: string;
   /** 开放时间（小时），null = 24 小时开放 */
   openHours?: { open: number; close: number } | null;
+  /** 店铺库存（劳动产出闭环）：undefined=不追踪（无限），有员工的店每日重置+prepare 增补，卖一件少一件 */
+  stock?: Record<string, number>;
   /** 当前在此地点的角色 ID */
   presentCharacters: string[];
   /** 感官描述（按时段/天气） */
@@ -156,6 +158,11 @@ export interface CharacterState {
    * 不是任务清单——是"心里有数"，行为从纯需求反应变成有主线的生活。跨天自动失效。
    */
   todayPlan?: { day: number; items: string[] };
+  /**
+   * 昨晚反思的完整结果。晨间打算直接读这里，
+   * 不再靠 getRecentThoughts 的字符串前缀匹配碰运气（记忆被挤出就断链）。
+   */
+  lastReflection?: { day: number; insights: string[]; mood: string; wish?: string; concern?: string };
   /** 当前留在外界可被旁人观察到的生活痕迹 */
   observableState?: CharacterObservableState;
   /** D3: director 注入的"想聊的话题"，角色 talk 时 prompt 会引导围绕这些话题展开 */

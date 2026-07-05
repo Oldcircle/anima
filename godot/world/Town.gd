@@ -200,6 +200,7 @@ const PIER_Y0 := 27        # 栈桥起始行（沙滩上）
 
 var grid: AStarGrid2D      # 小镇寻路网格（Main 经 path_points 使用）
 var _zone_pos := {}        # id -> 站点像素坐标
+var _door_px := {}         # id -> 建筑门口像素（小镇一侧，进出室内的过渡落点）
 var _room_origin := {}     # id -> 房间左上角 tile（含墙）
 var _room_plan := {}       # 本次 build 实际要建的房间：id -> 房间 spec（含剧本住宅复用）
 var _home_alias := {}      # 未知 home_* id -> 复用的默认住宅槽位 id
@@ -240,6 +241,38 @@ func slot(id: String, index: int) -> Vector2:
 	var col := index % 3
 	var row := int(index / 3.0)
 	return c + Vector2((col - 1) * 34.0, row * 20.0)
+
+## 建筑在小镇一侧的门口像素（进出室内时角色先走到 / 出来落在这里）。
+## 非建筑户外地点（广场/海滩…）没有门，退回站点中心。
+func town_door(id: String) -> Vector2:
+	if _door_px.has(id):
+		return _door_px[id]
+	return zone_center(id)
+
+## 室内房间的入口像素（门厅，比站点更靠下墙）。走进室内后从这里再走到站点。
+func room_door(id: String) -> Vector2:
+	if _room_origin.has(id):
+		var o: Vector2i = _room_origin[id]
+		var sz: Vector2i = _room_plan[id]["size"]
+		return Vector2((o.x + sz.x / 2.0) * TILE, (o.y + sz.y - 1.6) * TILE)
+	return zone_center(id)
+
+## 小镇像素点是否可走（供角色场景内闲逛避障；室内不在寻路网格内，恒 false）
+func is_walkable_px(px: Vector2) -> bool:
+	if grid == null:
+		return false
+	var c := Vector2i(px / TILE)
+	if c.x < 0 or c.y < 0 or c.x >= MAP_W or c.y >= MAP_H:
+		return false
+	return not grid.is_point_solid(c)
+
+## 房间内可闲逛的像素范围（避开四周墙体，留 1.5 格边距）
+func room_wander_rect(id: String) -> Rect2:
+	if not _room_origin.has(id):
+		return Rect2()
+	var o: Vector2i = _room_origin[id]
+	var sz: Vector2i = _room_plan[id]["size"]
+	return Rect2((o.x + 1.5) * TILE, (o.y + 1.5) * TILE, (sz.x - 3) * TILE, (sz.y - 3) * TILE)
 
 ## 房间的像素范围（相机取景用）
 func room_rect(id: String) -> Rect2:
@@ -343,6 +376,8 @@ func build(locations: Array, lights_parent: Node2D, rooms_parent: Node2D) -> voi
 			_mark_solid(Rect2i(at.x, at.y, r[3], r[4]))
 			_add_door_glow(r, at, lights_parent)
 			_add_label(display, Vector2((at.x + r[3] / 2.0) * TILE, at.y * TILE - 4))
+			# 门口：建筑底边中点下方半格（小镇一侧站位），进出室内的过渡落点
+			_door_px[id] = Vector2((at.x + r[3] / 2.0) * TILE, (at.y + r[4] + 0.5) * TILE)
 			if _room_plan.has(id):
 				_add_building_area(id, at, r)
 				_add_badge(id, at, r)

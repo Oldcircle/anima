@@ -21,7 +21,12 @@ function _tickTime(tick: number, currentTick?: number): string {
 
 export interface MemoryEntry {
   tick: number;
-  type: "event" | "conversation" | "thought" | "observation";
+  /**
+   * reflection 与 thought 分开：thought 是每 tick 的碎碎念（importance 3，单独成段渲染），
+   * reflection 是晚间反思的洞察（importance 9）。此前反思也存成 thought，
+   * 被 formatForPrompt 的 thought 过滤器排除在检索重排之外——昨晚的反思几个决策后就从 prompt 消失。
+   */
+  type: "event" | "conversation" | "thought" | "observation" | "reflection";
   content: string;
   importance: number; // 1-10
   /** 对话相关记忆的对方 ID（talk 发出/收到时记录） */
@@ -168,7 +173,18 @@ export class ShortTermMemory {
     // 再在窗口内做「重要性 × 时间衰减」加权 + MMR 多样性重排选出 count 条。
     // 关闭重排（ANIMA_MEM_RERANK=0）时退化为取最近 count 条，与旧的纯 recency 行为逐字一致。
     const pool = this.getRecent(characterId, count * RETRIEVAL_POOL_MULTIPLIER);
-    const candidates = pool.filter((e) => e.type !== "thought");
+    let candidates = pool.filter((e) => e.type !== "thought");
+    // 反思锚点：反思在缓冲里活得久（重要性淘汰保它），但候选池是 recency 截断的——
+    // 一串琐事就能把昨晚的反思挤出候选池。反思无条件进候选，让重排凭 importance 决定去留。
+    if (DEFAULT_RETRIEVAL_RERANK.enabled) {
+      const inPool = new Set(candidates);
+      const anchors = (this._memories.get(characterId) ?? []).filter(
+        (e) => e.type === "reflection" && !inPool.has(e),
+      );
+      if (anchors.length > 0) {
+        candidates = [...anchors, ...candidates];
+      }
+    }
     const entries = rerankRecentForPrompt(candidates, count, currentTick);
     if (entries.length === 0) return "";
 
@@ -207,7 +223,7 @@ export class ShortTermMemory {
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i]!;
       const time = _tickTime(e.tick, currentTick);
-      const prefix = e.type === "conversation" ? "💬" : e.type === "thought" ? "💭" : "📌";
+      const prefix = e.type === "conversation" ? "💬" : e.type === "thought" ? "💭" : e.type === "reflection" ? "🌙" : "📌";
 
       // 连续相同行为压缩（只压缩 event 类型）
       if (e.type === "event" && e.content === prevContent) {

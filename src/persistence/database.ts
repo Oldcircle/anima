@@ -60,6 +60,7 @@ export class AnimaDB {
         bond TEXT,
         last_interaction INTEGER DEFAULT 0,
         history TEXT DEFAULT '[]',
+        grudge_json TEXT,
         PRIMARY KEY (char_a, char_b)
       );
 
@@ -128,20 +129,34 @@ export class AnimaDB {
     addColumn("today_plan_json", "TEXT");
     addColumn("current_intent_json", "TEXT");
     addColumn("inbox_json", "TEXT");
+    addColumn("last_reflection_json", "TEXT");
+
+    const relCols = new Set(
+      (this.db.prepare("PRAGMA table_info(relationships)").all() as Array<{ name: string }>).map((r) => r.name),
+    );
+    if (!relCols.has("grudge_json")) {
+      this.db.exec("ALTER TABLE relationships ADD COLUMN grudge_json TEXT");
+    }
   }
 
   // --- 世界状态 ---
 
-  saveWorldState(tick: number, weather: string, narrativeJson?: string) {
+  saveWorldState(tick: number, weather: string, narrativeJson?: string, scenarioId?: string, locationStockJson?: string) {
     const upsert = this.db.prepare("INSERT OR REPLACE INTO world_state (key, value) VALUES (?, ?)");
     upsert.run("tick", String(tick));
     upsert.run("weather", weather);
     if (narrativeJson !== undefined) {
       upsert.run("narrative_state", narrativeJson);
     }
+    if (scenarioId !== undefined) {
+      upsert.run("scenario_id", scenarioId);
+    }
+    if (locationStockJson !== undefined) {
+      upsert.run("location_stock", locationStockJson);
+    }
   }
 
-  loadWorldState(): { tick: number; weather: string; narrativeJson?: string } | null {
+  loadWorldState(): { tick: number; weather: string; narrativeJson?: string; scenarioId?: string; locationStockJson?: string } | null {
     const get = this.db.prepare("SELECT key, value FROM world_state");
     const rows = get.all() as Array<{ key: string; value: string }>;
     if (rows.length === 0) return null;
@@ -150,6 +165,8 @@ export class AnimaDB {
       tick: parseInt(map.tick ?? "0", 10),
       weather: map.weather ?? "sunny",
       narrativeJson: map.narrative_state,
+      scenarioId: map.scenario_id,
+      locationStockJson: map.location_stock,
     };
   }
 
@@ -166,10 +183,11 @@ export class AnimaDB {
     todayPlan?: { day: number; items: string[] };
     currentIntent?: import("../world/types.js").CharacterIntent;
     inbox?: import("../world/types.js").InboxMessage[];
+    lastReflection?: { day: number; insights: string[]; mood: string; wish?: string; concern?: string };
   }) {
     this.db.prepare(`
-      INSERT OR REPLACE INTO characters (id, name, location_id, gold, needs_json, current_action, current_action_remaining, life_json, moodlets_json, inventory_json, recent_actions_json, today_plan_json, current_intent_json, inbox_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO characters (id, name, location_id, gold, needs_json, current_action, current_action_remaining, life_json, moodlets_json, inventory_json, recent_actions_json, today_plan_json, current_intent_json, inbox_json, last_reflection_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       c.id, c.name, c.locationId, c.gold,
       JSON.stringify(c.needs),
@@ -181,6 +199,7 @@ export class AnimaDB {
       c.todayPlan ? JSON.stringify(c.todayPlan) : null,
       c.currentIntent ? JSON.stringify(c.currentIntent) : null,
       c.inbox && c.inbox.length > 0 ? JSON.stringify(c.inbox) : null,
+      c.lastReflection ? JSON.stringify(c.lastReflection) : null,
     );
   }
 
@@ -195,6 +214,7 @@ export class AnimaDB {
     todayPlan?: { day: number; items: string[] };
     currentIntent?: import("../world/types.js").CharacterIntent;
     inbox?: import("../world/types.js").InboxMessage[];
+    lastReflection?: { day: number; insights: string[]; mood: string; wish?: string; concern?: string };
   }> {
     const rows = this.db.prepare("SELECT * FROM characters").all() as any[];
     return rows.map((r) => ({
@@ -208,6 +228,7 @@ export class AnimaDB {
       todayPlan: r.today_plan_json ? JSON.parse(r.today_plan_json) : undefined,
       currentIntent: r.current_intent_json ? JSON.parse(r.current_intent_json) : undefined,
       inbox: r.inbox_json ? JSON.parse(r.inbox_json) : undefined,
+      lastReflection: r.last_reflection_json ? JSON.parse(r.last_reflection_json) : undefined,
     }));
   }
 
@@ -227,20 +248,21 @@ export class AnimaDB {
 
   // --- 关系 ---
 
-  saveRelationship(a: string, b: string, level: number, type: string, lastInteraction: number, history: string[], bond?: string) {
+  saveRelationship(a: string, b: string, level: number, type: string, lastInteraction: number, history: string[], bond?: string, grudge?: { reason: string; instigatorId: string; sinceTick: number }) {
     const [charA, charB] = a < b ? [a, b] : [b, a];
     this.db.prepare(`
-      INSERT OR REPLACE INTO relationships (char_a, char_b, level, type, bond, last_interaction, history)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(charA, charB, level, type, bond ?? null, lastInteraction, JSON.stringify(history));
+      INSERT OR REPLACE INTO relationships (char_a, char_b, level, type, bond, last_interaction, history, grudge_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(charA, charB, level, type, bond ?? null, lastInteraction, JSON.stringify(history), grudge ? JSON.stringify(grudge) : null);
   }
 
-  loadRelationships(): Array<{ charA: string; charB: string; level: number; type: string; bond?: string; lastInteraction: number; history: string[] }> {
+  loadRelationships(): Array<{ charA: string; charB: string; level: number; type: string; bond?: string; lastInteraction: number; history: string[]; grudge?: { reason: string; instigatorId: string; sinceTick: number } }> {
     const rows = this.db.prepare("SELECT * FROM relationships").all() as any[];
     return rows.map((r) => ({
       charA: r.char_a, charB: r.char_b, level: r.level, type: r.type,
       bond: r.bond ?? undefined,
       lastInteraction: r.last_interaction, history: JSON.parse(r.history),
+      grudge: r.grudge_json ? JSON.parse(r.grudge_json) : undefined,
     }));
   }
 
@@ -348,14 +370,19 @@ export class AnimaDB {
     longTermMemories?: Array<{ characterId: string; tick: number; type: string; content: string; importance: number; relatedCharacterId?: string }>;
     appointments?: import("../world/types.js").Appointment[];
     narrativeJson?: string;
+    scenarioId?: string;
+    locationStockJson?: string;
   }) {
     const tx = this.db.transaction(() => {
-      this.saveWorldState(params.tick, params.weather, params.narrativeJson);
-      // 全量覆盖约定：旧存档里已结算/删除的不应残留
+      this.saveWorldState(params.tick, params.weather, params.narrativeJson, params.scenarioId, params.locationStockJson);
+      // 全量覆盖：memories/long_term_memories/appointments 都是完整快照，
+      // 裸 INSERT 会让每次自动存档重复追加一遍（实测重复率 74%/86%，读档后角色变复读机）
       this.db.exec("DELETE FROM appointments");
+      this.db.exec("DELETE FROM memories");
+      this.db.exec("DELETE FROM long_term_memories");
       for (const c of params.characters) this.saveCharacter(c);
       for (const r of params.relationships) {
-        this.saveRelationship(r.characterA, r.characterB, r.level, r.type, r.lastInteraction, r.history, r.bond);
+        this.saveRelationship(r.characterA, r.characterB, r.level, r.type, r.lastInteraction, r.history, r.bond, r.grudge);
       }
       for (const m of params.memories) {
         this.saveMemory(m.characterId, m.tick, m.type, m.content, m.importance);

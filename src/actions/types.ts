@@ -16,7 +16,7 @@ export interface ActionResult {
 }
 
 export interface ActionEffect {
-  type: "need_change" | "relationship_change" | "location_change" | "mood_change" | "inbox_message" | "skill_up";
+  type: "need_change" | "relationship_change" | "location_change" | "mood_change" | "inbox_message" | "skill_up" | "moodlet";
   targetId: string;
   field?: string;
   delta?: number;
@@ -27,6 +27,11 @@ export interface ActionEffect {
   message?: string;
   /** For skill_up: skill name */
   skill?: string;
+  /** For moodlet */
+  emotion?: string;
+  intensity?: number;
+  reason?: string;
+  durationTicks?: number;
 }
 
 export interface ActionContext {

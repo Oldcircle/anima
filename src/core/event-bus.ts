@@ -18,7 +18,7 @@ export interface WorldEvent {
 }
 
 export interface Effect {
-  type: "need_change" | "relationship_change" | "inventory_change" | "location_change" | "mood_change" | "inbox_message" | "skill_up";
+  type: "need_change" | "relationship_change" | "inventory_change" | "location_change" | "mood_change" | "inbox_message" | "skill_up" | "moodlet";
   targetId: string;
   field?: string;
   delta?: number;

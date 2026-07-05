@@ -21,6 +21,8 @@ import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
 import { buildToolList, type ToolBuildContext } from "./tool-builder.js";
 import { narrateAction } from "../memory/memory-narrator.js";
 import { applySocialModifier } from "./social-modifier.js";
+import { addMoodlet, type MoodletEmotion } from "../world/moodlets.js";
+import { textSimilarity } from "../memory/mmr.js";
 import { applyNarrativeTags, extractTagsFromArgs, hasAnyTags } from "../narrative/tag-applier.js";
 import { v4 as uuid } from "uuid";
 
@@ -67,13 +69,18 @@ export async function runAgentTick(params: {
   // - 没有消息时继续执行
   if (state.currentAction && state.currentAction.remainingTicks > 0) {
     const hasInboxMessages = state.inbox.length > 0;
-    if (!hasInboxMessages) {
+    // 力竭昏睡叫不醒：不被 inbox 打断（打断即清 currentAction → 下 tick energy 仍≤3 再倒，
+    // 无恢复的乒乓循环 + 重复昏倒事件刷屏）。消息留在信箱，醒来再看。
+    const unwakeable = state.currentAction.name === "collapse_asleep";
+    if (!hasInboxMessages || unwakeable) {
       state.currentAction.remainingTicks--;
       return {
         characterId: card.id,
         thought: `继续${state.currentAction.name}`,
         skipped: true,
-        skipReason: `执行中: ${state.currentAction.name} (还剩 ${state.currentAction.remainingTicks} tick)`,
+        skipReason: unwakeable
+          ? `昏睡中叫不醒 (还剩 ${state.currentAction.remainingTicks} tick)`
+          : `执行中: ${state.currentAction.name} (还剩 ${state.currentAction.remainingTicks} tick)`,
       };
     }
     // 有人对我说话了 — 中断当前行为来回应
@@ -103,7 +110,11 @@ export async function runAgentTick(params: {
       const observable = world.getObservableState(c.id, gameTime.tick);
       const currentAction = observable?.summary
         ?? (c.currentAction ? describeObservableAction(c.name, c.currentAction.name) : undefined);
-      return { id: c.id, name: c.name, gender: c.gender, relationship: rel ? { level: rel.level, type: rel.type, bond: rel.bond } : undefined, currentAction };
+      return {
+        id: c.id, name: c.name, gender: c.gender,
+        relationship: rel ? { level: rel.level, type: rel.type, bond: rel.bond, grudge: rel.grudge } : undefined,
+        currentAction,
+      };
     });
 
   const recentEvents = eventBus.query({ actorId: card.id, limit: 5 });
@@ -279,9 +290,11 @@ export async function runAgentTick(params: {
   const toolCall = response.toolCalls[0]!;
   const availableNames = dynamicActions.map(a => a.tool.name);
   console.log(`[${card.id}] 工具=${toolCall.name} | 可用=${availableNames.join(",")}`);
-  // 重复拦截 (Bug #4 + semantic repeat fix):
-  // 1. 字面重复：和最近说过的话一模一样
-  // 2. 语义重复：连续 3+ 次 talk 同一人（即使措辞不同，说明对话已陷入循环）
+  // 重复拦截（断头台改造版）：
+  // 旧版"连续 3 次 talk 同一人就强制换行为"不看内容、精确杀死所有深聊于每人 3 句，
+  // 第 4 句台词被静默丢弃 + 代写 thought + 传送回家——对话的断头台。
+  // 新版：只拦"真的在重复"（字面重复 / Jaccard 语义相似），长对话（6+ 句）只注入
+  // 收尾意图让角色自己自然道别，台词照说不丢。
   if (toolCall.name === "talk" && params.memory) {
     const newMessage = (toolCall.arguments.message as string ?? "").trim();
     const newTarget = (toolCall.arguments.target as string ?? "").trim();
@@ -289,23 +302,36 @@ export async function runAgentTick(params: {
       const recent = params.memory.getRecent(card.id, 12);
       let isRepeat = false;
 
-      // 检查 1：字面重复（前 60 字相同）
-      for (let i = recent.length - 1; i >= 0; i--) {
+      // 自己最近对同一人说过的话（用于字面/语义重复判定）
+      const recentOwnLines: string[] = [];
+      for (let i = recent.length - 1; i >= 0 && recentOwnLines.length < 3; i--) {
         const e = recent[i]!;
         if (e.type !== "event" || e.relatedCharacterId !== newTarget) continue;
         const m = e.content.match(/^对.+?说：「(.+?)」$/);
-        if (m && m[1]) {
-          const oldHead = m[1].slice(0, 60);
-          const newHead = newMessage.slice(0, 60);
-          if (oldHead === newHead) {
+        if (m && m[1]) recentOwnLines.push(m[1]);
+      }
+
+      // 检查 1：字面重复（前 60 字相同）
+      for (const oldLine of recentOwnLines) {
+        if (oldLine.slice(0, 60) === newMessage.slice(0, 60)) {
+          isRepeat = true;
+          console.warn(`[${card.id}] ⚠️ 字面重复拦截: 对 ${newTarget}「${newMessage.slice(0, 30)}…」`);
+          break;
+        }
+      }
+
+      // 检查 2：真·语义重复（Jaccard 相似度高 = 换了措辞在说同一句话）
+      if (!isRepeat) {
+        for (const oldLine of recentOwnLines) {
+          if (textSimilarity(oldLine, newMessage) > 0.6) {
             isRepeat = true;
-            console.warn(`[${card.id}] ⚠️ 字面重复拦截: 对 ${newTarget}「${newHead.slice(0, 30)}…」`);
+            console.warn(`[${card.id}] ⚠️ 语义重复拦截: 对 ${newTarget} 换措辞说同一句话（相似度>0.6）`);
             break;
           }
         }
       }
 
-      // 检查 2：连续 talk 同一人 3+ 次（语义重复，对话卡住了）
+      // 检查 3：长对话不拦，注入收尾意图——说完这句自己找个由头收尾
       if (!isRepeat) {
         let consecutive = 0;
         for (let i = recent.length - 1; i >= 0; i--) {
@@ -317,19 +343,29 @@ export async function runAgentTick(params: {
             break; // 中间有其他行为，打断计数
           }
         }
-        if (consecutive >= 3) {
-          isRepeat = true;
-          console.warn(`[${card.id}] ⚠️ 语义重复拦截: 已连续 ${consecutive} 次 talk ${newTarget}，强制换行为`);
+        if (consecutive >= 6) {
+          world.setIntent(card.id, {
+            kind: "plan",
+            source: "action",
+            targetId: newTarget,
+            summary: "这场对话聊得够久了。说完手头这句，找个自然的由头收尾（道别/回去干活/换个事做），别再开新话题。",
+            createdTick: gameTime.tick,
+            expiresAt: gameTime.tick + 2,
+          });
+          console.log(`[${card.id}] 💬 长对话收尾提示: 已连续 ${consecutive} 句 → 注入自然道别意图（台词照说）`);
         }
       }
 
       if (isRepeat) {
-        const fallback = dynamicActions.find((a) => ["go_to", "sit", "stroll", "journal", "use_toilet"].includes(a.tool.name));
+        // 真重复才拦。优先原地做点别的（do_nothing/sit/journal），
+        // 不再默认 go_to 家的"传送惩罚"；thought 保留模型原话，不代写。
+        const fallback = dynamicActions.find((a) => ["do_nothing", "sit", "journal", "stroll", "use_toilet"].includes(a.tool.name))
+          ?? dynamicActions.find((a) => a.tool.name === "go_to");
         if (fallback) {
           toolCall.name = fallback.tool.name;
-          toolCall.arguments = fallback.tool.name === "go_to" ? { location: "家", thought: "聊得差不多了，该做点别的了" } : {};
+          toolCall.arguments = fallback.tool.name === "go_to" ? { location: "家" } : {};
         } else {
-          return { characterId: card.id, thought: thought + "（觉得这个话题已经聊完了，决定先做点别的）", skipped: true, skipReason: "semantic_talk_repeat" };
+          return { characterId: card.id, thought, skipped: true, skipReason: "semantic_talk_repeat" };
         }
       }
     }
@@ -577,6 +613,33 @@ async function executeAction(
           state.life.skills[effect.skill] = Math.min(10, current + effect.delta);
         }
         break;
+      case "relationship_change":
+        if (relationships && effect.delta !== undefined) {
+          const otherId = resolveCharacterId(world, effect.targetId);
+          // 负向边际递减：疙瘩还没解开时再次冲突，伤害减半——
+          // 上行被冻结 + 下行 -15/次 的棘轮会让一对关系单向滑向 -100
+          let delta = effect.delta;
+          if (delta < 0 && relationships.get(card.id, otherId).grudge) {
+            delta = Math.ceil(delta / 2);
+          }
+          relationships.modify(card.id, otherId, delta, gameTime.tick, truncateLine(result.description, 40));
+        }
+        break;
+      case "moodlet": {
+        const targetState = world.getCharacter(resolveCharacterId(world, effect.targetId));
+        if (targetState && effect.emotion && effect.reason) {
+          addMoodlet(
+            targetState,
+            effect.emotion as MoodletEmotion,
+            effect.intensity ?? 3,
+            effect.reason,
+            effect.durationTicks ?? 8,
+            "social",
+            gameTime.tick,
+          );
+        }
+        break;
+      }
     }
   }
 
@@ -614,7 +677,16 @@ async function executeAction(
   } else if (toolCall.name === "steal") {
     const stolenAmount = (result as any)._stolenAmount;
     if (typeof stolenAmount === "number") {
-      state.gold += stolenAmount;
+      // 偷的是具体的人：先算受害者真掏得出多少，小偷只进账这么多（严格守恒，不铸币）
+      const victimId = (result as any)._stealVictimId;
+      const victim = typeof victimId === "string" ? world.getCharacter(victimId) : undefined;
+      if (victim) {
+        const actualLoss = Math.min(victim.gold, stolenAmount);
+        victim.gold -= actualLoss;
+        state.gold += actualLoss;
+      } else {
+        state.gold += stolenAmount; // 偷店（无具体受害者）维持原样
+      }
     }
   } else if (toolCall.name === "beg") {
     const begAmount = (result as any)._begAmount;
@@ -623,11 +695,22 @@ async function executeAction(
     }
   }
 
+  // 库存效果：员工 prepare 的产出进店铺货架（劳动第一次留下能被别人买到的东西）
+  const stockItem = (result as any)?._stockItem;
+  if (stockItem && typeof stockItem === "object" && location) {
+    location.stock = location.stock ?? {};
+    location.stock[stockItem.defId] = Math.min(8, (location.stock[stockItem.defId] ?? 0) + 1);
+  }
+
   // 物品效果
   const buyItem = (result as any)?._buyItem;
   const eatImmediate = (result as any)?._eatImmediate;
   if (buyItem && typeof buyItem === "object") {
     state.gold = Math.max(0, state.gold - buyItem.price);
+    // 卖一件少一件（只对追踪库存的店生效）
+    if (location?.stock && location.stock[buyItem.defId] !== undefined) {
+      location.stock[buyItem.defId] = Math.max(0, location.stock[buyItem.defId]! - 1);
+    }
     if (!eatImmediate) {
       // 普通购买：物品入背包
       const { addToInventory } = await import("../world/item-registry.js");
@@ -957,6 +1040,7 @@ function truncateLine(text: string, maxChars: number): string {
 function describeInterruptedAction(actionName: string): string {
   const interrupted: Record<string, string> = {
     sleep: "睡觉",
+    collapse_asleep: "累晕睡着",
     cook: "做饭",
     read: "看书",
     work: "忙工作",
@@ -992,6 +1076,7 @@ export function describeObservableAction(name: string, action: string): string {
   const descriptions: Record<string, string> = {
     eat: "正在吃东西",
     sleep: "在睡觉",
+    collapse_asleep: "累得趴着睡着了，叫不太醒",
     work: "在工作",
     read: "在看书",
     hobby: "在做自己的事",
