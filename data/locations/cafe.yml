@@ -12,22 +12,24 @@ shop:
   - { id: sandwich, name: 三明治, price: 12 }
   - { id: cake_slice, name: 蛋糕, price: 15 }
   - { id: juice, name: 果汁, price: 6 }
+  - { id: sugar_cube, name: 方糖, price: 2 }
 
 worker_tools:
   - name: make_coffee
     description: "做咖啡"
     effects: { energy: -2, fun: 1 }
     duration: 1
-    income: 2
+    income: 6
   - name: serve_customer
     description: "送餐、收碟子"
     effects: { energy: -3, social: 2 }
     duration: 1
-    income: 3
+    income: 8
   - name: clean_table
     description: "擦桌子"
     effects: { energy: -2, fun: -3, hygiene: -2 }
     duration: 1
+    income: 2
 
 tools:
   - name: use_toilet

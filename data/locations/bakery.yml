@@ -16,16 +16,17 @@ worker_tools:
     description: "揉面团"
     effects: { energy: -3, fun: -1 }
     duration: 2
+    income: 2
   - name: bake
     description: "烤面包"
     effects: { energy: -2 }
     duration: 3
-    income: 2
+    income: 6
   - name: serve_customer
     description: "招呼客人、卖面包"
     effects: { energy: -2, social: 3 }
     duration: 1
-    income: 3
+    income: 8
 
 tools: []
 

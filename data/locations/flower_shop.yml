@@ -16,12 +16,12 @@ worker_tools:
     description: "整理花束、换水"
     effects: { energy: -2, fun: 2 }
     duration: 1
-    income: 1
+    income: 5
   - name: serve_customer
     description: "招呼客人"
     effects: { energy: -2, social: 3 }
     duration: 1
-    income: 3
+    income: 8
 
 tools: []
 

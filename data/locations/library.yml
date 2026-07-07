@@ -11,12 +11,12 @@ worker_tools:
     description: "整理书架、归还上架"
     effects: { energy: -3, fun: -1 }
     duration: 1
-    income: 1
+    income: 4
   - name: help_reader
     description: "帮人找书、推荐书目"
     effects: { energy: -2, social: 3, fun: 1 }
     duration: 1
-    income: 2
+    income: 6
 
 tools:
   - name: read

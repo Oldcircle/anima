@@ -66,11 +66,11 @@ export function getConsumptionCost(action: string, location: string): number {
 // ─────────────────────────────────────────────────────────────
 
 /** 每日基础开销（房租 + 水电杂用） */
-const BASE_UPKEEP = 12;
+const BASE_UPKEEP = 10;
 
 /** 每日开销：基础 + 收入的一部分（住得好、过得好 → 开销也高，累进而非人头税） */
 export function dailyUpkeep(income: number | undefined): number {
-  return Math.round(BASE_UPKEEP + (income ?? 15) * 0.35);
+  return Math.round(BASE_UPKEEP + (income ?? 15) * 0.3);
 }
 
 export interface UpkeepResult {
