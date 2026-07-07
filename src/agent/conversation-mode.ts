@@ -23,6 +23,7 @@ import { getAtmosphereText } from "../world/location-loader.js";
 import { formatBodyFeelings } from "../world/need-definitions.js";
 import { formatMoodlets } from "../world/moodlets.js";
 import { formatInventory } from "../world/item-registry.js";
+import { conversationSelfCheck } from "./break-config.js";
 
 // ── 对话追踪 ──
 
@@ -154,15 +155,14 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
   const parts: string[] = [];
 
   // 1. 场景描写
+  // 缓存纪律：时间/天气/身体状态每 tick 都变，挪到 append-only 的对话记录之后，
+  // 让"场景+对象+共同经历+已有对话"这段前缀在对话内逐轮累积命中。
   const atmosphereText = getAtmosphereText(params.atmosphere, gameTime.hour, params.weather ?? "sunny");
   if (atmosphereText) {
-    parts.push(`## 场景\n${locationName}，${formatGameTime(gameTime)}。\n${atmosphereText}`);
+    parts.push(`## 场景\n${locationName}。\n${atmosphereText}`);
   } else {
-    parts.push(`## 场景\n${locationName}，${formatGameTime(gameTime)}。`);
+    parts.push(`## 场景\n${locationName}。`);
   }
-
-  const weatherStr = params.weather ? weatherDescription(params.weather) : "";
-  if (weatherStr) parts.push(`天气：${weatherStr}`);
 
   // 2. 对话对象描述（有印象时用印象，否则用基本信息）
   parts.push(`\n## 你的对话对象`);
@@ -188,28 +188,6 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     else relDesc = "你们还不太熟";
     parts.push(relDesc);
   }
-
-  // 3. 你当前的身体感受（用完整的感受化系统）
-  const bodyFeelings = formatBodyFeelings(state.needs, state.gold, gameTime.hour);
-  const moodletText = formatMoodlets(state);
-
-  parts.push(`\n## 你现在的状态`);
-  parts.push(bodyFeelings);
-  if (moodletText) parts.push(moodletText);
-
-  // 身体状态压进对话方式（复制 financeFeeling 的成功路子）：
-  // 精力 6 还在妙语连珠 = 数值和行为脱节的"过家家感"重灾区
-  const energy = state.needs.energy ?? 100;
-  const hunger = state.needs.hunger ?? 100;
-  if (energy <= 15) {
-    parts.push(`⚠️ 你现在困得快睁不开眼了。回话必须短（几个字也行），可以心不在焉、可以失礼、可以直接说"我先回去睡了"。妙语连珠是不可能的。`);
-  } else if (energy <= 30) {
-    parts.push(`你挺累的。回话别太长，也没力气接新话题。`);
-  }
-  if (hunger <= 15) {
-    parts.push(`⚠️ 你饿得胃在抽。满脑子都是吃的，聊什么都心不在焉，可以直接打断话题去找吃的。`);
-  }
-  if (params.recentMemories) parts.push(`最近的经历：\n${params.recentMemories}`);
 
   // 你们之间实际发生过的事（长期记忆 + 关系史）——真历史进对话，假"上周"出局
   if (params.sharedHistory) {
@@ -240,6 +218,31 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     }
   }
 
+  // 3b. 行动指令模板（Tier1 缓存手术：模板逐字不变且 partner 在对话内固定，
+  // 从尾部前移到 append-only 的对话记录之前，随前缀一起逐轮命中；
+  // 动态的 continuityHint / 轮次提示留在尾部"现在轮到你"）
+  parts.push(`\n## 你要做什么
+${conversationSelfCheck(partnerCard.name)}先用2-3句话写出你的内心活动（简短即可，不会被对方听到）：你注意到了什么、你真实的想法、你要不要继续聊。
+
+然后调用 talk 工具。参数说明：
+- target: "${partnerCard.id}"
+- message: 只写你说出口的台词。像正常人说话一样，一两句到三四句就够了。可以很短（"嗯。"、"...是吗"），可以改口、犹豫、词不达意。不要写心理描写，不要长篇大论。回应对方最后说的话，不要跳回之前的话题。
+- manner: 你说话时的身体语言，用白描写法，一句话。比如"低头搅着杯子里的咖啡"、"视线移向窗外，过了一会儿才回过头"、"嘴角动了动，像是想笑又忍住了"。
+
+如果你不想说话：
+- 可以调用 go_to 离开（"抱歉我得去..."）
+- 可以调用 eat/drink/work 等做别的事
+- 也可以 talk 一句简短的告别然后下个 tick 离开
+- 如果聊得投缘但差不多该各忙各的了，可以用 arrange_meet 约个具体时间地点下次见
+  （"明天中午在咖啡馆见？"）——说定了就是承诺，到时候不去对方会记住的
+
+重要的创作原则：
+- **白描**：写动作本身，不写"她紧张地"这种解释。"手指搓着围裙"比"紧张地搓着围裙"好。
+- **台词要像说话**：可以有"嗯"、"啊"、说到一半停住、重复自己说过的话、答非所问。不要每句话都是完整的诗意比喻。
+- **节奏感**：真实对话有快有慢。有时候一句话能聊很久，有时候话题会突然断掉。允许尴尬的沉默。
+- **做自己**：不要为了有趣而说话。如果你的角色此刻没什么想说的，那就不说。
+- **不要重复**：看看下面的 ## 对话记录，**严禁**说你已经说过的话或问你已经问过的问题。如果对方一直在重复同样的追问，你也不能用同样的话回应——要么换个角度（认错/反问/讲细节），要么沉默/离开。如果你发现自己又想说之前那句话，请改用 sit / journal / go_to 等行为代替。`);
+
   // 4. 完整对话历史（含身体语言）
   if (history.length > 0) {
     parts.push(`\n## 对话记录`);
@@ -253,6 +256,30 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
       }
     }
   }
+
+  // 4a. 你现在的状态（每 tick 更新，放在 append-only 的对话记录之后保前缀）
+  const weatherStr = params.weather ? weatherDescription(params.weather) : "";
+  const bodyFeelings = formatBodyFeelings(state.needs, state.gold, gameTime.hour);
+  const moodletText = formatMoodlets(state);
+
+  parts.push(`\n## 你现在的状态`);
+  parts.push(`时间：${formatGameTime(gameTime)}${weatherStr ? `。天气：${weatherStr}` : ""}`);
+  parts.push(bodyFeelings);
+  if (moodletText) parts.push(moodletText);
+
+  // 身体状态压进对话方式（复制 financeFeeling 的成功路子）：
+  // 精力 6 还在妙语连珠 = 数值和行为脱节的"过家家感"重灾区
+  const energy = state.needs.energy ?? 100;
+  const hunger = state.needs.hunger ?? 100;
+  if (energy <= 15) {
+    parts.push(`⚠️ 你现在困得快睁不开眼了。回话必须短（几个字也行），可以心不在焉、可以失礼、可以直接说"我先回去睡了"。妙语连珠是不可能的。`);
+  } else if (energy <= 30) {
+    parts.push(`你挺累的。回话别太长，也没力气接新话题。`);
+  }
+  if (hunger <= 15) {
+    parts.push(`⚠️ 你饿得胃在抽。满脑子都是吃的，聊什么都心不在焉，可以直接打断话题去找吃的。`);
+  }
+  if (params.recentMemories) parts.push(`最近的经历：\n${params.recentMemories}`);
 
   // 4b. D3: seed_topic 注入的"你心里有些话想说"
   if (params.wantToDiscuss && params.wantToDiscuss.length > 0) {
@@ -280,28 +307,8 @@ export function buildConversationPrompt(params: ConversationPromptParams): strin
     ? `\n对方刚刚说的是：「${lastExchange.message}」\n请回应这句话，不要跳回之前的话题。`
     : "";
 
-  parts.push(`\n## 你要做什么
-${continuityHint}
-先用2-3句话写出你的内心活动（简短即可，不会被对方听到）：你注意到了什么、你真实的想法、你要不要继续聊。
-
-然后调用 talk 工具。参数说明：
-- target: "${partnerCard.id}"
-- message: 只写你说出口的台词。像正常人说话一样，一两句到三四句就够了。可以很短（"嗯。"、"...是吗"），可以改口、犹豫、词不达意。不要写心理描写，不要长篇大论。回应对方最后说的话，不要跳回之前的话题。
-- manner: 你说话时的身体语言，用白描写法，一句话。比如"低头搅着杯子里的咖啡"、"视线移向窗外，过了一会儿才回过头"、"嘴角动了动，像是想笑又忍住了"。
-
-如果你不想说话：
-- 可以调用 go_to 离开（"抱歉我得去..."）
-- 可以调用 eat/drink/work 等做别的事
-- 也可以 talk 一句简短的告别然后下个 tick 离开
-- 如果聊得投缘但差不多该各忙各的了，可以用 arrange_meet 约个具体时间地点下次见
-  （"明天中午在咖啡馆见？"）——说定了就是承诺，到时候不去对方会记住的
-
-重要的创作原则：
-- **白描**：写动作本身，不写"她紧张地"这种解释。"手指搓着围裙"比"紧张地搓着围裙"好。
-- **台词要像说话**：可以有"嗯"、"啊"、说到一半停住、重复自己说过的话、答非所问。不要每句话都是完整的诗意比喻。
-- **节奏感**：真实对话有快有慢。有时候一句话能聊很久，有时候话题会突然断掉。允许尴尬的沉默。
-- **做自己**：不要为了有趣而说话。如果你的角色此刻没什么想说的，那就不说。
-- **不要重复**：看看上面的 ## 对话记录，**严禁**说你已经说过的话或问你已经问过的问题。如果对方一直在重复同样的追问，你也不能用同样的话回应——要么换个角度（认错/反问/讲细节），要么沉默/离开。如果你发现自己又想说之前那句话，请改用 sit / journal / go_to 等行为代替。`);
+  parts.push(`\n## 现在轮到你${continuityHint}
+按上面「你要做什么」的方式：先写内心活动（含态度自检），再调用一个工具。`);
 
   return parts.join("\n");
 }
@@ -360,6 +367,8 @@ export function buildConversationRequest(params: {
     temperature: 1.0, // 对话模式温度更高，增加自然感
     maxTokens: 1024,  // 对话模式：思考精简 + 消息自然长度
     prefill: `好的，我已理解${params.card.name}这个角色。我将完全以这个角色的性格和说话方式来回应：\n`,
+    kind: "conversation",
+    tag: params.card.id,
   };
 }
 

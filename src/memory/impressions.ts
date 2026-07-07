@@ -18,6 +18,12 @@ export interface CharacterImpression {
   mentalLabel: string;
   /** 未解疑惑（最多 3 条） */
   unresolved: string[];
+  /**
+   * 累积的疙瘩/变凉信号（最多 3 条，FIFO）——下行叙事记忆。
+   * 对称于 unresolved：让「第三次放我鸽子」这种积怨能攒起来，而不是每次对话被覆盖。
+   * 纯叙事可见，不直接改关系数值（关系数值由 valence −3..+3 负责）。
+   */
+  frictions?: string[];
   /** 最后更新的 tick */
   lastUpdated: number;
 }
@@ -49,6 +55,10 @@ export class ImpressionStore {
     // 限制 unresolved 最多 3 条
     if (impression.unresolved.length > 3) {
       impression.unresolved = impression.unresolved.slice(-3);
+    }
+    // 限制 frictions 最多 3 条
+    if (impression.frictions && impression.frictions.length > 3) {
+      impression.frictions = impression.frictions.slice(-3);
     }
 
     this._data.set(key, impression);
@@ -87,6 +97,17 @@ export class ImpressionStore {
       existing.unresolved = existing.unresolved.slice(-3);
     }
 
+    // frictions 追加新的，保留最近 3 条（对称于 unresolved，让积怨能累积成弧线）
+    if (update.frictions && update.frictions.length > 0) {
+      if (!existing.frictions) existing.frictions = [];
+      for (const f of update.frictions) {
+        if (!existing.frictions.includes(f)) existing.frictions.push(f);
+      }
+      if (existing.frictions.length > 3) {
+        existing.frictions = existing.frictions.slice(-3);
+      }
+    }
+
     this._data.set(this._key(observerId, update.characterId), existing);
   }
 
@@ -115,6 +136,11 @@ export class ImpressionStore {
 
     if (imp.mentalLabel) {
       parts.push(`你觉得这是个「${imp.mentalLabel}」。`);
+    }
+
+    // 疙瘩放在疑惑之前——积怨是关系走向的底色，优先让角色看见
+    if (imp.frictions && imp.frictions.length > 0) {
+      parts.push(`你对TA的疙瘩：${imp.frictions.join("；")}`);
     }
 
     if (imp.unresolved.length > 0) {

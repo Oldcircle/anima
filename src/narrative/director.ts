@@ -250,6 +250,7 @@ export class Director {
             tools: stepTools.map((t) => t.tool),
             temperature: 0.7,
             maxTokens: 800,
+            kind: "director",
           },
           this.modelId,
         );

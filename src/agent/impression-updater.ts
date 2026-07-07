@@ -9,6 +9,7 @@ import type { CharacterCard } from "../character/types.js";
 import type { LLMProvider, LLMRequest } from "../providers/types.js";
 import type { CharacterImpression, ImpressionStore } from "../memory/impressions.js";
 import type { ConversationExchange } from "./conversation-mode.js";
+import { impressionIntro, impressionAttitudeLine, impressionExtraFields } from "./break-config.js";
 
 export interface ImpressionUpdateParams {
   /** 生成印象的角色（观察者） */
@@ -56,31 +57,36 @@ export async function generateImpression(params: ImpressionUpdateParams): Promis
 
   const age = observerCard.life?.age ?? observerCard.age;
   const occupation = observerCard.life?.occupation ?? observerCard.occupation;
-  const valenceScope = params.valenceOnLastN && params.valenceOnLastN < exchanges.length
-    ? `只针对【最后 ${params.valenceOnLastN} 句】新交流评估`
-    : "这次互动后";
+  // 缓存纪律：system 只用观察者级慢变量——对方名字用"对方"指代（user prompt 里有真名），
+  // 态度评分范围（随每次调用变）下沉到 user prompt。这样同一观察者的印象调用共享前缀。
   const system = `你是${observerCard.name}，${age}岁，${occupation}。
 ${observerCard.personality.coreTraits ?? observerCard.personality.traits.join("、")}
 
-你刚才和${targetCard.name}进行了一段对话。请用你自己的视角回顾这次互动，更新你对对方的印象。
+${impressionIntro("对方")}
+
+真实边界：观察只能写对方**真说过的话、真做出的神态**。对话里嘴上提到的钱和东西不等于
+交割真发生了——没有实物过手的记录，就不要写成"接过/递过/收下"这类物理事实。
 
 回复格式（严格遵守，每行一项）：
 总结：（一句话概括对方给你的整体印象）
 观察：（这次互动中你注意到的 1-2 个细节，用分号隔开）
 标签：（你心中给对方的一个标签，2-4个字）
-态度：（-3 到 +3 的整数。${valenceScope}你对TA的好感变化：被冒犯/被敷衍/失望给负数，真正被打动/被帮到才给正数，日常寒暄/客套/正常接话就是 0——不要出于礼貌给 +1）
-疑惑：（如果有的话，对方让你好奇或不解的地方，没有就写"无"）`;
+${impressionAttitudeLine("")}
+${impressionExtraFields()}`;
 
+  const valenceScopeLine = params.valenceOnLastN && params.valenceOnLastN < exchanges.length
+    ? `（态度评分只针对【最后 ${params.valenceOnLastN} 句】新交流评估。）\n`
+    : "";
   const user = `${existingCtx}
 
 ## 刚才的对话
 ${dialogueLines}
 
-请更新你对${targetCard.name}的印象。`;
+${valenceScopeLine}请更新你对${targetCard.name}的印象。`;
 
   try {
     const response = await provider.chat(
-      { system, messages: [{ role: "user", content: user }], temperature: 0.7, maxTokens: 256 },
+      { system, messages: [{ role: "user", content: user }], temperature: 0.7, maxTokens: 256, kind: "impression", tag: observerCard.id },
       modelId,
     );
 
@@ -111,6 +117,7 @@ function parseImpressionResponse(text: string, targetId: string, tick: number): 
   const observations: string[] = [];
   let mentalLabel = "";
   const unresolved: string[] = [];
+  const frictions: string[] = [];
 
   for (const line of lines) {
     if (matchesLabel(line, ["总结", "整体印象", "印象"])) {
@@ -120,6 +127,12 @@ function parseImpressionResponse(text: string, targetId: string, tick: number): 
       observations.push(...obs.split(/[；;]/).map((s) => s.trim()).filter(Boolean));
     } else if (matchesLabel(line, ["标签", "判断"])) {
       mentalLabel = stripLabel(line).trim();
+    } else if (matchesLabel(line, ["疙瘩", "心结", "芥蒂"])) {
+      // 累积负向通道（下行叙事记忆）——注意要在"疑惑"之前判，避免混淆
+      const f = stripLabel(line).trim();
+      if (f !== "无" && f !== "暂无" && f.length > 0) {
+        frictions.push(...f.split(/[；;]/).map((s) => s.trim()).filter(Boolean));
+      }
     } else if (matchesLabel(line, ["疑惑", "好奇"])) {
       const q = stripLabel(line).trim();
       if (q !== "无" && q !== "暂无" && q.length > 0) {
@@ -144,6 +157,7 @@ function parseImpressionResponse(text: string, targetId: string, tick: number): 
     observations: observations.slice(0, 5),
     mentalLabel: mentalLabel || "待了解",
     unresolved: unresolved.slice(0, 3),
+    frictions: frictions.length ? frictions.slice(0, 3) : undefined,
     lastUpdated: tick,
   };
 }

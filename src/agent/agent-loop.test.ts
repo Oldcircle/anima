@@ -479,7 +479,7 @@ describe("Agent Loop", () => {
     expect(observable?.summary).toContain("爱音");
   });
 
-  it("go_to 工具描述中包含各地点的在场人物", async () => {
+  it("各地点在场人物在环境快照里而非 go_to 工具描述里（缓存纪律：工具表前缀保持静态）", async () => {
     // anon 在 cafe，tomori 在家
     mockLLM.enqueueResponse("去咖啡馆找爱音", [
       { name: "go_to", arguments: { location: "cafe" } },
@@ -487,12 +487,16 @@ describe("Agent Loop", () => {
 
     await runAgentTick({ config, world, eventBus, gameTime: tickToGameTime(48) });
 
-    // 检查 LLM 收到的 go_to 工具参数里包含 "千早爱音"
     expect(mockLLM.calls).toHaveLength(1);
     const req = mockLLM.calls[0]!.request;
+    // 工具描述不再内嵌每 tick 抖动的人物分布（否则前缀缓存从第 0 字节失效）
     const goToTool = req.tools!.find((t: any) => t.name === "go_to");
     expect(goToTool).toBeDefined();
     const locationDesc = goToTool!.parameters?.properties?.location?.description ?? "";
-    expect(locationDesc).toContain("千早爱音");
+    expect(locationDesc).not.toContain("千早爱音");
+    // 人物分布改为通过 user prompt 末尾的环境快照给模型
+    const userContent = req.messages[0]!.content as string;
+    expect(userContent).toContain("镇上与店里的现况");
+    expect(userContent).toContain("千早爱音");
   });
 });

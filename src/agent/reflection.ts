@@ -87,7 +87,7 @@ export async function runReflection(params: {
 
   try {
     const response = await provider.chat(
-      { system, messages: [{ role: "user", content: user }], temperature: 0.7, maxTokens: 300 },
+      { system, messages: [{ role: "user", content: user }], temperature: 0.7, maxTokens: 300, kind: "reflection", tag: params.card.id },
       modelId,
     );
 

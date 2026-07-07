@@ -14,6 +14,7 @@ import { ALL_TRIAL_ACTIONS, PHASE_TOOL_WHITELIST } from "./actions/trial-actions
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { createApiServer } from "./api/server.js";
 import { loadScenario } from "./narrative/scenario-loader.js";
+import { setBreakLevel, getBreakLevel } from "./agent/break-config.js";
 import { saveGame, loadGame } from "./persistence/save-load.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -55,6 +56,11 @@ const LOCATIONS = scenario.locations;
 const characters = scenario.characters;
 console.log(`🎬 Scenario: ${scenario.manifest.name ?? scenario.manifest.id} (${scenario.manifest.id})`);
 console.log(`📍 加载了 ${LOCATIONS.length} 个地点: ${LOCATIONS.map((l) => l.name).join(", ")}`);
+
+// --- 破线强度（下行通道解锁）：scenario manifest > env ANIMA_BREAK_LEVEL > 默认 mild ---
+setBreakLevel(scenario.manifest.breakLevel);
+const breakSource = scenario.manifest.breakLevel ? "scenario" : process.env.ANIMA_BREAK_LEVEL ? "env" : "默认";
+console.log(`🔥 破线强度 (breakLevel): ${getBreakLevel()} [${breakSource}]`);
 
 // --- LLM Provider ---
 // settings.json（前端 Settings 写入）优先于 .env

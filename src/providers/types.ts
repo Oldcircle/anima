@@ -67,6 +67,10 @@ export interface LLMRequest {
   temperature?: number;
   /** 预填充助手回复开头（prefill），引导模型进入特定状态 */
   prefill?: string;
+  /** 调用类型（decision/conversation/reflection/...），用于前缀缓存命中率分桶统计 */
+  kind?: string;
+  /** 调试标签（如角色 id），ANIMA_PROMPT_DUMP 落盘时按 kind/tag 分目录，供相邻请求 diff */
+  tag?: string;
 }
 
 /** LLM 响应 */

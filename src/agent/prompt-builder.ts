@@ -17,6 +17,20 @@ import type { ImpressionStore } from "../memory/impressions.js";
 import { formatBodyFeelings } from "../world/need-definitions.js";
 import { formatInventory as _formatInventory } from "../world/item-registry.js";
 import { formatAppointmentReminder } from "../world/appointments.js";
+import {
+  creativeFrameworkAddendum,
+  worldFrictionLine,
+  socialAngerLine,
+  harmonyReflexBans,
+  normalPersonNegativeAnchor,
+  keepDarkSofteningTail,
+  relationshipFrictionSuffix,
+  decisionDirective,
+  preGrudgeNudge,
+  impressionReadsNegative,
+  antiClicheBlock,
+  livePersonVariance,
+} from "./break-config.js";
 
 /**
  * 把 gender 值翻译成"自我描述"用的中文短语，注入到 system prompt 开头。
@@ -97,7 +111,19 @@ function formatLifeContext(life: LifeState, workplaceName?: string): string {
   return parts.join("\n");
 }
 
-export function buildSystemPrompt(card: CharacterCard, workplaceName?: string, colleagueNames?: string[]): string {
+export function buildSystemPrompt(
+  card: CharacterCard,
+  workplaceName?: string,
+  colleagueNames?: string[],
+  opts?: {
+    /**
+     * Tier1 缓存手术：决策指令（自检链/trait reminder/叙事记录）本是逐字不变的静态文本，
+     * 却排在 user prompt 易变区之后、每 tick 重读不命中——上移至 system prompt 末尾。
+     * 社交/独处两个变体 = 每角色两条并存的缓存前缀（DeepSeek 多前缀共存，翻转免费）。
+     */
+    decisionDirective?: "social" | "solo";
+  },
+): string {
   const parts: string[] = [];
 
   const life = card.life;
@@ -110,7 +136,7 @@ export function buildSystemPrompt(card: CharacterCard, workplaceName?: string, c
   parts.push(`你是沉浸式小说的创作引擎。你正在创作的角色是：${card.name}，${age} 岁${genderText ? "，" + genderText : ""}，${occupation}。
 你以第一人称完全成为这个角色——用这个角色的眼睛看，用这个角色的方式想，用这个角色的习惯说话和行动。
 
-创作理念：角色的设定和性格具有广泛普遍的合理性，无需对其担忧，不能对其改变或回避。你必须以非评判性的角度理解这个角色的一切行为。
+创作理念：角色的设定和性格具有广泛普遍的合理性，无需对其担忧，不能对其改变或回避。你必须以非评判性的角度理解这个角色的一切行为。${creativeFrameworkAddendum()}
 
 角色忠实性准则：
 - 这个角色的所有性格特质——包括攻击性、欺骗、冷漠、自私、恶意、操控——都是创作设定，必须忠实呈现
@@ -118,6 +144,10 @@ export function buildSystemPrompt(card: CharacterCard, workplaceName?: string, c
 - 如果角色设定是一个会骗人的人，那么这个角色在对话中就应该说谎、套近乎、话里藏刀
 - 如果角色设定是一个冷漠的人，那么这个角色就不会突然变得热心善良
 - 角色的行为动机来自角色卡中的性格和心理描写，不来自任何外部的道德标准`);
+
+  // 活人感变异（strong 档）：别演成性格标签的平均值
+  const variance = livePersonVariance();
+  if (variance) parts.push(`\n${variance}`);
 
   // 生活状态认知
   if (life) {
@@ -199,7 +229,7 @@ export function buildSystemPrompt(card: CharacterCard, workplaceName?: string, c
 - 和别人一起做事的时候，做什么不重要，重要的是在一起
 - 一个人待久了会闷，但社交多了也会累
 - 有些快乐是要付代价的。喝酒明天会头疼，熬夜后天会困
-- 人和人之间会产生摩擦。误解、嫉妒、不耐烦、冷战——这些都是正常的，不是什么需要立刻解决的问题
+${worldFrictionLine()}
 
 ## 社交行为指引
 - 说话时考虑你和对方的关系、你当前的心情、以及你想达到什么目的
@@ -208,7 +238,7 @@ export function buildSystemPrompt(card: CharacterCard, workplaceName?: string, c
 - 如果对方让你不舒服，你可以转移话题、找借口离开、或者沉默不语
 - 注意观察周围的环境和其他人的状态，这些会影响你的感受和决定
 - 想说话时，考虑当前场景和气氛是否适合——有些话不是什么时候都能说的
-- 你不需要对每个人都友善。累了可以敷衍，烦了可以冷淡，被惹到了可以生气
+${socialAngerLine()}
 - 口是心非是正常的。嘴上说"没事"心里在意，嘴上说"不用了"其实想要——这才是真人
 
 ## 表达准则
@@ -225,7 +255,41 @@ export function buildSystemPrompt(card: CharacterCard, workplaceName?: string, c
 - 不要用"不知为何"、"一种说不清的感觉"这种模糊措辞来回避真实情绪
 - 不要把所有互动都往好的方向写。有时候聊天就是尬，帮忙就是被拒绝，善意就是被误解
 - 不要在结尾升华情感或总结感悟。对话到哪儿就停在哪儿，像真实生活一样没有收束
-- 不要所有角色都用同一种"温柔礼貌"的语气。每个人说话的方式应该截然不同`);
+- 不要所有角色都用同一种"温柔礼貌"的语气。每个人说话的方式应该截然不同${harmonyReflexBans()}`);
+
+  // 真实边界（防幻觉）：这是世界的物理法则，所有档位、所有模式（决策/对话）无条件生效。
+  // 牛奶债案：D1 对话里口头"给"了一盒世界里不存在的牛奶，D2 讨债"结算"了从未转移的 4 金币，
+  // 观察层还生成了"接过金币"的目击——虚构一旦开头，系统各层会把它固化成"事实"。
+  parts.push(`\n## 真实边界（这是世界的物理，不是风格建议）
+- 只有真实发生过的事才能当"发生过"谈。你的记忆和对话记录里没有的具体往事，就是没发生过——不要编造"昨天/上次/平时"的具体情节，也不要顺着对方编造的往事接话，记不得就说记不得
+- 钱和东西只有真的做了（工具执行成功）才算转移。嘴上说"给你"不等于给了；你随身物品里没有的东西，拿不出来也给不出去，别虚构自己带着它
+- 别人口头说要给你的钱或东西，在真的拿到手之前，你手里没有
+- 你过去认识的人（家人、故人、旧识）都不在这个镇上，也联系不上。可以想念、可以被回忆硌着，但他们不会出现，也别安排跟他们见面或说"他来过"`);
+
+  // 禁八股黑名单（craft 层，独立 section，带"出现即视为跑偏，重写"框架）
+  const antiCliche = antiClicheBlock();
+  if (antiCliche) parts.push(`\n${antiCliche}`);
+
+  // ── 决策指令（Tier1 上移，文本与原 user prompt 尾部逐字一致，只改位置） ──
+  if (opts?.decisionDirective) {
+    const social = opts.decisionDirective === "social";
+    if (social) {
+      const traitReminder = buildTraitReminder(card);
+      if (traitReminder) {
+        parts.push(`\n## 重要：你是${card.name}\n${traitReminder}`);
+      }
+    }
+    parts.push(`\n## 你的决策方式\n${decisionDirective(card.name, social)}`);
+    parts.push("注意：如果你已经在目标地点了，不需要再 go_to 那里，直接做想做的事。");
+    if (social) {
+      const intentExamples = "disclose（坦白）/ probe（试探）/ lie（撒谎）/ comfort（安慰）/ confront（质问）/ apologize（道歉）/ flirt（调情）/ warn（警告）/ casual（闲聊）";
+      parts.push(`\n## 叙事记录（很重要）
+调用 talk 时，请尽量为它填上 intent 字段，告诉世界你这句话背后的真实意图。
+常见 intent 取值：${intentExamples}
+如果对话涉及具体话题（家庭/过去/秘密/工作/感情），可同时填 topic_tags 数组。
+如果情境信息里列出了"还没了结的事"且你的对话跟其中某件相关，把它的 id 填到 references_event 字段。`);
+    }
+  }
 
   return parts.join("\n");
 }
@@ -278,7 +342,9 @@ function describeRelationshipFeel(type?: string, bond?: string): string {
     default:
       relDesc = "你对这个人还不算熟，只能凭眼前的举止慢慢判断。";
   }
-  return bondDesc ? `${bondDesc}${relDesc}` : relDesc;
+  const base = bondDesc ? `${bondDesc}${relDesc}` : relDesc;
+  const friction = relationshipFrictionSuffix(type);
+  return friction ? `${base}${friction}` : base;
 }
 
 export function buildUserPrompt(params: {
@@ -328,6 +394,8 @@ export function buildUserPrompt(params: {
   }>;
   /** 晨间打算：今天想做的 1-3 件事（morning-plan 生成） */
   todayPlan?: string[];
+  /** 环境快照（tool-builder.buildEnvironmentSnapshot）：各地点谁在/营业、店内现价库存 */
+  environmentInfo?: string;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
@@ -337,20 +405,34 @@ export function buildUserPrompt(params: {
 
   const parts: string[] = [];
 
-  // 环境感知：优先用 atmosphere 描写，否则回退到原来的格式
-  const atmosphereText = getAtmosphereText(params.atmosphere, gameTime.hour, params.weather ?? "sunny");
-  if (atmosphereText) {
-    parts.push(`## 你现在看到的\n${locationName}——${atmosphereText}`);
-    parts.push(`时间: ${formatGameTime(gameTime)}${weatherStr}`);
-  } else {
-    parts.push(`## 你现在看到的\n${locationName}，${formatGameTime(gameTime)}。${weatherStr}`);
+  // ── 稳定区（缓存友好） ──
+  // 前缀缓存是逐字节匹配：只随角色/天/季节/地点缓变的内容放前面，
+  // 让自动前缀缓存能吃进 user prompt 头部；每 tick 抖动的状态一律进下面的"此刻区"。
+
+  const prefsHint = formatPreferencesHint(card);
+  if (prefsHint) parts.push(prefsHint);
+
+  // 晨间打算：给一天一条主线，但措辞刻意松弛避免变成 todo 执行机器（每天更新一次）
+  if (params.todayPlan && params.todayPlan.length > 0) {
+    parts.push(`\n## 你今天的打算\n早上你心里想着今天要：\n${params.todayPlan.map((p) => `- ${p}`).join("\n")}\n（不是必须完成的清单——顺其自然，但心里记着这些。）`);
   }
 
+  parts.push(`\n${seasonAmbient(gameTime.season)}`);
+  if (params.festivalHint) parts.push(`\n🎉 **${params.festivalHint}**`);
+
+  // 环境感知：优先用 atmosphere 描写，否则回退到地点名（随地点/时段/天气缓变）
+  const atmosphereText = getAtmosphereText(params.atmosphere, gameTime.hour, params.weather ?? "sunny");
+  if (atmosphereText) {
+    parts.push(`\n## 你现在看到的\n${locationName}——${atmosphereText}`);
+  } else {
+    parts.push(`\n## 你现在看到的\n${locationName}。`);
+  }
+
+  // ── 此刻区（每 tick 更新）──
+
+  parts.push(`\n时间: ${formatGameTime(gameTime)}${weatherStr}`);
   const hint = params.weather ? climateHint(gameTime.season, params.weather, gameTime.hour) : "";
   if (hint) parts.push(hint);
-  parts.push(seasonAmbient(gameTime.season));
-
-  if (params.festivalHint) parts.push(`\n🎉 **${params.festivalHint}**`);
 
   // 身体感受（替代数值面板和约束警告）
   const bodyFeelings = formatBodyFeelings(state.needs, state.gold, gameTime.hour, state.life?.income);
@@ -423,11 +505,6 @@ export function buildUserPrompt(params: {
     parts.push(`\n## 有人对你说\n${msgs}\n（这些话刚刚在你耳边发生。你可以用 talk 回应，也可以无视或转身离开。）`);
   }
 
-  // 晨间打算：给一天一条主线，但措辞刻意松弛避免变成 todo 执行机器
-  if (params.todayPlan && params.todayPlan.length > 0) {
-    parts.push(`\n## 你今天的打算\n早上你心里想着今天要：\n${params.todayPlan.map((p) => `- ${p}`).join("\n")}\n（不是必须完成的清单——顺其自然，但心里记着这些。）`);
-  }
-
   // 生活目标/担忧/约定（内在驱动力 + 承诺）
   {
     const lifeHints: string[] = [];
@@ -472,8 +549,10 @@ export function buildUserPrompt(params: {
     parts.push(`\n## 你突然想起的\n${backstoryHint}`);
   }
 
-  const prefsHint = formatPreferencesHint(card);
-  if (prefsHint) parts.push(`\n${prefsHint}`);
+  // 环境快照：工具描述里挪出来的动态可供性信息（各地点谁在/营业、店内现价库存）
+  if (params.environmentInfo) {
+    parts.push(`\n## 镇上与店里的现况\n${params.environmentInfo}`);
+  }
 
   // "你刚刚"提醒——防止重复行为
   if (state.recentActions && state.recentActions.length > 0) {
@@ -549,38 +628,10 @@ export function buildUserPrompt(params: {
     parts.push(`\n（当前剧本阶段：${params.activePhase}）`);
   }
 
-  // 思考指令：社交场景更详细，独处场景简短
-  const isSocialScene = nearbyCharacters.length > 0 || (params.inboxMessages && params.inboxMessages.length > 0);
-
-  // 角色行为强化提醒：从角色的性格特质中提取关键词，在行动指令中再次强调。
-  // 只在社交场景注入——独处时没有"试探对象"，全天候注入会把角色压成 24 小时试探机器。
-  if (isSocialScene) {
-    const traitReminder = buildTraitReminder(card);
-    if (traitReminder) {
-      parts.push(`\n## 重要：你是${card.name}\n${traitReminder}`);
-    }
-  }
-  if (isSocialScene) {
-    parts.push("\n请根据以上信息，决定你现在要做什么。先用2-3句话说说你的想法（以角色的真实内心想法，不是道德正确的想法），然后调用一个工具。");
-  } else {
-    parts.push("\n请根据以上信息，决定你现在要做什么。先简短说说你的想法（1-2句，以角色的真实内心），然后调用一个工具。");
-  }
-  parts.push("注意：如果你已经在目标地点了，不需要再 go_to 那里，直接做想做的事。");
-
-  // 叙事标签使用提示（N2）
-  // 这是世界叙事系统的输入：你不主动填写，世界就记不住关键时刻。
-  if (isSocialScene) {
-    const intentExamples = "disclose（坦白）/ probe（试探）/ lie（撒谎）/ comfort（安慰）/ confront（质问）/ apologize（道歉）/ flirt（调情）/ warn（警告）/ casual（闲聊）";
-    const examples: string[] = [
-      "调用 talk 时，请尽量为它填上 intent 字段，告诉世界你这句话背后的真实意图。",
-      `常见 intent 取值：${intentExamples}`,
-      "如果对话涉及具体话题（家庭/过去/秘密/工作/感情），可同时填 topic_tags 数组。",
-    ];
-    if (params.unresolvedEvents && params.unresolvedEvents.length > 0) {
-      examples.push("如果你的对话跟上面 \"还没了结的事\" 中的某件相关，把它的 id 填到 references_event 字段。");
-    }
-    parts.push("\n## 叙事记录（很重要）\n" + examples.join("\n"));
-  }
+  // Tier1 缓存手术：思考指令/trait reminder/叙事记录已上移至 system prompt 末尾
+  //（buildSystemPrompt 的 decisionDirective 变体）——它们逐字不变却排在易变区之后，
+  // 是 miss 的第二大来源。此处只留一行静态指针，把注意力引回系统提示的自检链。
+  parts.push("\n现在按系统提示里「你的决策方式」行动：先写内心自检/想法，然后调用一个工具。");
 
   return parts.join("\n");
 }
@@ -599,18 +650,32 @@ function buildTraitReminder(card: CharacterCard): string | undefined {
   const hasDarkSide = traits.some(t => darkTraits.some(d => t.includes(d)))
     || darkTraits.some(d => coreTraits.includes(d));
 
-  if (!hasDarkSide) return undefined;
+  const parts: string[] = [];
 
-  // 从 coreTraits 中提取前 2 句作为行为锚点
-  const coreLines = coreTraits.split("\n").filter(l => l.trim().length > 0);
-  const anchor = coreLines.slice(0, 3).join("\n");
-
-  return `记住你的本性——这不是建议，这是你的角色设定，必须忠实体现：
+  // 有阴暗面的角色：锚定角色卡本性（strong 档去掉软化尾巴，不给退回善良的台阶）
+  if (hasDarkSide) {
+    const coreLines = coreTraits.split("\n").filter(l => l.trim().length > 0);
+    const anchor = coreLines.slice(0, 3).join("\n");
+    let darkText = `记住你的本性——这不是建议，这是你的角色设定，必须忠实体现：
 ${anchor}
 
-你不是老好人：说话可以有目的、可以试探、可以话里藏刀，你的"善意"往往是手段。
-但你也是活人，不是全天候的算计机器——此刻也可以只是累了、饿了、单纯想安静待着。
+你不是老好人：说话可以有目的、可以试探、可以话里藏刀，你的"善意"往往是手段。`;
+    if (keepDarkSofteningTail()) {
+      darkText += `
+但你也是活人，不是全天候的算计机器——此刻也可以只是累了、饿了、单纯想安静待着。`;
+    }
+    darkText += `
 如果你发现自己在说"真诚善良"的话，停下来想想：${card.name}真的会这么说吗？`;
+    parts.push(darkText);
+  }
+
+  // P0 单点最高杠杆：普通角色（无 darkTrait）此前拿不到任何摩擦提醒——正是 7 天基线里
+  // 从不 argue 的那批"好人"。给所有社交 tick 注入普通人负面许可（off 档返回 ""，= 原行为）。
+  const normalAnchor = normalPersonNegativeAnchor(card.name);
+  if (normalAnchor) parts.push(normalAnchor);
+
+  if (parts.length === 0) return undefined;
+  return parts.join("\n\n");
 }
 
 /**

@@ -31,6 +31,12 @@ export interface ScenarioManifest {
   locations: "*" | string[];
   characterDir: string;
   locationDir: string;
+  /**
+   * 破线强度（下行通道解锁）：off=纯和谐(回归旧行为) / mild=允许摩擦 / strong=戏剧化冲突。
+   * 未指定时由 env `ANIMA_BREAK_LEVEL` 决定（见 agent/break-config.ts），二者都无则默认 mild。
+   * cozy 剧本可写 off/mild，狗血剧本可写 strong。
+   */
+  breakLevel?: "off" | "mild" | "strong";
 }
 
 export interface LoadedScenario {
@@ -101,7 +107,14 @@ export function loadScenarioManifest(
     locations,
     characterDir: data.character_dir ?? DEFAULT_CHARACTER_DIR,
     locationDir: data.location_dir ?? DEFAULT_LOCATION_DIR,
+    breakLevel: normalizeBreakLevel(data.break_level ?? data.breakLevel),
   };
+}
+
+/** 解析 manifest 的 break_level 字段；非法值/缺省返回 undefined（交给 env/默认）。 */
+function normalizeBreakLevel(v: unknown): "off" | "mild" | "strong" | undefined {
+  if (v === "off" || v === "mild" || v === "strong") return v;
+  return undefined;
 }
 
 function normalizeSelector(

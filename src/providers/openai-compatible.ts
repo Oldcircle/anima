@@ -2,7 +2,14 @@
  * OpenAI Compatible Provider — 支持 DeepSeek / OpenAI / Together AI 等
  */
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { LLMProvider, LLMRequest, LLMResponse, ToolCall } from "./types.js";
+
+/** ANIMA_PROMPT_DUMP=1 时把每次请求体落盘到 logs/prompt-dumps/<kind>/<tag>-<seq>.json，供相邻请求 diff 定位前缀断点 */
+const PROMPT_DUMP_DIR = process.env.ANIMA_PROMPT_DUMP
+  ? join(process.cwd(), "logs", "prompt-dumps")
+  : undefined;
 
 /**
  * 思考模式开关。仅对支持 thinking 的模型有效（如 deepseek-v4-*）。
@@ -27,8 +34,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private _apiKey: string;
   private _defaultModel: string;
   private _thinking: ThinkingMode;
-  /** 前缀缓存累计统计（DeepSeek 自动缓存），每 25 次调用输出一行摘要 */
+  /** 前缀缓存累计统计（DeepSeek 自动缓存），每 25 次调用输出一行摘要；按 kind 分桶定位谁在拖命中率 */
   private _cacheStats = { calls: 0, promptTokens: 0, hitTokens: 0 };
+  private _cacheStatsByKind = new Map<string, { calls: number; promptTokens: number; hitTokens: number }>();
+  private _dumpSeq = 0;
 
   constructor(config: OpenAICompatibleConfig) {
     this.id = config.id;
@@ -107,6 +116,15 @@ export class OpenAICompatibleProvider implements LLMProvider {
       }));
     }
 
+    if (PROMPT_DUMP_DIR) {
+      try {
+        const dir = join(PROMPT_DUMP_DIR, request.kind ?? "unknown");
+        mkdirSync(dir, { recursive: true });
+        const seq = String(++this._dumpSeq).padStart(5, "0");
+        writeFileSync(join(dir, `${request.tag ?? "any"}-${seq}.json`), JSON.stringify(body, null, 2));
+      } catch { /* dump 失败不影响调用 */ }
+    }
+
     // 兼容两种 baseUrl 写法：带 /v1 后缀（OpenAI / Together / OpenRouter 等）和不带（DeepSeek 默认）
     const endpoint = /\/v\d+$/.test(this._baseUrl)
       ? `${this._baseUrl}/chat/completions`
@@ -157,11 +175,23 @@ export class OpenAICompatibleProvider implements LLMProvider {
       this._cacheStats.calls++;
       this._cacheStats.promptTokens += data.usage.prompt_tokens;
       this._cacheStats.hitTokens += data.usage.prompt_cache_hit_tokens ?? 0;
+      const kind = request.kind ?? "unknown";
+      let byKind = this._cacheStatsByKind.get(kind);
+      if (!byKind) {
+        byKind = { calls: 0, promptTokens: 0, hitTokens: 0 };
+        this._cacheStatsByKind.set(kind, byKind);
+      }
+      byKind.calls++;
+      byKind.promptTokens += data.usage.prompt_tokens;
+      byKind.hitTokens += data.usage.prompt_cache_hit_tokens ?? 0;
       if (this._cacheStats.calls % 25 === 0) {
-        const rate = this._cacheStats.promptTokens > 0
-          ? ((this._cacheStats.hitTokens / this._cacheStats.promptTokens) * 100).toFixed(1)
-          : "0.0";
-        console.log(`[LLM cache] 累计 ${this._cacheStats.calls} 次调用，前缀缓存命中率 ${rate}%（${this._cacheStats.hitTokens}/${this._cacheStats.promptTokens} tokens）`);
+        const rate = (s: { promptTokens: number; hitTokens: number }) =>
+          s.promptTokens > 0 ? ((s.hitTokens / s.promptTokens) * 100).toFixed(1) : "0.0";
+        const breakdown = [...this._cacheStatsByKind.entries()]
+          .sort((a, b) => b[1].promptTokens - a[1].promptTokens)
+          .map(([k, s]) => `${k} ${rate(s)}%×${s.calls}`)
+          .join(" | ");
+        console.log(`[LLM cache] 累计 ${this._cacheStats.calls} 次调用，前缀缓存命中率 ${rate(this._cacheStats)}%（${this._cacheStats.hitTokens}/${this._cacheStats.promptTokens} tokens）｜ ${breakdown}`);
       }
     }
 
