@@ -130,6 +130,8 @@ export class AnimaDB {
     addColumn("current_intent_json", "TEXT");
     addColumn("inbox_json", "TEXT");
     addColumn("last_reflection_json", "TEXT");
+    addColumn("garden_json", "TEXT");
+    addColumn("debts_json", "TEXT");
 
     const relCols = new Set(
       (this.db.prepare("PRAGMA table_info(relationships)").all() as Array<{ name: string }>).map((r) => r.name),
@@ -141,7 +143,7 @@ export class AnimaDB {
 
   // --- 世界状态 ---
 
-  saveWorldState(tick: number, weather: string, narrativeJson?: string, scenarioId?: string, locationStockJson?: string) {
+  saveWorldState(tick: number, weather: string, narrativeJson?: string, scenarioId?: string, locationStockJson?: string, locationBansJson?: string) {
     const upsert = this.db.prepare("INSERT OR REPLACE INTO world_state (key, value) VALUES (?, ?)");
     upsert.run("tick", String(tick));
     upsert.run("weather", weather);
@@ -154,9 +156,12 @@ export class AnimaDB {
     if (locationStockJson !== undefined) {
       upsert.run("location_stock", locationStockJson);
     }
+    if (locationBansJson !== undefined) {
+      upsert.run("location_bans", locationBansJson);
+    }
   }
 
-  loadWorldState(): { tick: number; weather: string; narrativeJson?: string; scenarioId?: string; locationStockJson?: string } | null {
+  loadWorldState(): { tick: number; weather: string; narrativeJson?: string; scenarioId?: string; locationStockJson?: string; locationBansJson?: string } | null {
     const get = this.db.prepare("SELECT key, value FROM world_state");
     const rows = get.all() as Array<{ key: string; value: string }>;
     if (rows.length === 0) return null;
@@ -167,6 +172,7 @@ export class AnimaDB {
       narrativeJson: map.narrative_state,
       scenarioId: map.scenario_id,
       locationStockJson: map.location_stock,
+      locationBansJson: map.location_bans,
     };
   }
 
@@ -184,10 +190,12 @@ export class AnimaDB {
     currentIntent?: import("../world/types.js").CharacterIntent;
     inbox?: import("../world/types.js").InboxMessage[];
     lastReflection?: { day: number; insights: string[]; mood: string; wish?: string; concern?: string };
+    garden?: import("../world/types.js").GardenPlot;
+    debts?: import("../world/types.js").Debt[];
   }) {
     this.db.prepare(`
-      INSERT OR REPLACE INTO characters (id, name, location_id, gold, needs_json, current_action, current_action_remaining, life_json, moodlets_json, inventory_json, recent_actions_json, today_plan_json, current_intent_json, inbox_json, last_reflection_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO characters (id, name, location_id, gold, needs_json, current_action, current_action_remaining, life_json, moodlets_json, inventory_json, recent_actions_json, today_plan_json, current_intent_json, inbox_json, last_reflection_json, garden_json, debts_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       c.id, c.name, c.locationId, c.gold,
       JSON.stringify(c.needs),
@@ -200,6 +208,8 @@ export class AnimaDB {
       c.currentIntent ? JSON.stringify(c.currentIntent) : null,
       c.inbox && c.inbox.length > 0 ? JSON.stringify(c.inbox) : null,
       c.lastReflection ? JSON.stringify(c.lastReflection) : null,
+      c.garden ? JSON.stringify(c.garden) : null,
+      c.debts && c.debts.length > 0 ? JSON.stringify(c.debts) : null,
     );
   }
 
@@ -215,6 +225,8 @@ export class AnimaDB {
     currentIntent?: import("../world/types.js").CharacterIntent;
     inbox?: import("../world/types.js").InboxMessage[];
     lastReflection?: { day: number; insights: string[]; mood: string; wish?: string; concern?: string };
+    garden?: import("../world/types.js").GardenPlot;
+    debts?: import("../world/types.js").Debt[];
   }> {
     const rows = this.db.prepare("SELECT * FROM characters").all() as any[];
     return rows.map((r) => ({
@@ -229,6 +241,8 @@ export class AnimaDB {
       currentIntent: r.current_intent_json ? JSON.parse(r.current_intent_json) : undefined,
       inbox: r.inbox_json ? JSON.parse(r.inbox_json) : undefined,
       lastReflection: r.last_reflection_json ? JSON.parse(r.last_reflection_json) : undefined,
+      garden: r.garden_json ? JSON.parse(r.garden_json) : undefined,
+      debts: r.debts_json ? JSON.parse(r.debts_json) : undefined,
     }));
   }
 
@@ -372,9 +386,10 @@ export class AnimaDB {
     narrativeJson?: string;
     scenarioId?: string;
     locationStockJson?: string;
+    locationBansJson?: string;
   }) {
     const tx = this.db.transaction(() => {
-      this.saveWorldState(params.tick, params.weather, params.narrativeJson, params.scenarioId, params.locationStockJson);
+      this.saveWorldState(params.tick, params.weather, params.narrativeJson, params.scenarioId, params.locationStockJson, params.locationBansJson);
       // 全量覆盖：memories/long_term_memories/appointments 都是完整快照，
       // 裸 INSERT 会让每次自动存档重复追加一遍（实测重复率 74%/86%，读档后角色变复读机）
       this.db.exec("DELETE FROM appointments");

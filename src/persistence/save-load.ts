@@ -48,6 +48,8 @@ export function saveGame(sim: Simulation, dbPath: string, scenarioId?: string): 
       currentIntent: c.currentIntent,
       inbox: c.inbox,
       lastReflection: c.lastReflection,
+      garden: c.garden,
+      debts: c.debts,
     }));
 
     // 约定（世界级）：pending 的赴约/爽约结算依赖它，必须随档保存
@@ -102,6 +104,11 @@ export function saveGame(sim: Simulation, dbPath: string, scenarioId?: string): 
       locationStockJson: JSON.stringify(
         Object.fromEntries(
           sim.world.getAllLocations().filter((l) => l.stock).map((l) => [l.id, l.stock]),
+        ),
+      ),
+      locationBansJson: JSON.stringify(
+        Object.fromEntries(
+          sim.world.getAllLocations().filter((l) => l.bans && Object.keys(l.bans).length > 0).map((l) => [l.id, l.bans]),
         ),
       ),
     });
@@ -179,10 +186,24 @@ export function loadGame(sim: Simulation, dbPath: string, scenarioId?: string): 
         char.todayPlan = sc.todayPlan;
         char.currentIntent = sc.currentIntent;
         char.lastReflection = sc.lastReflection;
+        char.garden = sc.garden; // 菜地随档：种下去的东西读档后还长在地里
+        char.debts = sc.debts;   // 欠账随档：账不会因为读档一笔勾销
+
         if (sc.inbox) {
           char.inbox = sc.inbox;
         }
       }
+    }
+
+    // 恢复店铺拉黑（偷店的账不因读档一笔勾销）
+    if (worldState.locationBansJson) {
+      try {
+        const bans = JSON.parse(worldState.locationBansJson) as Record<string, Record<string, number>>;
+        for (const [locId, banMap] of Object.entries(bans)) {
+          const loc = sim.world.getLocation(locId);
+          if (loc) loc.bans = banMap;
+        }
+      } catch { /* 旧档无此键，忽略 */ }
     }
 
     // 恢复店铺库存（不随档会在读档后全体回到"无限"，直到次日 06:00）
