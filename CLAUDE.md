@@ -16,27 +16,30 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **Tool-based Agent**：每个角色的行为空间由工具定义（talk/eat/work/go_to 等），LLM 自主选择
 - **零预设关系**：角色卡不包含任何跨角色引用，所有关系从零涌现
 - **五层活人感**：环境感知 + 印象系统 + 内心独白分级 + 对话模式 + 观察推理
-- **生活主线（2026-07-03）**：晨间打算（每天 06:00 基于昨日反思定今日打算）+ 约定系统
+- **破线提示词（`src/agent/break-config.ts`）**：解锁"下行通道"——让关系会变差、会 argue、印象态度
+  会出负，而非只有真善美。核心是**决策前强制 COT 自检脚手架**（态度/旧账/语气/走向），非许可散文。
+  三档 `off`(纯和谐)/`mild`(默认,允许摩擦)/`strong`(戏剧化冲突)，经 `ANIMA_BREAK_LEVEL` 或 scenario
+  `break_level` 调。所有破线文本集中在 break-config.ts，`off` 档保证 A/B 基线。写法参考酒馆破限预设
+  （`reference/tavern-presets/`）
+- **生活主线**：晨间打算（每天 06:00 基于昨日反思定今日打算）+ 约定系统
   （arrange_meet 说定→分级提醒→赴约/爽约结算）——反思→打算→行动→回顾的日循环闭环
-- **生活节律（2026-07-03）**：饭点感知、上班节律、居家可供性（rest/tidy_up）、
+- **生活节律**：饭点感知、上班节律、居家可供性（rest/tidy_up）、
   重要性感知记忆（反思比琐事活得久）、跨天时间标注（"昨天23:00"）
-- **记忆检索重排（2026-07-04，`src/memory/{mmr,temporal-decay}.ts`）**：注入 prompt 的记忆从纯 recency
-  升级为「重要性 × 时间衰减」加权 + MMR 多样性重排——只在最近窗口内重排（不碰长期记忆），重要反思不再被
-  琐事挤出、雷同记忆不再刷屏。live 半天模拟实测：注入平均重要性 +18%、去重更干净、行为种类更丰富、零回归。
-  `ANIMA_MEM_RERANK=0` 可关（= 改动前纯 recency 行为，用于 A/B）
-- **气候系统（2026-07-03，`src/world/climate.ts`）**：天气×四季×时辰 → 体感温度；露天暴露在
+- **记忆检索重排（`src/memory/{mmr,temporal-decay}.ts`）**：注入 prompt 的记忆按「重要性 × 时间衰减」
+  加权 + MMR 多样性重排——只在最近窗口内重排（不碰长期记忆），重要反思不被琐事挤出、雷同记忆不刷屏。
+  `ANIMA_MEM_RERANK=0` 可关（= 纯 recency 行为，用于 A/B）
+- **气候系统（`src/world/climate.ts`）**：天气×四季×时辰 → 体感温度；露天暴露在
   恶劣气候会额外耗 needs + 生 moodlet（催人躲屋里），室内免疫；温度/气候提示/季节氛围注入 prompt；
-  Godot 四季换装（季节染色 + 樱花/落叶/雪絮粒子 + 时钟温度）。这是"世界系统深化"三部曲第 1 弹
-  （气候 ✅ → 经济 ✅ → 社交），把纸面天气/四季做成"可感知+有压力+看得见"的真游戏系统
-- **经济系统深化（2026-07-04，`src/world/economy.ts`）**：三部曲第 2 弹。生计压力（每天 07:00 扣
-  房租/杂用 `applyDailyUpkeep`，付不起→焦虑+生计记忆）+ 财务体感（按"撑得了几天"分档 financeBand，
-  进 prompt）+ 季节市场价格（`effectivePrice` 应季便宜反季贵，buy 工具三处一致）；Godot 名册/详情
-  显示金币+财务档（按档上色）、挣钱花钱房租头顶飘金币。让"赚钱活下去"真的有分量
-- **社交可视化（2026-07-04）**：三部曲第 3 弹（进行中）。社交机制本就最扎实，先补「看得见」——
-  `godot/ui/RelationWeb.gd` 关系网（R 键，圆环 + 关系连线按类型上色 + bond 标注）。
-  待做：声誉/恋爱线阶段/冲突升级三件 drama 机制
+  Godot 四季换装（季节染色 + 樱花/落叶/雪絮粒子 + 时钟温度）
+- **经济系统（`src/world/economy.ts`）**：生计压力（每天 07:00 扣房租/杂用 `applyDailyUpkeep`，
+  付不起→焦虑+生计记忆）+ 财务体感（按"撑得了几天"分档 financeBand，进 prompt）+ 季节市场价格
+  （`effectivePrice` 应季便宜反季贵，buy 工具三处一致）；Godot 名册/详情显示金币+财务档、头顶飘金币
+- **社交可视化**：`godot/ui/RelationWeb.gd` 关系网（R 键，圆环 + 关系连线按类型上色 + bond 标注）
 - **思考持久化**：LLM 每次决策的内心独白存入记忆，念头能跨 tick 延续
 - **时间系统**：Tick 驱动（1 tick = 游戏 15 分钟），支持加速/暂停
+- **提示词缓存纪律**：DeepSeek 自动前缀缓存按逐字节匹配——工具表/system prompt 只随「角色×地点」变化，
+  每 tick 抖动的状态走 user prompt 末尾"此刻区"（环境快照）；由 `src/agent/prompt-cache-discipline.test.ts`
+  回归锁定，命中率按调用类型分桶打印（`[LLM cache]` 日志）
 
 ## 技术栈
 
@@ -80,7 +83,7 @@ anima/
 ```bash
 pnpm dev              # 启动模拟 + Web 服务 (http://localhost:3001)
 pnpm build            # TypeScript 编译
-pnpm test             # 单元测试（~485 tests，几秒完成）
+pnpm test             # 单元测试（几秒完成）
 pnpm test:watch       # 开发时 watch 模式
 pnpm test:live        # Live 测试（需要 DEEPSEEK_API_KEY）
 pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
@@ -89,7 +92,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 ## 测试说明
 
 ### 单元测试（pnpm test）
-- ~485 个测试，45 个文件，不需要 API key（数字会随开发增长，以实际运行为准）
+- 不需要 API key，几秒跑完（测试数/文件数随开发增长，以实际运行为准）
 - 覆盖：时间系统、世界状态、需求衰减、关系、记忆、印象、对话追踪、观察推理、prompt 构建、约束检查、数据库、约定系统、晨间打算
 
 ### Live 测试（pnpm test:live）
@@ -120,6 +123,8 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 | `mygo-seaside` | tomori, anon, sakiko, mutsumi, soyo（5 个 MyGO） | 备用剧本 |
 | `koukou-judgment` | 14 个魔法少女（艾玛/希罗/雪莉/诺亚/蕾雅/...） | 弹丸论破式审判，含 seeds + beats + trial 工具 |
 
+另有 `last-ferry`（3 角色狗血版，3 重 climax + 全 beat auto_seeds）与 `seaside-trio`；完整清单以 `data/scenarios/` 为准。
+
 `data/characters/` 下含 27 个角色 yml（多数标 disabled，由各 scenario 显式启用）。
 `data/locations/` 下含 43+ 个地点 yml（含 25 个监狱地点，标 disabled，由 koukou-judgment 显式启用）。
 
@@ -127,26 +132,13 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 
 - [STATUS.md](./STATUS.md) — **会话交接文档**（当前进度 + 下次入口 + 跨会话教训），进项目先读这个
 - [AUDIT-aliveness-20260704.md](./AUDIT-aliveness-20260704.md) — **活人感全面体检报告**（93 条验证后发现：6 个实锤 bug + 六大结构性根因 + quick wins/deep work 修复路线），「过家家感」问题以此为准
-- [PLAN-appointments.md](./PLAN-appointments.md) — 约定系统（arrange_meet 工具 + 到点结算赴约/爽约 + 记挂/愧疚钩子），2026-07-03 实现
+- [PLAN-appointments.md](./PLAN-appointments.md) — 约定系统（arrange_meet 工具 + 到点结算赴约/爽约 + 记挂/愧疚钩子），已实施
 - [PLAN-tool-feedback.md](./PLAN-tool-feedback.md) — Tool Feedback Loop 改造（✅ 已实施，保留作设计依据）
-- [PLAN-game-frontend.md](./PLAN-game-frontend.md) — Godot 游戏前端（日式 RPG 像素小镇）。P0~P4 全部完成 + 行为可视化（对话凑近/送礼飞道具）+ mygo 剧本适配（2026-07-03，live 回归通过）；运行见 godot/README.md
+- [PLAN-game-frontend.md](./PLAN-game-frontend.md) — Godot 游戏前端（日式 RPG 像素小镇）。P0~P4 全部完成 + 行为可视化（对话凑近/送礼飞道具）+ mygo 剧本适配；运行见 godot/README.md
 
-> ⚠️ 教训：叙事系统(N0-N6) 与 Director Agent(D1-D4) 的旧规划文档曾因 gitignore 未入仓而永久丢失。
+> ⚠️ 教训：叙事系统(N0-N6) 与 Director Agent(D1-D4) 的旧规划文档曾因 gitignore 未入仓而丢失过一次。
 > **2026-07-03 起 PLAN/STATUS/DESIGN/IMPORT 系列全部入仓**（仓库已转 private）。
-> 丢失文档的要点见下方「当前迭代焦点」+ 代码本身，不必再找。
-
-## 当前迭代焦点
-
-**叙事系统 N0-N6 + Director Agent 化 D1/D2/D4 全部完成并合并 main。**
-
-- 规则导演 (BeatEngine) + LLM 导演 (Director) 双层架构
-- Director Agent 化：4 个 read 工具 + tool loop (先看后写) + pulse 反馈闭环 + agenda 跨 invoke 工作记忆 + seed_topic 话题注入
-- seed_topic + auto_seeds：beat 触发时自动把核心剧情话题注入角色 prompt，high urgency 自动注入 intent 让角色主动找人对话
-- scenario pack 支持 5 个剧本切换（default / mygo-seaside / koukou-judgment / last-ferry / seaside-trio）
-- last-ferry 狗血版（3 角色 + 3 重 climax + 全 beat auto_seeds 配置）
-- 玩家通过 web 叙事面板可塞纸条、注入事件、触发 director
-
-> ⚠️ 这部分的旧分期文档（PLAN-narrative.md / PLAN-director-agent.md / STATUS.md）本地已丢失，要点即上方所列，细节见代码（`src/narrative/`、`src/agent/`）。
+> 叙事/导演系统的要点见 STATUS.md「后端 / 模拟核心」节 + 代码本身（`src/narrative/`、`src/agent/`），不必再找。
 
 ## 环境配置
 
@@ -155,6 +147,8 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 DEEPSEEK_API_KEY=sk-xxx          # DeepSeek API key
 DEEPSEEK_BASE_URL=https://api.deepseek.com  # 可选，默认值
 DEEPSEEK_THINKING=disabled        # 思考模式（auto/disabled/enabled），仅 deepseek-v4-* 生效
+ANIMA_BREAK_LEVEL=mild            # 破线强度 off/mild/strong（下行通道解锁），默认 mild；scenario manifest break_level 优先级更高
+ANIMA_PROMPT_DUMP=1               # 可选调试：把每次 LLM 请求体落盘 logs/prompt-dumps/<kind>/，供相邻请求 diff 前缀断点
 PORT=3001                         # Web 服务端口，可选
 ```
 
