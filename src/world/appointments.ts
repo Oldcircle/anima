@@ -80,6 +80,12 @@ export function describeAppointmentTime(atTick: number, currentTick: number): st
 export const APPOINTMENT_GRACE_TICKS = 2;
 
 /**
+ * 提前兑现窗：到点前 4 tick（1 小时）内，双方已在约定地点碰上且聊上了，
+ * 就算兑现——7 天基线里 3 次"爽约"有 2 次其实是提前/换时段履行了被误判。
+ */
+export const APPOINTMENT_EARLY_TICKS = 4;
+
+/**
  * 为 prompt 生成一条约定提醒，按临近程度分级。
  * 返回 undefined 表示还太远（> 1 天），不打扰。
  */

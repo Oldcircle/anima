@@ -137,6 +137,56 @@ describe("Simulation", () => {
     expect(world.getCurrentIntent("anon", 35)?.summary).toContain("过意不去");
   });
 
+  it("约定结算：提前兑现——到点前双方在约定地点聊上了 → kept", async () => {
+    world.moveCharacter("tomori", "cafe");
+    world.moveCharacter("anon", "cafe");
+    world.addAppointment({
+      id: "ap1", proposerId: "tomori", targetId: "anon",
+      locationId: "cafe", atTick: 34, status: "pending", createdTick: 20,
+    });
+    sim.conversations.recordTalk("tomori", "高松灯", "anon", "来得正好，就现在说吧", 31);
+    sim.conversations.recordTalk("anon", "千早爱音", "tomori", "行啊，反正人都到了", 31);
+    mockLLM.setDefaultResponse("", [{ name: "do_nothing", arguments: {} }]);
+
+    await sim.runOneTick(tickToGameTime(32)); // 到点前 2 tick，早窗（4 tick）内
+
+    expect(world.getAllAppointments()[0]!.status).toBe("kept");
+    const memText = sim.memory.getRecent("tomori", 5).map((e) => e.content).join("");
+    expect(memText).toContain("提前");
+  });
+
+  it("约定结算：提前同地点但没聊上 → 不提前结算（防同事同店误判）", async () => {
+    world.moveCharacter("tomori", "cafe");
+    world.moveCharacter("anon", "cafe");
+    world.addAppointment({
+      id: "ap1", proposerId: "tomori", targetId: "anon",
+      locationId: "cafe", atTick: 34, status: "pending", createdTick: 20,
+    });
+    mockLLM.setDefaultResponse("", [{ name: "do_nothing", arguments: {} }]);
+
+    await sim.runOneTick(tickToGameTime(32)); // 早窗内但无对话
+
+    expect(world.getAllAppointments()[0]!.status).toBe("pending");
+  });
+
+  it("约定结算：换地点兑现——到点双方在同一个别的地点聊着 → kept", async () => {
+    world.moveCharacter("tomori", "beach");
+    world.moveCharacter("anon", "beach");
+    world.addAppointment({
+      id: "ap1", proposerId: "tomori", targetId: "anon",
+      locationId: "cafe", atTick: 32, status: "pending", createdTick: 20,
+    });
+    sim.conversations.recordTalk("anon", "千早爱音", "tomori", "反正人都碰上了", 31);
+    sim.conversations.recordTalk("tomori", "高松灯", "anon", "嗯，那就在这儿聊", 31);
+    mockLLM.setDefaultResponse("", [{ name: "do_nothing", arguments: {} }]);
+
+    await sim.runOneTick(tickToGameTime(32));
+
+    expect(world.getAllAppointments()[0]!.status).toBe("kept");
+    const memText = sim.memory.getRecent("anon", 5).map((e) => e.content).join("");
+    expect(memText).toContain("碰上了");
+  });
+
   it("约定结算：宽限窗内不判爽约", async () => {
     world.moveCharacter("tomori", "cafe");
     world.moveCharacter("anon", "beach");
