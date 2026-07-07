@@ -9,6 +9,7 @@ import type { World } from "../world/world.js";
 import type { EventBus } from "../core/event-bus.js";
 import type { WorldEvent } from "../core/event-bus.js";
 import type { GameTime } from "../core/tick-engine.js";
+import type { Appointment, CharacterState } from "../world/types.js";
 import { tickToGameTime } from "../core/tick-engine.js";
 import type { LLMProvider } from "../providers/types.js";
 import type { ActionDefinition } from "../actions/types.js";
@@ -24,12 +25,15 @@ import { LongTermMemoryStore, formatSharedHistory } from "../memory/long-term.js
 import { runAgentTick, describeObservableAction, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest } from "./conversation-mode.js";
-import { extractPromise, mightContainPromise } from "./promise-extractor.js";
+import { extractPromise, mightContainPromise, extractTransaction, mightContainTransaction, type ExtractedTransaction } from "./promise-extractor.js";
 import { ImpressionStore } from "../memory/impressions.js";
 import { updateImpressionsBidirectional } from "./impression-updater.js";
 import { shouldObserve, generateObservation, type ObservationResult } from "./observation-reasoning.js";
 import { tickMoodlets, generateNeedMoodlets, addMoodlet } from "../world/moodlets.js";
-import { APPOINTMENT_GRACE_TICKS, describeAppointmentTime } from "../world/appointments.js";
+import { APPOINTMENT_GRACE_TICKS, APPOINTMENT_EARLY_TICKS, describeAppointmentTime } from "../world/appointments.js";
+import { getBreakLevel } from "./break-config.js";
+import { FATE_EVENTS, FATE_INTERVAL_MIN_TICKS, FATE_INTERVAL_MAX_TICKS, pickFateEvent, applyFateGold } from "../world/fate-events.js";
+import { getItemDef, resolveItem, hasItem, removeFromInventory, addToInventory } from "../world/item-registry.js";
 import { generateMorningPlan } from "./morning-plan.js";
 import { checkPromotion, applyPromotion, type PromotionResult } from "../world/career.js";
 import { detectBehaviorPatterns } from "../world/behavior-chains.js";
@@ -317,8 +321,21 @@ export class Simulation {
     // 1.0g 力竭昏睡：energy 逼近 0 的角色当场撑不住睡着（needs 第一次真正咬人）
     this._applyExhaustionCollapse(gameTime);
 
+    // 1.0g2 饿倒：hunger 逼近 0 持续挨饿 → 眼前发黑当场倒下（挨饿咬人，饭钱才有分量）
+    this._applyStarvationCollapse(gameTime);
+
+    // 1.0h argue 机械兜底：疙瘩攒够且撞见对方 → 注入"把话挑明"的 intent（决策前，进本 tick prompt）
+    this._applyConfrontationFallback(gameTime);
+
+    // 1.0i 讨债：欠了两天以上的账，债主撞见欠债人会想起来提一嘴
+    this._applyDebtCollection(gameTime);
+
     // 1.5 随机事件
     const triggeredEvents = this._rollRandomEvents(gameTime);
+
+    // 1.6 命运事件层：每 3-7 天一件有真实状态后果的意外（丢钱/赔钱/着凉/横财）
+    const fateEvent = this._maybeRollFateEvent(gameTime);
+    if (fateEvent) triggeredEvents.push(fateEvent);
 
     // 2. 并行决策所有未忙碌角色
     const results = await this._gatherAgentDecisions(gameTime);
@@ -413,6 +430,37 @@ export class Simulation {
           }
         }
       }
+      // 食物腐坏：鲜货过了保质期就馊了，只能扔——囤不了，得吃新鲜的
+      this._sweepSpoiledFood(gameTime);
+      // 店铺拉黑到期解禁（顺手清掉过期条目，别让名单越攒越长）
+      for (const loc of this.world.getAllLocations()) {
+        if (!loc.bans) continue;
+        for (const [cid, until] of Object.entries(loc.bans)) {
+          if (gameTime.tick >= until) delete loc.bans[cid];
+        }
+      }
+    }
+  }
+
+  /** 每天 06:00 清一次馊掉的鲜货（ItemDef.perishTicks + 实例 obtainedTick 判定） */
+  private _sweepSpoiledFood(gameTime: GameTime): void {
+    for (const c of this.world.getAllCharacters()) {
+      const spoiled: string[] = [];
+      c.inventory = (c.inventory ?? []).filter((item) => {
+        const def = getItemDef(item.defId);
+        if (!def?.perishTicks || item.obtainedTick === undefined) return true;
+        if (gameTime.tick - item.obtainedTick <= def.perishTicks) return true;
+        spoiled.push(item.quantity > 1 ? `${def.name}×${item.quantity}` : def.name);
+        return false;
+      });
+      if (spoiled.length > 0) {
+        this.memory.add(c.id, {
+          tick: gameTime.tick, type: "event",
+          content: `早上翻出背包里的${spoiled.join("、")}，已经放馊了，捏着鼻子扔了——早知道就趁新鲜吃掉`,
+          importance: 4,
+        });
+        console.log(`🦠 [馊了] ${c.name}: ${spoiled.join("、")}`);
+      }
     }
   }
 
@@ -429,6 +477,11 @@ export class Simulation {
         this.world.modifyNeed(c.id, field, delta);
       }
       applyClimateMoodlet(c, climateTemp, this.world.weather, sheltered, gameTime.tick);
+      // 生病拖着不治是有代价的：着凉/生病 moodlet 存续期每 tick 额外耗精力
+      // （买药一吃就好——take_medicine；不治就虚上一整段）
+      if (c.moodlets.some((m) => m.reason.includes("着凉"))) {
+        this.world.modifyNeed(c.id, "energy", -1);
+      }
       // 行为链检测 → 后果涟漪
       const chainMoodlets = detectBehaviorPatterns(c, gameTime.tick);
       for (const m of chainMoodlets) {
@@ -473,6 +526,89 @@ export class Simulation {
       triggeredEvents.push({ event, affectedCharacters: affected });
     }
     return triggeredEvents;
+  }
+
+  /** 下一件命运事件的到期 tick（瞬态不入档：读档后重新起算一个 3-7 天窗口，无伤大雅） */
+  private _nextFateAt: number | undefined;
+
+  /**
+   * 1.6 命运事件层：随机事件管"流浪猫"级微扰，这里管**每 3-7 天一件、有真实状态后果的意外**。
+   * 只造处境不写结果：事件把角色推进要应对的局面，怎么应对由角色自己决定。
+   * 白天（8-21 点）才落地（夜里顺延），落在醒着的角色头上；off 档不启用（治愈系基线）。
+   */
+  private _maybeRollFateEvent(gameTime: GameTime): { event: RandomEvent; affectedCharacters: string[] } | undefined {
+    if (getBreakLevel() === "off") return undefined;
+    if (this._nextFateAt === undefined) {
+      this._nextFateAt = gameTime.tick + FATE_INTERVAL_MIN_TICKS +
+        Math.floor(Math.random() * (FATE_INTERVAL_MAX_TICKS - FATE_INTERVAL_MIN_TICKS));
+      return undefined;
+    }
+    if (gameTime.tick < this._nextFateAt) return undefined;
+    if (gameTime.hour < 8 || gameTime.hour >= 21) return undefined; // 顺延到白天
+
+    // 随机挑一个醒着的角色
+    const awake = this.world.getAllCharacters().filter((s) => {
+      const a = s.currentAction?.name;
+      return a !== "sleep" && a !== "nap" && a !== "collapse_asleep" && a !== "collapse_starving";
+    });
+    const target = awake[Math.floor(Math.random() * awake.length)];
+    if (!target) return undefined;
+
+    const loc = this.world.getLocation(target.locationId);
+    const event = pickFateEvent(FATE_EVENTS, {
+      weather: this.world.weather,
+      season: gameTime.season,
+      locationType: loc?.type,
+      gold: target.gold,
+    });
+    if (!event) return undefined; // 此情此景无事可落，下 tick 再试
+    this._nextFateAt = gameTime.tick + FATE_INTERVAL_MIN_TICKS +
+      Math.floor(Math.random() * (FATE_INTERVAL_MAX_TICKS - FATE_INTERVAL_MIN_TICKS));
+
+    // ── 结算真实状态后果 ──
+    let goldChange = 0;
+    if (event.goldDelta) goldChange = applyFateGold(target, event.goldDelta);
+    for (const eff of event.needEffects ?? []) {
+      this.world.modifyNeed(target.id, eff.field, eff.delta);
+    }
+    if (event.moodlet) {
+      addMoodlet(target, event.moodlet.emotion, event.moodlet.intensity,
+        event.moodlet.reason, event.moodlet.durationTicks, "event", gameTime.tick);
+    }
+    if (event.intentSummary) {
+      this.world.setIntent(target.id, {
+        kind: "recover", source: "action",
+        summary: event.intentSummary,
+        createdTick: gameTime.tick, expiresAt: gameTime.tick + 12,
+      });
+    }
+    const desc = event.template.replace("{character}", target.name) +
+      (goldChange !== 0 ? `（${goldChange > 0 ? "+" : ""}${goldChange} 金币）` : "");
+    this.memory.add(target.id, { tick: gameTime.tick, type: "event", content: desc, importance: event.importance });
+    this.longTerm.add(target.id, { tick: gameTime.tick, type: "event", importance: event.importance, content: desc });
+
+    const affected = [target.id];
+    if (event.witnessTemplate) {
+      const witnessDesc = event.witnessTemplate.replace("{character}", target.name);
+      for (const otherId of this.world.getCharactersAtLocation(target.locationId)) {
+        if (otherId === target.id) continue;
+        this.memory.add(otherId, {
+          tick: gameTime.tick, type: "observation", content: witnessDesc,
+          importance: 6, relatedCharacterId: target.id,
+        });
+        affected.push(otherId);
+      }
+    }
+    console.log(`🎲 [命运] ${event.name} → ${target.name}${goldChange !== 0 ? ` (金币 ${goldChange > 0 ? "+" : ""}${goldChange})` : ""}`);
+
+    // 走 randomEvents 通道下发前端（effects 已在上面结算，这里只带展示字段）
+    return {
+      event: {
+        id: event.id, name: event.name, description: event.name,
+        template: event.template, effects: [], scope: "self", probability: 0,
+      },
+      affectedCharacters: affected,
+    };
   }
 
   /** 2. 并行决策所有未忙碌角色（活跃对话中的角色走 conversation 模式请求） */
@@ -583,6 +719,7 @@ export class Simulation {
       const energy = state.needs.energy ?? 100;
       if (energy > 3) continue;
       if (state.currentAction?.name === "sleep" || state.currentAction?.name === "nap") continue;
+      if (state.currentAction?.name === "collapse_starving") continue; // 饿倒优先，不叠加覆盖
 
       state.currentAction = { name: "collapse_asleep", remainingTicks: 8 };
       const loc = this.world.getLocation(state.locationId);
@@ -620,6 +757,87 @@ export class Simulation {
     }
   }
 
+  /** 饿倒的持续饥饿水位（characterId → 开始挨饿的 tick），瞬态不入档 */
+  private _starvingSince = new Map<string, number>();
+
+  /**
+   * 1.0g2 饿倒：hunger ≤ 2 持续 8 tick（2 游戏小时）→ 饿得眼前发黑当场倒下。
+   * 7 天基线终局全员 hunger=0 却谈笑风生——挨饿必须咬人，饭钱才有分量（与经济调参配套）。
+   * 倒下 6 tick 叫不醒；结束时勉强缓过来（+15 hunger，灌了点水不是吃饱）带虚弱 moodlet +
+   * "必须马上弄吃的" intent（beg/steal/cook 的浮现供给都在，绝境行为有出口）；
+   * 公共场合被目击进他人记忆，可谈论可传八卦。
+   */
+  private _applyStarvationCollapse(gameTime: GameTime): void {
+    for (const state of this.world.getAllCharacters()) {
+      // 饿倒中：最后一 tick 勉强缓过来（只在 remainingTicks===1 时结算一次）
+      if (state.currentAction?.name === "collapse_starving") {
+        if (state.currentAction.remainingTicks === 1) {
+          this.world.modifyNeed(state.id, "hunger", 15);
+          addMoodlet(state, "anxious", 4, "刚饿倒过一次，浑身发虚", 24, "need", gameTime.tick);
+          this.world.setIntent(state.id, {
+            kind: "recover",
+            source: "action",
+            summary: "刚刚饿晕倒过——必须马上弄到吃的，什么办法都行。",
+            createdTick: gameTime.tick,
+            expiresAt: gameTime.tick + 8,
+          });
+        }
+        continue;
+      }
+      const hunger = state.needs.hunger ?? 100;
+      if (hunger > 2) {
+        this._starvingSince.delete(state.id);
+        continue;
+      }
+      // 睡着/昏睡不触发（醒着挨饿才算数，也避免和力竭昏睡叠加）
+      const acting = state.currentAction?.name;
+      if (acting === "sleep" || acting === "nap" || acting === "collapse_asleep") continue;
+      const since = this._starvingSince.get(state.id);
+      if (since === undefined) {
+        this._starvingSince.set(state.id, gameTime.tick);
+        continue;
+      }
+      if (gameTime.tick - since < 8) continue;
+
+      this._starvingSince.delete(state.id);
+      state.currentAction = { name: "collapse_starving", remainingTicks: 6 };
+      const loc = this.world.getLocation(state.locationId);
+      const isPublic = loc?.type !== "residential";
+      this.memory.add(state.id, {
+        tick: gameTime.tick, type: "event",
+        content: isPublic
+          ? `你饿得眼前发黑，在${loc?.name ?? "外面"}直接倒下了`
+          : "你饿得眼前发黑，倒在了家里",
+        importance: 9,
+      });
+      this.longTerm.add(state.id, {
+        tick: gameTime.tick, type: "event", importance: 9,
+        content: isPublic
+          ? `你在${loc?.name ?? "外面"}饿晕倒下（那几天真的揭不开锅）`
+          : "你饿晕倒在家里（那几天真的揭不开锅）",
+      });
+      if (isPublic) {
+        this.world.setObservableState(state.id, {
+          actionName: "collapse_starving",
+          source: "action",
+          summary: "脸色煞白地倒在那里，看样子是饿的。",
+          createdTick: gameTime.tick,
+          expiresAt: gameTime.tick + 6,
+        });
+        for (const otherId of this.world.getCharactersAtLocation(state.locationId)) {
+          if (otherId === state.id) continue;
+          this.memory.add(otherId, {
+            tick: gameTime.tick, type: "observation",
+            content: `${state.name}饿晕倒在${loc?.name ?? "那里"}，脸色煞白——看着让人心里一沉`,
+            importance: 7,
+            relatedCharacterId: state.id,
+          });
+        }
+      }
+      console.log(`🥀 [饿倒] ${state.name} 在 ${loc?.name ?? state.locationId} 饿晕了 (hunger=${hunger})`);
+    }
+  }
+
   /**
    * 3.55 冲突当刻晋升长期记忆：argue / steal 被抓这类"有重量的事"直接写入 LTM（双方视角），
    * 之后对话时会作为"你们之间实际发生过的"注入——上周的架不会像没吵过一样。
@@ -628,6 +846,12 @@ export class Simulation {
     for (const r of results) {
       if (r.result?.success === false || !r.action) continue;
       const targetRaw = r.action.args.target as string | undefined;
+
+      // 记录机制层真实转移的时刻（口头交易落账的防重复结算依据）
+      if (targetRaw && ["give", "repay_debt", "borrow_money"].includes(r.action.name)) {
+        const tid = this._resolveCharacterId(targetRaw);
+        this._pairTransferTick.set([r.characterId, tid].sort().join(":"), gameTime.tick);
+      }
 
       if (r.action.name === "argue" && targetRaw) {
         const targetId = this._resolveCharacterId(targetRaw);
@@ -675,6 +899,60 @@ export class Simulation {
             console.log(`🕊️ [和解] ${r.characterId} ↔ ${targetId}（${r.action.name}）`);
           }
         }
+      }
+
+      // 借钱：人情账要双方都记住、且活得比 48 小时长（欠着的钱是关系里的一根刺/一份情）
+      const borrowOutcome = (r.result as any)?._borrowOutcome as { lenderId: string; amount: number; granted: boolean } | undefined;
+      if (r.action.name === "borrow_money" && borrowOutcome) {
+        const borrowerName = this.world.getCharacter(r.characterId)?.name ?? r.characterId;
+        const lenderName = this.world.getCharacter(borrowOutcome.lenderId)?.name ?? borrowOutcome.lenderId;
+        if (borrowOutcome.granted) {
+          this.memory.add(borrowOutcome.lenderId, {
+            tick: gameTime.tick, type: "event",
+            content: `${borrowerName}拉下脸跟你开口借钱，你借了${borrowOutcome.amount}金币——看得出他是真的难`,
+            importance: 7, relatedCharacterId: r.characterId,
+          });
+          this.longTerm.add(r.characterId, {
+            tick: gameTime.tick, type: "event", importance: 8,
+            content: `你欠着${lenderName}的${borrowOutcome.amount}金币（难处时人家伸了手，哪天手头松了得还上）`,
+            relatedCharacterId: borrowOutcome.lenderId,
+          });
+          this.longTerm.add(borrowOutcome.lenderId, {
+            tick: gameTime.tick, type: "event", importance: 7,
+            content: `${borrowerName}难处时找你借了${borrowOutcome.amount}金币，还欠着`,
+            relatedCharacterId: r.characterId,
+          });
+          console.log(`🤝 [借钱] ${borrowOutcome.lenderId} → ${r.characterId}: ${borrowOutcome.amount} 金币`);
+        } else {
+          this.memory.add(borrowOutcome.lenderId, {
+            tick: gameTime.tick, type: "event",
+            content: `${borrowerName}跟你开口借钱，你没借——心里多少有点过意不去`,
+            importance: 6, relatedCharacterId: r.characterId,
+          });
+        }
+      }
+
+      // 还钱：销账进双方 LTM——"他守信"和"我不欠人"都值得被长久记住
+      const repayOutcome = (r.result as any)?._repayOutcome as { lenderId: string; amount: number } | undefined;
+      if (r.action.name === "repay_debt" && repayOutcome) {
+        const borrowerName = this.world.getCharacter(r.characterId)?.name ?? r.characterId;
+        const lenderName = this.world.getCharacter(repayOutcome.lenderId)?.name ?? repayOutcome.lenderId;
+        this.memory.add(repayOutcome.lenderId, {
+          tick: gameTime.tick, type: "event",
+          content: `${borrowerName}把欠你的${repayOutcome.amount}金币当面还上了`,
+          importance: 7, relatedCharacterId: r.characterId,
+        });
+        this.longTerm.add(r.characterId, {
+          tick: gameTime.tick, type: "event", importance: 7,
+          content: `你把欠${lenderName}的${repayOutcome.amount}金币还清了，不欠人了`,
+          relatedCharacterId: repayOutcome.lenderId,
+        });
+        this.longTerm.add(repayOutcome.lenderId, {
+          tick: gameTime.tick, type: "event", importance: 7,
+          content: `${borrowerName}把欠的${repayOutcome.amount}金币还了——这人守信`,
+          relatedCharacterId: r.characterId,
+        });
+        console.log(`💰 [还钱] ${r.characterId} → ${repayOutcome.lenderId}: ${repayOutcome.amount} 金币`);
       }
 
       if (r.action.name === "steal" && r.result?.description?.includes("抓住")) {
@@ -726,8 +1004,8 @@ export class Simulation {
         const state = this.world.getCharacter(id);
         if (!state) continue;
         if (state.inbox.length === 0) continue;
-        // 力竭昏睡叫不醒：不进反应轮（消息留到醒后消费，也避免双重扣 remainingTicks）
-        if (state.currentAction?.name === "collapse_asleep") continue;
+        // 力竭昏睡/饿倒叫不醒：不进反应轮（消息留到醒后消费，也避免双重扣 remainingTicks）
+        if (state.currentAction?.name === "collapse_asleep" || state.currentAction?.name === "collapse_starving") continue;
         // 有信箱消息时，即使在执行多 tick 行为也允许进入反应轮
         // （agent-loop 会中断行为来回应）
         // 检查对话对的交换次数限制 + 跨 tick 冷却
@@ -922,6 +1200,7 @@ export class Simulation {
     for (const conv of this.conversations.getEndingConversations(gameTime.tick)) {
       // 对话真正结束：valence 水位清零，下一场对话从头计
       this._valenceWatermark.delete([conv.charA, conv.charB].sort().join(":"));
+      this._scheduleTransactionSettlement(conv, gameTime);
       if (!mightContainPromise(conv.history)) continue;
       const cardA = this._configs.get(conv.charA)?.card;
       const cardB = this._configs.get(conv.charB)?.card;
@@ -976,6 +1255,95 @@ export class Simulation {
         console.warn(`🤝 [承诺抽取] ${conv.charA}↔${conv.charB} 失败:`, err?.message ?? err);
       });
       this._trackBackgroundTask(task);
+    }
+  }
+
+  /** 每对角色最近一次"机制层真实转移"的 tick（give/repay/borrow），防止口头交易落账重复结算 */
+  private _pairTransferTick = new Map<string, number>();
+
+  /**
+   * 3.66 口头交易落账（防幻觉·收编而不是禁止）：
+   * 对话里"当场交割"的钱/物（"给你，拿着""这是4金币"），机制层往往什么都没发生，
+   * 但双方记忆/观察/印象会把它固化成"事实"（牛奶债案）。对话结束时抽取并机械结算：
+   * 嘴上成的交易账本跟上；给不出的（没钱/没物/物品不存在）记日志不结算——空头支票账本不认。
+   */
+  private _scheduleTransactionSettlement(
+    conv: { charA: string; charB: string; history: import("./conversation-mode.js").ConversationExchange[] },
+    gameTime: GameTime,
+  ): void {
+    if (!mightContainTransaction(conv.history)) return;
+    const cardA = this._configs.get(conv.charA)?.card;
+    const cardB = this._configs.get(conv.charB)?.card;
+    if (!cardA || !cardB) return;
+    // 对话窗口内已有一次真实机制转移（give/还钱/借钱）→ 大概率就是这笔，别重复结算
+    const firstTick = conv.history[0]?.tick ?? gameTime.tick;
+    const mechTick = this._pairTransferTick.get([conv.charA, conv.charB].sort().join(":"));
+    if (mechTick !== undefined && mechTick >= firstTick) return;
+
+    const task = extractTransaction({
+      history: conv.history,
+      charAId: cardA.id, charAName: cardA.name,
+      charBId: cardB.id, charBName: cardB.name,
+      provider: this._provider,
+      modelId: this._modelId,
+    }).then((tx) => {
+      if (tx) this._settleSpokenTransaction(tx, gameTime);
+    }).catch((err: any) => {
+      console.warn(`💱 [口头交易抽取] ${conv.charA}↔${conv.charB} 失败:`, err?.message ?? err);
+    });
+    this._trackBackgroundTask(task);
+  }
+
+  /** 结算一笔口头交易：金币以身上的钱为限；物品必须真实存在且给的人真持有 */
+  private _settleSpokenTransaction(tx: ExtractedTransaction, gameTime: GameTime): void {
+    const giver = this.world.getCharacter(tx.fromId);
+    const receiver = this.world.getCharacter(tx.toId);
+    if (!giver || !receiver) return;
+    if (tx.gold > 0) {
+      const amount = Math.min(tx.gold, giver.gold);
+      if (amount <= 0) {
+        console.log(`💱 [口头交易] 空头支票：${giver.name} 说给 ${receiver.name} ${tx.gold} 金币，身上没钱，账本不认`);
+      } else {
+        giver.gold -= amount;
+        receiver.gold += amount;
+        console.log(`💱 [口头交易→落账] ${giver.name} → ${receiver.name}: ${amount} 金币${amount < tx.gold ? `（口头说 ${tx.gold}，身上只够 ${amount}）` : ""}`);
+      }
+    }
+    if (tx.itemName) {
+      const def = resolveItem(tx.itemName);
+      if (!def) {
+        console.log(`💱 [口头交易] 世界里没有「${tx.itemName}」，无法落账（虚构物品，靠真实边界闸压制）`);
+        return;
+      }
+      const qty = Math.max(1, tx.qty ?? 1);
+      // 路径一：给的人自己带着 → 人对人转移
+      if (hasItem(giver.inventory ?? [], def.id)) {
+        const n = Math.min(qty, giver.inventory.filter((i) => i.defId === def.id).reduce((s, i) => s + i.quantity, 0));
+        removeFromInventory(giver.inventory, def.id, n);
+        addToInventory(receiver.inventory, def.id, n, { giftedBy: giver.name, obtainedTick: gameTime.tick });
+        console.log(`💱 [口头交易→落账] ${giver.name} → ${receiver.name}: ${def.name}${n > 1 ? `×${n}` : ""}`);
+        return;
+      }
+      // 路径二：柜台代买（半日实测实锤——真嗣口头卖了三个可颂，明日香真以为自己有，
+      // 连撞 3 次 eat 失败）：给的人是店员、卖的是自家货架 → 按 buy 语义结算
+      const workplaceId = giver.life?.workplace;
+      const shopLoc = workplaceId ? this.world.getLocation(workplaceId) : undefined;
+      const shopItem = shopLoc?.shop?.find((s) => s.id === def.id);
+      if (shopLoc && shopItem) {
+        const price = shopItem.price;
+        const affordable = Math.min(qty, Math.floor(receiver.gold / Math.max(1, price)));
+        const inStock = shopLoc.stock?.[def.id] === undefined ? affordable : Math.min(affordable, shopLoc.stock[def.id]!);
+        if (inStock <= 0) {
+          console.log(`💱 [口头交易] 柜台结算失败：${receiver.name} 买 ${def.name}×${qty}，钱不够或没货，账本不认`);
+          return;
+        }
+        receiver.gold -= price * inStock;
+        if (shopLoc.stock?.[def.id] !== undefined) shopLoc.stock[def.id]! -= inStock;
+        addToInventory(receiver.inventory, def.id, inStock, { obtainedTick: gameTime.tick });
+        console.log(`💱 [口头交易→柜台结算] ${receiver.name} 在${shopLoc.name}买下 ${def.name}×${inStock}（付 ${price * inStock} 金币，${giver.name} 经手）`);
+        return;
+      }
+      console.log(`💱 [口头交易] ${giver.name} 身上没有${def.name}也不卖它，无法落账`);
     }
   }
 
@@ -1384,14 +1752,142 @@ export class Simulation {
     return ready;
   }
 
+  /** argue 兜底的每对冷却水位（observer:target → 上次注入 tick），瞬态不入档 */
+  private _confrontNudgeAt = new Map<string, number>();
+
+  /**
+   * argue 机械兜底（下行通路的最后一环）：
+   * 7 天基线证明机制通道（argue→grudge→和解）和提示词许可都在，但模型从不主动开吵——
+   * 「闹掰」上半环从不注册，「和好」下半环永远不可达。
+   * 当摩擦已在机制里落账（疙瘩攒满 3 条，或 2 条且关系已跌负）且两人撞在同一地点时，
+   * 给受气方注入一条"把话挑明"的 intent——只配时机与注意力，不写结果：
+   * 吵不吵、怎么吵、还是继续咽下去，仍由角色自己决定。
+   * off 档不启用（保 A/B 基线）；已有 grudge 的对子交给积怨状态机，不重复驱动。
+   */
+  private _applyConfrontationFallback(gameTime: GameTime): void {
+    if (getBreakLevel() === "off") return;
+    const COOLDOWN_TICKS = 48; // 同一对至少隔半个游戏天再催一次
+    for (const me of this.world.getAllCharacters()) {
+      const acting = me.currentAction?.name;
+      if (acting === "sleep" || acting === "collapse_asleep" || acting === "collapse_starving") continue;
+      if (this.world.getCurrentIntent(me.id, gameTime.tick)) continue; // 已有心事在身，不叠加
+      for (const otherId of this.world.getCharactersAtLocation(me.locationId)) {
+        if (otherId === me.id) continue;
+        const frictions = this.impressions.get(me.id, otherId)?.frictions ?? [];
+        if (frictions.length < 2) continue;
+        const rel = this.relationships.get(me.id, otherId);
+        if (rel.grudge) continue;
+        const boiling = frictions.length >= 3 || rel.level <= -10;
+        if (!boiling) continue;
+        const key = `${me.id}:${otherId}`;
+        const last = this._confrontNudgeAt.get(key);
+        if (last !== undefined && gameTime.tick - last < COOLDOWN_TICKS) continue;
+        this._confrontNudgeAt.set(key, gameTime.tick);
+        const otherName = this.world.getCharacter(otherId)?.name ?? otherId;
+        this.world.setIntent(me.id, {
+          kind: "recover",
+          source: "action",
+          targetId: otherId,
+          summary: `对${otherName}攒的不满已经压不住了（${frictions[frictions.length - 1]}）。这回别再咽下去，把话当面挑明。`,
+          createdTick: gameTime.tick,
+          expiresAt: gameTime.tick + 6,
+        });
+        console.log(`⚡ [argue-fallback] ${me.id} → ${otherId} (疙瘩=${frictions.length}, level=${Math.round(rel.level)})`);
+        break; // 一次只压一桩心事
+      }
+    }
+  }
+
+  /** 讨债提醒的每对冷却水位（lender:borrower → 上次催的 tick），瞬态不入档 */
+  private _debtNudgeAt = new Map<string, number>();
+
+  /**
+   * 1.0i 讨债：账欠了 2 天以上、债主和欠债人撞在同一地点 → 债主起"提一嘴"的念头。
+   * 只给念头不写台词：委婉还是撕破脸看债主自己；欠债人拖着不还，
+   * 债主的印象/疙瘩会自然变化，最终能走到 argue 兜底那条线上。
+   */
+  private _applyDebtCollection(gameTime: GameTime): void {
+    const OVERDUE_TICKS = 192;       // 欠满 2 游戏天才好意思催
+    const NUDGE_COOLDOWN = 96;       // 同一笔账每天最多催一次
+    for (const borrower of this.world.getAllCharacters()) {
+      for (const debt of borrower.debts ?? []) {
+        if (gameTime.tick - debt.borrowedTick < OVERDUE_TICKS) continue;
+        const lender = this.world.getCharacter(debt.lenderId);
+        if (!lender || lender.locationId !== borrower.locationId) continue;
+        const acting = lender.currentAction?.name;
+        if (acting === "sleep" || acting === "collapse_asleep" || acting === "collapse_starving") continue;
+        if (this.world.getCurrentIntent(lender.id, gameTime.tick)) continue;
+        const key = `${lender.id}:${borrower.id}`;
+        const last = this._debtNudgeAt.get(key);
+        if (last !== undefined && gameTime.tick - last < NUDGE_COOLDOWN) continue;
+        this._debtNudgeAt.set(key, gameTime.tick);
+        const days = Math.floor((gameTime.tick - debt.borrowedTick) / 96);
+        this.world.setIntent(lender.id, {
+          kind: "recover",
+          source: "action",
+          targetId: borrower.id,
+          summary: `${borrower.name}借你的${debt.amount}金币已经${days}天了还没还，人就在眼前——要不要提一嘴，怎么提，你自己拿捏。`,
+          createdTick: gameTime.tick,
+          expiresAt: gameTime.tick + 6,
+        });
+        console.log(`💰 [讨债] ${lender.id} 惦记起 ${borrower.id} 欠的 ${debt.amount} 金币（${days} 天）`);
+      }
+    }
+  }
+
+  /** kept 结算的公共部分：记忆 + moodlet + 关系 + LTM（三种兑现路径共用，只差记忆措辞） */
+  private _settleAppointmentKept(
+    a: Appointment,
+    proposer: CharacterState,
+    target: CharacterState,
+    gameTime: GameTime,
+    contentFor: (other: CharacterState) => string,
+    logNote: string,
+  ): void {
+    this.world.markAppointment(a.id, "kept");
+    this.relationships.modify(a.proposerId, a.targetId, 3, gameTime.tick, "如约见面");
+    for (const [me, other] of [[proposer, target], [target, proposer]] as const) {
+      const content = contentFor(other);
+      this.memory.add(me.id, {
+        tick: gameTime.tick,
+        type: "event",
+        content,
+        importance: 7,
+        relatedCharacterId: other.id,
+      });
+      addMoodlet(me, "happy", 3, "赴约见到了人", 12, "social", gameTime.tick);
+      this.longTerm.add(me.id, {
+        tick: gameTime.tick, type: "event", importance: 7,
+        content,
+        relatedCharacterId: other.id,
+      });
+    }
+    console.log(`📅 [约定] 兑现${logNote}: ${a.proposerId} ↔ ${a.targetId}`);
+  }
+
   /**
    * 约定结算（约定系统）：
-   * - 宽限窗（到点后 2 tick）内双方同时在场 → kept：双方记忆 + happy + 关系 +3
+   * - 提前兑现窗（到点前 4 tick）：双方已在约定地点且聊上了 → kept（提前履行不算爽约）
+   * - 宽限窗（到点后 2 tick）内双方同时在约定地点 → kept：双方记忆 + happy + 关系 +3；
+   *   双方在同一个别的地点且聊上了 → 也算 kept（换了地方但人见上了）
    * - 窗口过后：在场者被放鸽子（记忆/sad/关系 −5/recover intent），
    *   缺席者留愧疚记忆 + intent（道歉行为的涌现钩子）；双方都没到则扯平
    * 已知简化：结算时刻才看在场，"等了一会儿先走了"会被判为没来（v1 接受）。
    */
   private resolveAppointments(gameTime: GameTime): void {
+    // 提前兑现：到点前 1 小时内双方已在约定地点碰上且正在对话（对话是硬证据，防止同事同店整天被误判）
+    for (const a of this.world.getEarlyWindowAppointments(gameTime.tick, APPOINTMENT_EARLY_TICKS)) {
+      const proposer = this.world.getCharacter(a.proposerId);
+      const target = this.world.getCharacter(a.targetId);
+      if (!proposer || !target) continue; // 角色缺失留给到点结算处理
+      const locName = this.world.getLocation(a.locationId)?.name ?? a.locationId;
+      const bothHere = proposer.locationId === a.locationId && target.locationId === a.locationId;
+      if (bothHere && this.conversations.isActiveConversation(a.proposerId, a.targetId, gameTime.tick)) {
+        this._settleAppointmentKept(a, proposer, target, gameTime,
+          (other) => `你和${other.name}提前在${locName}碰了面，约好的事顺势就办了`, "(提前)");
+      }
+    }
+
     for (const a of this.world.getDueAppointments(gameTime.tick)) {
       const proposer = this.world.getCharacter(a.proposerId);
       const target = this.world.getCharacter(a.targetId);
@@ -1404,24 +1900,19 @@ export class Simulation {
       const tHere = target.locationId === a.locationId;
 
       if (pHere && tHere) {
-        this.world.markAppointment(a.id, "kept");
-        this.relationships.modify(a.proposerId, a.targetId, 3, gameTime.tick, "如约见面");
-        for (const [me, other] of [[proposer, target], [target, proposer]] as const) {
-          this.memory.add(me.id, {
-            tick: gameTime.tick,
-            type: "event",
-            content: `你和${other.name}如约在${locName}碰了面`,
-            importance: 7,
-            relatedCharacterId: other.id,
-          });
-          addMoodlet(me, "happy", 3, "赴约见到了人", 12, "social", gameTime.tick);
-          this.longTerm.add(me.id, {
-            tick: gameTime.tick, type: "event", importance: 7,
-            content: `你和${other.name}如约在${locName}碰了面`,
-            relatedCharacterId: other.id,
-          });
-        }
-        console.log(`📅 [约定] 兑现: ${a.proposerId} ↔ ${a.targetId} @ ${locName}`);
+        this._settleAppointmentKept(a, proposer, target, gameTime,
+          (other) => `你和${other.name}如约在${locName}碰了面`, "");
+        continue;
+      }
+
+      // 换了地方但人见上了：双方在同一个别的地点且正在对话 → 也算兑现
+      if (
+        proposer.locationId === target.locationId &&
+        this.conversations.isActiveConversation(a.proposerId, a.targetId, gameTime.tick)
+      ) {
+        const actualLocName = this.world.getLocation(proposer.locationId)?.name ?? proposer.locationId;
+        this._settleAppointmentKept(a, proposer, target, gameTime,
+          (other) => `你和${other.name}约的是${locName}，结果在${actualLocName}碰上了，约的事也算成了`, "(换地点)");
         continue;
       }
 
@@ -1529,6 +2020,13 @@ export class Simulation {
         todayAppointments,
         weather: this.world.weather,
         workplaceName: wpName,
+        townLocations: this.world.getAllLocations()
+          .filter((l) => l.type !== "residential")
+          .map((l) => l.name),
+        townPeople: this.world.getAllCharacters()
+          .filter((c) => c.id !== id)
+          .map((c) => c.name),
+        isFirstDay: gameTime.day === 0,
       }).then((result) => {
         const s = this.world.getCharacter(id);
         if (s && result.items.length > 0) {

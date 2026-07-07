@@ -15,9 +15,10 @@ import type { ToolDefinition } from "../providers/types.js";
 import type { ActionDefinition, ActionResult, ActionContext } from "../actions/types.js";
 import type { CharacterState, Location, LocationTool } from "../world/types.js";
 import type { CharacterCard } from "../character/types.js";
-import { getWorkIncome, effectivePrice } from "../world/economy.js";
+import { getWorkIncome, effectivePrice, financeBand, dailyUpkeep } from "../world/economy.js";
 import { inviteOutAction, shareSecretAction } from "../actions/relationship-actions.js";
 import { getItemDef, hasItem, resolveItem } from "../world/item-registry.js";
+import { argueFrictionGateEnabled, argueFrictionIncludesNegativeLevel, getBreakLevel } from "./break-config.js";
 import type { ShopItem } from "../world/item-types.js";
 import { parseAppointmentTime, describeAppointmentTime } from "../world/appointments.js";
 
@@ -31,6 +32,8 @@ export interface ToolBuildContext {
   gold: number;
   /** 当前游戏时间（小时） */
   hour?: number;
+  /** 当前 tick（菜园成熟判定等慢变量用；不要把它写进任何工具描述——缓存纪律） */
+  tick?: number;
   /** 当前季节（季节市场价格用） */
   season?: import("../world/types.js").Season;
   /** 关系管理器（用于条件浮现关系工具） */
@@ -45,69 +48,52 @@ export interface ToolBuildContext {
 
 /**
  * 为角色动态组装当前可用的工具列表。
+ *
+ * ⚠️ 缓存纪律（prompt caching is everything）：工具表是 LLM 请求前缀的一部分，
+ * 集合与描述只允许随「角色 × 地点」这种慢变量变化，禁止内嵌每 tick 抖动的状态
+ * （在场者名单、营业状态、金币、库存、需求数值）。这些动态信息一律下沉到
+ * user prompt 末尾的 buildEnvironmentSnapshot()；可用性改在执行期校验，
+ * 失败给自然语言反馈交由 tool-feedback 纠偏。低频翻转的条件浮现
+ * （argue/beg/steal/物品工具/cook）保留——偶尔断一次前缀可以接受。
  */
 export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
   const tools: ActionDefinition[] = [];
-  const talkCooldownTargets = new Set(ctx.talkCooldownTargets ?? []);
-  const talkableCharacters = ctx.nearbyCharacters.filter((c) => !talkCooldownTargets.has(c.id));
 
   // 1. 通用工具：go_to（永远可用）
   tools.push(buildGoToTool(ctx));
 
-  // 营业状态：打烊的商铺不提供顾客侧服务（员工可以进来备货）
-  const locOpen = isLocationOpen(ctx.location, ctx.hour);
-  const isWorkerHere = (ctx.state.life?.workplace ?? ctx.card.life?.workplace) === ctx.location.id;
-
-  // 2. 地点工具（从当前地点 YAML 读取）
-  if (ctx.location.tools && (locOpen || isWorkerHere || ctx.location.type !== "commercial")) {
+  // 2. 地点工具（从当前地点 YAML 读取；营业/需求/金币门槛在执行期校验）
+  if (ctx.location.tools) {
     for (const lt of ctx.location.tools) {
       const action = buildLocationTool(lt, ctx);
       if (action) tools.push(action);
     }
   }
 
-  // 2b. 员工工具（在自己工作地点时）
-  // 体力太低（< 15）时不显示工作工具——做不动了
+  // 2b. 员工工具（在自己工作地点时；体力门槛在执行期校验）
   const workplace = ctx.state.life?.workplace ?? ctx.card.life?.workplace;
-  const canWork = (ctx.state.needs.energy ?? 100) >= 15;
-  if (workplace && ctx.location.id === workplace && ctx.location.workerTools && canWork) {
+  if (workplace && ctx.location.id === workplace && ctx.location.workerTools) {
     for (const wt of ctx.location.workerTools) {
-      const action = buildLocationTool(wt, ctx);
+      const action = buildLocationTool(wt, ctx, { isWorkerTool: true });
       if (action) tools.push(action);
     }
   }
 
-  // 2b2. 员工制作工具（在自己工作地点 + 有 shop + 体力够时）
-  if (workplace && ctx.location.id === workplace && ctx.location.shop && ctx.location.shop.length > 0 && canWork) {
+  // 2b2. 员工制作工具（在自己工作地点 + 有 shop；体力门槛在执行期校验）
+  if (workplace && ctx.location.id === workplace && ctx.location.shop && ctx.location.shop.length > 0) {
     tools.push(buildPrepareTool(ctx.location.shop, ctx));
   }
 
-  // 2c. 商店工具（地点有 shop 且在营业时浮现 buy）
-  if (ctx.location.shop && ctx.location.shop.length > 0 && locOpen) {
-    const buyTool = buildBuyTool(ctx.location.shop, ctx);
-    if (buyTool) tools.push(buyTool);
+  // 2c. 商店工具（地点有 shop 即声明；营业/钱够/库存在执行期校验）
+  if (ctx.location.shop && ctx.location.shop.length > 0) {
+    tools.push(buildBuyTool(ctx.location.shop, ctx));
   }
 
-  // 2d. eat：背包有食物/饮品时浮现 + 当前地点商店的食物（直接买了吃）
-  {
-    const bagFood = (ctx.state.inventory ?? []).filter(i => {
-      const def = getItemDef(i.defId);
-      return def && def.effects && (def.type === "consumable" || (def.type === "gift" && def.effects));
-    });
-    const shopFood = !locOpen ? [] : (ctx.location.shop ?? []).filter(s => {
-      const def = getItemDef(s.id);
-      const hasStock = ctx.location.stock?.[s.id] === undefined || ctx.location.stock[s.id]! > 0;
-      return def && def.effects && def.type === "consumable" && ctx.gold >= s.price && hasStock;
-    });
-    if (bagFood.length > 0 || shopFood.length > 0) {
-      tools.push(buildEatTool(bagFood, shopFood, ctx));
-    }
-  }
+  // 2d. eat：恒定声明（有没有吃的在执行期判定，具体清单见环境快照）
+  tools.push(buildEatTool(ctx));
 
-  // 2e. give：背包非空 + 附近有人
-  if ((ctx.state.inventory ?? []).length > 0 && ctx.nearbyCharacters.length > 0) {
-    tools.push(buildGiveTool(ctx));
-  }
+  // 2e. give：恒定声明（背包与在场者在执行期校验）
+  tools.push(buildGiveTool(ctx));
 
   // 2f. 物品启用的工具（notebook→journal, guitar→practice_music 等）
   for (const item of (ctx.state.inventory ?? [])) {
@@ -127,6 +113,32 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     tools.push(buildCookTool(ctx));
   }
 
+  // 2g1b. sell：杂货店回收旧货（物品↔金币闭环：吉他相机不再是死钱，收的菜也能换钱）
+  if (ctx.location.id === "shop") {
+    tools.push(buildSellTool(ctx));
+  }
+
+  // 2g1c. take_medicine：身上有药且正病着——生病要治，拖着每 tick 掉精力
+  if (
+    hasItem(ctx.state.inventory ?? [], "medicine") &&
+    ctx.state.moodlets?.some((m) => m.reason.includes("着凉"))
+  ) {
+    tools.push(buildTakeMedicineTool());
+  }
+
+  // 2g2. 菜园（世界可改造）：在农田时按地块状态浮现。农田低频到访，
+  // 工具集随「有没有种/熟没熟」变化属于可接受的低频前缀抖动（同 item 工具）。
+  if (ctx.location.id === "farm") {
+    const garden = ctx.state.garden;
+    if (!garden && hasItem(ctx.state.inventory ?? [], "vegetable_seeds")) {
+      tools.push(buildPlantCropTool());
+    }
+    if (garden) {
+      if (gardenIsMature(garden, ctx.tick ?? 0)) tools.push(buildHarvestCropTool());
+      else tools.push(buildTendCropTool());
+    }
+  }
+
   // 2h. read：在图书馆时无条件可用（图书馆有书）— 后续应迁移到 YAML
   if (ctx.location.id === "library" && !tools.some(t => t.tool.name === "read")) {
     tools.push({
@@ -144,46 +156,79 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     });
   }
 
-  // 3. 社交工具（附近有人时）
-  if (ctx.nearbyCharacters.length > 0) {
-    tools.push(buildTalkTool(ctx, talkableCharacters));
-    tools.push(buildComfortTool(ctx));
-    tools.push(buildArrangeMeetTool(ctx));
+  // 3. 社交工具：恒定声明（对方在不在执行期校验；"附近没人"user prompt 里已写明）
+  tools.push(buildTalkTool(ctx));
+  tools.push(buildComfortTool(ctx));
+  tools.push(buildArrangeMeetTool(ctx));
 
-    // argue 只在负面情绪或 fun 极低时浮现
+  // argue 保留条件浮现（破线设计的一部分）：负面情绪、fun 极低、或与在场某人有关系摩擦。
+  // 情绪窗口以小时计，属于可接受的低频前缀抖动。
+  // 关系摩擦门（P4）破解"必须先吵一次才能吵"的鸡生蛋：angry moodlet 只由 argue/steal 自己产生，
+  // 若只认 mood/fun，第一次 argue 结构性不可达。off 档 argueFrictionGateEnabled()=false → 回归旧行为。
+  if (ctx.nearbyCharacters.length > 0) {
     const dominantMood = ctx.state.moodlets?.length
       ? [...ctx.state.moodlets].sort((a, b) => b.intensity - a.intensity)[0]
       : undefined;
     const hasNegativeMood = dominantMood && ["sad", "angry", "anxious"].includes(dominantMood.emotion);
-    if (hasNegativeMood || (ctx.state.needs.fun !== undefined && ctx.state.needs.fun < 30)) {
+    const lowFun = ctx.state.needs.fun !== undefined && ctx.state.needs.fun < 30;
+    let hasFriction = false;
+    if (argueFrictionGateEnabled() && ctx.relationships) {
+      for (const nearby of ctx.nearbyCharacters) {
+        const rel = ctx.relationships.get(ctx.card.id, nearby.id);
+        if (rel.type === "rival" || rel.grudge || rel.bond === "rival" || rel.bond === "ex"
+            || (argueFrictionIncludesNegativeLevel() && rel.level < 0)) {
+          hasFriction = true;
+          break;
+        }
+      }
+    }
+    // 挑明 intent 门（7 天实测实锤）：argue 兜底注入"把话挑明"时 21/21 次 argue 都不在菜单——
+    // 疙瘩攒满但关系 level 还是正的（如 L↔月 =7），上面的摩擦门全不认。
+    // intent 说挑明、菜单就得上菜：正在生效的挑明 intent 且对象在场 → argue 浮现。
+    const confrontIntent = ctx.state.currentIntent;
+    const hasConfrontNudge = !!confrontIntent
+      && confrontIntent.summary.includes("挑明")
+      && (ctx.tick === undefined || confrontIntent.expiresAt > ctx.tick)
+      && (!confrontIntent.targetId || ctx.nearbyCharacters.some((n) => n.id === confrontIntent.targetId));
+    if (hasNegativeMood || lowFun || hasFriction || hasConfrontNudge) {
       tools.push(buildArgueTool(ctx));
     }
   }
 
-  // 3b. 关系深度工具（附近有人 + 关系达标时浮现）
-  if (ctx.nearbyCharacters.length > 0 && ctx.relationships) {
-    let hasInvite = false;
-    let hasSecret = false;
-    for (const nearby of ctx.nearbyCharacters) {
-      const rel = ctx.relationships.get(ctx.card.id, nearby.id);
-      if (!hasInvite && rel.level >= 40) {
-        tools.push(inviteOutAction);
-        hasInvite = true;
-      }
-      if (!hasSecret && rel.level >= 70) {
-        tools.push(shareSecretAction);
-        hasSecret = true;
-      }
-      if (hasInvite && hasSecret) break;
-    }
+  // 3b. 关系深度工具：达标与否看"是否存在达标关系"（角色级慢变量），对方在不在执行期校验
+  if (ctx.relationships) {
+    const rels = ctx.relationships.getRelationshipsOf(ctx.card.id);
+    if (rels.some(({ relationship: r }) => r.level >= 40)) tools.push(inviteOutAction);
+    if (rels.some(({ relationship: r }) => r.level >= 70)) tools.push(shareSecretAction);
   }
 
-  // 4. 极端状态工具（平时隐藏）
-  if (ctx.gold === 0) {
-    tools.push(buildBegTool());
-  }
-  if (ctx.gold === 0 && (ctx.state.needs.hunger ?? 100) < 20) {
-    tools.push(buildStealTool(ctx));
+  // 4. 绝境阶梯（平时隐藏）：生存压力把人往底线外推——每一档都有尊严代价。
+  // 浮现门槛按财务体感（AUDIT：旧门槛 gold===0 在现行经济下半天窗口不可达）。
+  {
+    const band = financeBand(ctx.gold, dailyUpkeep(ctx.state.life?.income));
+    const desperate = band === "destitute" || band === "broke"; // 手头的钱撑不过两天
+    const hunger = ctx.state.needs.hunger ?? 100;
+    const age = ctx.state.life?.age ?? ctx.card.life?.age ?? ctx.card.age ?? 20;
+    if (desperate) {
+      tools.push(buildBegTool());
+      if (age >= 18) tools.push(buildSellBloodTool(ctx));
+      if (ctx.nearbyCharacters.length > 0) tools.push(buildBorrowMoneyTool(ctx));
+    }
+    // 还钱：债主就在眼前且手头够——账要还，人情才续得上
+    const payableDebt = (ctx.state.debts ?? []).find(
+      (d) => ctx.nearbyCharacters.some((n) => n.id === d.lenderId) && ctx.gold >= d.amount,
+    );
+    if (payableDebt) tools.push(buildRepayDebtTool());
+    if (desperate && hunger < 30) {
+      tools.push(buildScavengeTool());
+    }
+    if (band === "destitute" && hunger < 20) {
+      tools.push(buildStealTool(ctx));
+    }
+    // 陪酒：成年 + 在酒吧 + 晚间 + 走投无路 + 破线档（off 档的治愈小镇没有这条路）
+    if (age >= 18 && ctx.location.id === "bar" && (ctx.hour ?? 12) >= 19 && desperate && getBreakLevel() !== "off") {
+      tools.push(buildHostessTool());
+    }
   }
 
   // 5. Phase-specific 工具 (N6.4)：仅在 active_phase 在剧本白名单中时浮现
@@ -241,21 +286,14 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
   const allowedLocations = ctx.allLocations
     .filter((l) => l.id !== ctx.state.locationId)
     .filter((l) => l.type !== "residential" || l.id === myHome);
+  // 缓存纪律：描述只含慢变量（地点名/summary/工作地标注）。谁在哪、是否打烊
+  // 这类每 tick 抖动的信息在 user prompt 的环境快照里，不进工具描述。
   const otherLocations = allowedLocations
     .map((l) => {
       if (l.id === myHome) return `家——能休息、做饭、洗澡`;
       let desc = l.name;
       if (l.summary) desc += `——${l.summary}`;
       if (l.id === workplace) desc += "（你的工作地点）";
-      if (!isLocationOpen(l, ctx.hour) && l.type === "commercial" && l.id !== workplace) desc += "（这个点已打烊）";
-      // 显示那里有谁（排除自己）
-      const peopleHere = l.presentCharacters
-        .filter((cid) => cid !== ctx.card.id)
-        .map((cid) => ctx.characterNames?.get(cid) ?? cid)
-        .filter((name) => name.length > 0);
-      if (peopleHere.length > 0) {
-        desc += `（${peopleHere.join("、")}在那里）`;
-      }
       return desc;
     })
     .join("。");
@@ -265,9 +303,7 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
   return {
     tool: {
       name: "go_to",
-      description: (ctx.state.needs.energy ?? 100) < 20
-        ? `${currentAnchor} 去别的地方。你很累了，也许该回家休息了。`
-        : `${currentAnchor} 去别的地方。走路要花一点力气。`,
+      description: `${currentAnchor} 去别的地方。走路要花一点力气。各地方现在有谁、是否营业，看下方环境快照。`,
       parameters: {
         type: "object",
         properties: {
@@ -347,12 +383,6 @@ function buildGoToTool(ctx: ToolBuildContext): ActionDefinition {
 
 // ── talk 工具 ──
 
-function nearbyNames(ctx: ToolBuildContext): string {
-  return ctx.nearbyCharacters
-    .map((c) => `${c.name}(${c.id})`)
-    .join("、");
-}
-
 /** 营业时间判断：openHours 数据早就在 YAML 里，此前零消费——深夜也能买拿铁 */
 export function isLocationOpen(loc: Location, hour?: number): boolean {
   if (hour === undefined || !loc.openHours) return true;
@@ -405,28 +435,19 @@ function describeLocationObservableState(lt: LocationTool, ctx: ToolBuildContext
   }
 }
 
-function buildTalkTool(ctx: ToolBuildContext, _talkableCharacters: Array<{ id: string; name: string }>): ActionDefinition {
-  // 不再硬拦截对话——让模型自己判断要不要继续聊
-  const who = ctx.nearbyCharacters
-    .map((c) => `${c.name}(${c.id})`)
-    .join("、");
-  const socialValue = ctx.state.needs.social ?? 60;
-  const socialHint = socialValue > 90
-    ? "你已经聊了很多了，脑子有些转不动，也许先做点别的。"
-    : socialValue > 75
-      ? "今天聊了不少，继续聊也行，但也可以先忙自己的事。"
-      : "聊天挺好但也挺累的。";
+function buildTalkTool(ctx: ToolBuildContext): ActionDefinition {
+  // 缓存纪律：描述静态。谁在场、社交疲劳感都在 user prompt（"你现在看见了谁"/"身体感受"）里。
   return {
     tool: {
       name: "talk",
-      description: `跟在场的人说话。${socialHint}在场：${who}。`,
+      description: `跟在场的人说话。聊天挺好但也挺累的。在场有谁看下方"你现在看见了谁"。`,
       parameters: {
         type: "object",
         properties: {
           thought: { type: "string", description: "你在想什么，为什么想说话（或不想）" },
           target: {
             type: "string",
-            description: `对话对象：${who}`,
+            description: `对话对象的角色 ID（必须此刻在场）`,
           },
           message: {
             type: "string",
@@ -468,20 +489,19 @@ function buildTalkTool(ctx: ToolBuildContext, _talkableCharacters: Array<{ id: s
 // ── arrange_meet 工具（约定系统）──
 
 function buildArrangeMeetTool(ctx: ToolBuildContext): ActionDefinition {
-  const who = nearbyNames(ctx);
-  // 只能约在公共地点（不能约在别人家）
+  // 只能约在公共地点（不能约在别人家）。地点清单是剧本级静态信息，可以进描述。
   const publicLocations = ctx.allLocations.filter((l) => l.type !== "residential");
   const locationList = publicLocations.map((l) => l.name).join("、");
 
   return {
     tool: {
       name: "arrange_meet",
-      description: `和在场的人约个时间地点见面（比如"明天中午在咖啡馆见"）。说定了就是承诺——到时候不去，对方会记住的。在场：${who}。`,
+      description: `和在场的人约个时间地点见面（比如"明天中午在咖啡馆见"）。说定了就是承诺——到时候不去，对方会记住的。`,
       parameters: {
         type: "object",
         properties: {
           thought: { type: "string", description: "你在想什么，为什么想约" },
-          target: { type: "string", description: `约谁（角色 ID）：${who}` },
+          target: { type: "string", description: `约谁（角色 ID，必须此刻在场）` },
           location: { type: "string", description: `约在哪（公共地点）：${locationList}` },
           when: { type: "string", description: `什么时候。用"今天18:00"、"明天12:00"或"明天中午"这样的说法` },
           activity: { type: "string", description: "约好做什么（可选，如'一起吃午饭'）" },
@@ -540,7 +560,7 @@ function buildComfortTool(ctx: ToolBuildContext): ActionDefinition {
         type: "object",
         properties: {
           thought: { type: "string", description: "你在想什么" },
-          target: { type: "string", description: nearbyNames(ctx) },
+          target: { type: "string", description: "安慰谁（角色 ID，必须此刻在场）" },
           words: { type: "string", description: "安慰的话" },
         },
         required: ["target"],
@@ -583,7 +603,7 @@ function buildArgueTool(ctx: ToolBuildContext): ActionDefinition {
         type: "object",
         properties: {
           thought: { type: "string", description: "你在想什么" },
-          target: { type: "string", description: nearbyNames(ctx) },
+          target: { type: "string", description: "跟谁吵（角色 ID，必须此刻在场）" },
           reason: { type: "string", description: "吵架的原因" },
           words: { type: "string", description: "你吵架时说出口的话（对方会听到并可能还嘴）" },
         },
@@ -649,6 +669,240 @@ function buildBegTool(): ActionDefinition {
   };
 }
 
+/** sell：把随身物品卖给杂货店（半价回收，念想不卖） */
+function buildSellTool(ctx: ToolBuildContext): ActionDefinition {
+  return {
+    tool: {
+      name: "sell",
+      description: "把你身上带的东西卖给杂货店店主换钱（旧货半价回收）。带了什么看随身物品。",
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么，为什么要卖它" },
+          item: { type: "string", description: "卖什么（你随身物品里的）" },
+        },
+        required: ["item"],
+      },
+    },
+    handler: (args, _actx): ActionResult => {
+      const rawItem = args.item as string;
+      const def = resolveItem(rawItem);
+      const itemId = def?.id ?? rawItem;
+      if (!hasItem(ctx.state.inventory ?? [], itemId)) {
+        return { description: `你身上没有${def?.name ?? rawItem}`, effects: [], success: false };
+      }
+      if (!def || def.type === "keepsake" || (def.value ?? 0) <= 0) {
+        return { description: `店主拿起${def?.name ?? rawItem}翻看了两下，摆摆手：这个不值钱，收不了`, effects: [], success: false };
+      }
+      const price = Math.max(1, Math.floor((def.value ?? 0) / 2));
+      return {
+        description: `把${def.name}卖给了杂货店店主，得了 ${price} 金币`,
+        effects: [],
+        duration: 1,
+        observableState: `在杂货店柜台前和店主交割一件旧货。`,
+        _sellItem: { defId: itemId, price },
+      } as ActionResult & { _sellItem: { defId: string; price: number } };
+    },
+  };
+}
+
+/** take_medicine：吃药治着凉（清病痛 moodlet 在 executeAction 落地） */
+function buildTakeMedicineTool(): ActionDefinition {
+  return {
+    tool: {
+      name: "take_medicine",
+      description: "把带着的感冒药就水吃了。着凉这种病拖着只会越来越虚，吃了药踏实。",
+      parameters: {
+        type: "object",
+        properties: { thought: { type: "string", description: "你在想什么" } },
+      },
+    },
+    handler: (_args, actx): ActionResult => ({
+      description: "把感冒药就着水咽下去，靠了一会儿，身上那股发冷的劲儿慢慢退了",
+      effects: [
+        { type: "need_change", targetId: actx.characterId, field: "energy", delta: 5 },
+      ],
+      duration: 2,
+      observableState: "刚吃了药，脸色还有点白，但精神看着缓过来了些。",
+      _takeMedicine: true,
+    } as ActionResult & { _takeMedicine: boolean }),
+  };
+}
+
+/** repay_debt：把欠在场债主的钱还上（转账/销账在 executeAction 结算） */
+function buildRepayDebtTool(): ActionDefinition {
+  return {
+    tool: {
+      name: "repay_debt",
+      description: "把欠人家的钱当面还上。欠着的账压在心里，还了人情才续得上。",
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么" },
+          target: { type: "string", description: "还给谁（你的债主，此刻在场）" },
+        },
+        required: ["target"],
+      },
+    },
+    handler: (args, actx): ActionResult => {
+      const target = args.target as string;
+      if (!actx.nearbyCharacters.includes(target)) {
+        return { description: `想把钱还给${target}，但对方不在这里`, effects: [], success: false };
+      }
+      return {
+        // 金额/销账由 executeAction 按账本结算，描述会被改写
+        description: `把欠${target}的钱还上`,
+        effects: [
+          { type: "need_change", targetId: actx.characterId, field: "fun", delta: 8 },
+        ],
+        duration: 1,
+        observableState: "把一小叠金币郑重地递到对方手里，像是了结一桩心事。",
+        _repayDebt: { lenderId: target },
+      } as ActionResult & { _repayDebt: { lenderId: string } };
+    },
+  };
+}
+
+/** borrow_money：向在场的人开口借钱。答不答应看交情和对方手头（executeAction 里结算） */
+function buildBorrowMoneyTool(ctx: ToolBuildContext): ActionDefinition {
+  return {
+    tool: {
+      name: "borrow_money",
+      description: "拉下脸向在场的熟人开口借钱。对方答不答应要看交情和人家自己的手头；借了就是欠着，人情账比金币账重。",
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么，开这个口有多难" },
+          target: { type: "string", description: "向谁借（角色 ID，必须此刻在场）" },
+          amount: { type: "number", description: "想借多少（10-30 金币）" },
+        },
+        required: ["target"],
+      },
+    },
+    handler: (args, actx): ActionResult => {
+      const target = args.target as string;
+      if (!actx.nearbyCharacters.includes(target)) {
+        return { description: `想找${target}借钱，但对方不在这里`, effects: [], success: false };
+      }
+      const amount = Math.max(10, Math.min(30, Math.round((args.amount as number) || 20)));
+      return {
+        // 描述占位：借没借到由 executeAction 按交情和对方手头改写
+        description: `向${target}开口借 ${amount} 金币`,
+        effects: [],
+        duration: 1,
+        _borrowAsk: { targetId: target, amount },
+      } as ActionResult & { _borrowAsk: { targetId: string; amount: number } };
+    },
+  };
+}
+
+/** 翻垃圾找吃的：饿比丢人更疼的时候，人真的会这么做 */
+function buildScavengeTool(): ActionDefinition {
+  return {
+    tool: {
+      name: "scavenge_trash",
+      description: "翻翻店铺后巷的垃圾桶，找些别人扔掉但还能吃的东西。丢人，但饿比丢人更疼。",
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么" },
+        },
+      },
+    },
+    handler: (_args, actx): ActionResult => {
+      const found = Math.random() < 0.7;
+      if (!found) {
+        return {
+          description: "在后巷垃圾桶里翻了半天，只有烂菜叶和空罐头，什么能吃的都没找到",
+          effects: [
+            { type: "need_change", targetId: actx.characterId, field: "fun", delta: -8 },
+            { type: "need_change", targetId: actx.characterId, field: "hygiene", delta: -12 },
+          ],
+          duration: 1,
+          observableState: "在垃圾桶边上翻找，头埋得很低，不想被人认出来。",
+        };
+      }
+      return {
+        description: "在后巷垃圾桶里翻到了别人扔的半块面包，拍了拍灰就吃了",
+        effects: [
+          { type: "need_change", targetId: actx.characterId, field: "hunger", delta: 20 },
+          { type: "need_change", targetId: actx.characterId, field: "fun", delta: -12 },
+          { type: "need_change", targetId: actx.characterId, field: "hygiene", delta: -15 },
+          { type: "moodlet", targetId: actx.characterId, emotion: "sad", intensity: 3, reason: "沦落到翻垃圾桶找吃的", durationTicks: 16 },
+        ],
+        duration: 1,
+        observableState: "在垃圾桶边上翻找，头埋得很低，不想被人认出来。",
+      };
+    },
+  };
+}
+
+/** 卖血：一次性来钱快，身体要虚好几天。冷却用"卖血后的虚弱"moodlet 判定（3 游戏天） */
+function buildSellBloodTool(ctx: ToolBuildContext): ActionDefinition {
+  return {
+    tool: {
+      name: "sell_blood",
+      description: "去镇卫生所卖一次血，能拿一笔营养费。身体会虚上好几天，卫生所也不许连着卖。",
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么" },
+        },
+      },
+    },
+    handler: (_args, actx): ActionResult => {
+      if (ctx.state.moodlets?.some((m) => m.reason.includes("卖血"))) {
+        return { description: "想再去卖血，卫生所的人翻了翻记录直摆手：上次抽的还没缓过来，不能再抽", effects: [], success: false };
+      }
+      if ((ctx.state.needs.energy ?? 100) < 30) {
+        return { description: "想去卖血换点钱，可这副气色卫生所根本不敢收", effects: [], success: false };
+      }
+      return {
+        description: "去卫生所卖了一次血，攥着 30 金币营养费出来，腿有点软",
+        effects: [
+          { type: "need_change", targetId: actx.characterId, field: "energy", delta: -30 },
+          { type: "need_change", targetId: actx.characterId, field: "fun", delta: -10 },
+          { type: "moodlet", targetId: actx.characterId, emotion: "anxious", intensity: 3, reason: "卖血后的虚弱，缓上几天才行", durationTicks: 288 },
+        ],
+        duration: 2,
+        observableState: "胳膊肘内侧贴着一小块棉球胶布，脸色发白。",
+        _workerIncome: 30,
+      } as ActionResult & { _workerIncome: number };
+    },
+  };
+}
+
+/** 陪酒：底线最靠外的一档——钱最多，尊严代价也最重，且会被镇上人看在眼里 */
+function buildHostessTool(): ActionDefinition {
+  return {
+    tool: {
+      name: "accompany_drinks",
+      description: "在酒吧陪客人喝酒说笑赚陪酒钱。来钱快，但要陪笑脸受打量，镇上人看见了会传闲话——这条线一旦跨过去，有些东西就回不来了。",
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么，是什么把你逼到这一步" },
+        },
+      },
+    },
+    handler: (_args, actx): ActionResult => {
+      const amount = 30 + Math.floor(Math.random() * 16); // 30~45
+      return {
+        description: `在酒吧陪客人喝酒说笑到深夜，赚了 ${amount} 金币陪酒钱。笑得脸都僵了，酒气沾了一身`,
+        effects: [
+          { type: "need_change", targetId: actx.characterId, field: "energy", delta: -15 },
+          { type: "need_change", targetId: actx.characterId, field: "fun", delta: -20 },
+          { type: "need_change", targetId: actx.characterId, field: "hygiene", delta: -10 },
+          { type: "moodlet", targetId: actx.characterId, emotion: "sad", intensity: 4, reason: "为了钱陪陌生人喝酒赔笑，心里像堵了块东西", durationTicks: 32 },
+        ],
+        duration: 3,
+        observableState: "坐在客人桌边陪酒赔笑，眼神却时不时飘向门口。",
+        _workerIncome: amount,
+      } as ActionResult & { _workerIncome: number };
+    },
+  };
+}
+
 function buildStealTool(ctx: ToolBuildContext): ActionDefinition {
   return {
     tool: {
@@ -684,14 +938,19 @@ function buildStealTool(ctx: ToolBuildContext): ActionDefinition {
             observableState: "被人抓住手腕，脸涨得通红——刚才想偷东西被逮个正着。",
           };
         }
+        const isShop = ctx.location.type === "commercial";
         return {
-          description: `想顺手拿点东西，被店里的人发现赶了出来`,
+          description: isShop
+            ? `想顺手拿点东西，被店里的人发现赶了出来——店主放话：这几天别再进这个门`
+            : `想顺手拿点东西，被人发现赶了出来`,
           effects: [
             { type: "moodlet", targetId: actx.characterId, emotion: "embarrassed", intensity: 4, reason: "偷东西被发现赶出来", durationTicks: 16 },
           ],
           duration: 1,
           observableState: "灰头土脸地从店里出来，身后有人在骂。",
-        };
+          // 偷店被抓的真实后果：这家店 3 天拒绝服务（agent-loop 落到 location.bans）
+          ...(isShop ? { _shopBan: { locationId: ctx.location.id, durationTicks: 288 } } : {}),
+        } as ActionResult & { _shopBan?: { locationId: string; durationTicks: number } };
       }
       return {
         description: victimId
@@ -709,7 +968,7 @@ function buildStealTool(ctx: ToolBuildContext): ActionDefinition {
 
 // ── 地点工具（从 YAML 读取，自然语言描述） ──
 
-/** 为地点工具生成自然语言描述 */
+/** 为地点工具生成自然语言描述（缓存纪律：只用地点级慢变量，不嵌在场者/数值状态） */
 function describeLocationTool(lt: LocationTool, ctx: ToolBuildContext): string {
   // 基础描述来自 YAML
   let desc = lt.description;
@@ -723,14 +982,6 @@ function describeLocationTool(lt: LocationTool, ctx: ToolBuildContext): string {
     if (lt.cost >= 15) desc += "。要花不少钱";
     else if (lt.cost >= 8) desc += "。要花一点钱";
     else desc += "。很便宜";
-  }
-
-  // 社交语境：如果有认识的人在，某些活动提一下
-  if (ctx.nearbyCharacters.length > 0) {
-    const names = ctx.nearbyCharacters.map((c) => c.name).join("和");
-    if (lt.name === "eat" || lt.name === "drink" || lt.name === "drink_coffee") {
-      desc += `。${names}也在`;
-    }
   }
 
   // 工作/员工工具加上收入提示
@@ -761,7 +1012,7 @@ function buildPrepareTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefini
   return {
     tool: {
       name: "prepare",
-      description: `制作店里的东西（你是这里的员工，不用花钱）。可以做：${itemList}`,
+      description: `制作店里的东西补货架（你是这里的员工，不用花钱，老板按件给工钱）。可以做：${itemList}`,
       parameters: {
         type: "object",
         properties: {
@@ -772,6 +1023,10 @@ function buildPrepareTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefini
       },
     },
     handler: (args, actx): ActionResult => {
+      // 执行期校验（原为工具集合门槛）：体力太低做不动
+      if ((ctx.state.needs.energy ?? 100) < 15) {
+        return { description: "想做点东西，但累得连手都抬不起来了", effects: [], success: false };
+      }
       const rawItem = args.item as string;
       const resolved = resolveItem(rawItem);
       const shopItem = shop.find(s => s.name === rawItem || s.id === rawItem || (resolved && s.id === resolved.id));
@@ -785,46 +1040,118 @@ function buildPrepareTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefini
       if (actx.workSkill) {
         effects.push({ type: "skill_up", targetId: actx.characterId, skill: actx.workSkill, delta: 0.05 });
       }
+      // 计件工钱：只有货架真的能再摆（未满）才有收入——堆库存老板不付钱，防原地刷钱
+      const shelfFull = (ctx.location.stock?.[shopItem.id] ?? 0) >= 8;
       return {
-        description: `做了一份${shopItem.name}，摆上了货架`,
+        description: shelfFull
+          ? `做了一份${shopItem.name}，但货架已经堆满了，老板皱着眉没记这一件的工钱`
+          : `做了一份${shopItem.name}，摆上了货架`,
         effects,
         duration: 1,
         observableState: `正在做一份${shopItem.name}，动作熟练得像条件反射。`,
         // 产出进店铺货架（早晨烤的面包别人真能买到），不再无中生有进自己口袋
         _stockItem: { defId: shopItem.id },
-      } as ActionResult & { _stockItem: { defId: string } };
+        ...(shelfFull ? {} : { _workerIncome: 3 }),
+      } as ActionResult & { _stockItem: { defId: string }; _workerIncome?: number };
     },
   };
 }
 
-function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition | null {
-  // 季节市场价：应季便宜、反季贵。filter/展示/扣款三处用同一到手价，保持一致
+// ── 菜园工具（世界可改造：种下去的东西真实存在、跨日生长） ──
+
+/** 蔬菜从种下到成熟：2 游戏天 */
+export const CROP_MATURE_TICKS = 192;
+/** 一次收获的蔬菜数 */
+export const CROP_YIELD = 4;
+
+export function gardenIsMature(garden: { plantedTick: number; matureTicks: number }, tick: number): boolean {
+  return tick - garden.plantedTick >= garden.matureTicks;
+}
+
+function buildPlantCropTool(): ActionDefinition {
+  return {
+    tool: {
+      name: "plant_crop",
+      description: "在农田认领一小块地，把你带的蔬菜种子种下去。两天左右能收一茬，自己种的菜不花钱。",
+      parameters: {
+        type: "object",
+        properties: { thought: { type: "string", description: "你在想什么" } },
+      },
+    },
+    handler: (_args, _actx): ActionResult => ({
+      description: "翻了翻土，把蔬菜种子种进了地里，浇了点水。过两天就能来收了",
+      effects: [],
+      duration: 2,
+      observableState: "蹲在田垄边翻土下种，手上沾了泥。",
+      _plantCrop: { cropId: "fresh_vegetables", matureTicks: CROP_MATURE_TICKS },
+    } as ActionResult & { _plantCrop: { cropId: string; matureTicks: number } }),
+  };
+}
+
+function buildTendCropTool(): ActionDefinition {
+  return {
+    tool: {
+      name: "tend_crop",
+      description: "照看你的菜地：拔草、浇水、松土。菜会长得快一点，看着自己种的东西一天天长也踏实。",
+      parameters: {
+        type: "object",
+        properties: { thought: { type: "string", description: "你在想什么" } },
+      },
+    },
+    handler: (_args, actx): ActionResult => ({
+      description: "给菜地拔了草、浇了水，菜苗看着精神了些",
+      effects: [
+        { type: "need_change", targetId: actx.characterId, field: "fun", delta: 6 },
+        { type: "need_change", targetId: actx.characterId, field: "energy", delta: -4 },
+      ],
+      duration: 2,
+      observableState: "蹲在自己那块菜地边上拔草浇水，弄得很仔细。",
+      _tendCrop: true,
+    } as ActionResult & { _tendCrop: boolean }),
+  };
+}
+
+function buildHarvestCropTool(): ActionDefinition {
+  return {
+    tool: {
+      name: "harvest_crop",
+      description: "你菜地里的菜熟了，收下来。自己种的菜，能吃能送人也能拿去卖。",
+      parameters: {
+        type: "object",
+        properties: { thought: { type: "string", description: "你在想什么" } },
+      },
+    },
+    handler: (_args, actx): ActionResult => ({
+      description: "把地里熟了的菜收了下来，装了满满一篮子",
+      effects: [
+        { type: "need_change", targetId: actx.characterId, field: "fun", delta: 10 },
+        { type: "need_change", targetId: actx.characterId, field: "energy", delta: -5 },
+      ],
+      duration: 2,
+      observableState: "抱着一篮子刚收的菜，脸上带着点收成的踏实劲儿。",
+      _harvestCrop: true,
+    } as ActionResult & { _harvestCrop: boolean }),
+  };
+}
+
+function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition {
+  // 季节市场价：应季便宜、反季贵。展示（环境快照）/扣款两处用同一到手价，保持一致
   const season = ctx.season ?? "spring";
   const priceOf = (s: ShopItem) => effectivePrice(s.price, s.id, season);
 
-  // 只列出买得起且有货的物品（追踪库存的店卖一件少一件，卖完就是卖完）
-  const inStock = (s: ShopItem) => ctx.location.stock?.[s.id] === undefined || ctx.location.stock[s.id]! > 0;
-  const affordable = shop.filter(s => ctx.gold >= priceOf(s) && inStock(s));
-  if (affordable.length === 0) return null;
-  const soldOut = shop.filter(s => !inStock(s)).map(s => s.name);
-
-  const itemList = affordable.map(s => {
-    const def = getItemDef(s.id);
-    const desc = def?.description ? `——${def.description}` : "";
-    const p = priceOf(s);
-    const tag = p < s.price ? "，应季实惠" : (p > s.price ? "，反季偏贵" : "");
-    return `${s.name}（${p}金币${tag}${desc}）`;
-  }).join("、");
+  // 缓存纪律：描述静态（商品名清单是地点级慢变量）；价格/库存/买不买得起在环境快照里，
+  // 营业/钱够/库存改在执行期校验。
+  const itemNames = shop.map(s => s.name).join("、");
 
   return {
     tool: {
       name: "buy",
-      description: `买东西带走。店里有：${itemList}${soldOut.length > 0 ? `。（${soldOut.join("、")}已经卖完了）` : ""}`,
+      description: `买东西带走。这里平时卖：${itemNames}。现价、库存、你带的钱够不够，看下方环境快照。`,
       parameters: {
         type: "object",
         properties: {
           thought: { type: "string", description: "你在想什么" },
-          item: { type: "string", description: `要买的物品：${affordable.map(s => s.name).join("、")}` },
+          item: { type: "string", description: `要买的物品名` },
         },
         required: ["item"],
       },
@@ -833,6 +1160,15 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
       const rawItem = (args.item as string | undefined)?.trim();
       if (!rawItem || rawItem === "undefined") {
         return { description: "想买东西但没想好买什么", effects: [], success: false };
+      }
+      // 执行期校验（原为工具集合门槛）：打烊的店买不了东西
+      if (!isLocationOpen(ctx.location, ctx.hour)) {
+        return { description: "想买点东西，但店这个点已经打烊了", effects: [], success: false };
+      }
+      // 偷店被抓的余波：拉黑期内店主拒绝服务
+      const banUntil = ctx.location.bans?.[actx.characterId];
+      if (banUntil !== undefined && actx.tick < banUntil) {
+        return { description: "刚进门就被店主黑着脸拦下来请了出去——上次的事人家还记着", effects: [], success: false };
       }
       // 支持 ID 和中文名：LLM 可能传 "notebook" 或 "笔记本"
       const resolved = resolveItem(rawItem);
@@ -861,33 +1197,29 @@ function buildBuyTool(shop: ShopItem[], ctx: ToolBuildContext): ActionDefinition
 /**
  * eat 工具：整合背包食物 + 当前地点商店食物。
  * 背包里的直接吃（免费），商店的买了直接吃（花钱）。
+ * 缓存纪律：恒定声明、描述静态；手边有什么吃的在执行期计算（清单见环境快照）。
  */
-function buildEatTool(
-  bagFood: import("../world/item-types.js").ItemInstance[],
-  shopFood: import("../world/item-types.js").ShopItem[],
-  ctx: ToolBuildContext,
-): ActionDefinition {
-  const parts: string[] = [];
-
-  if (bagFood.length > 0) {
-    const bagList = bagFood.map(i => {
+function buildEatTool(ctx: ToolBuildContext): ActionDefinition {
+  // 执行期计算"手边能吃什么"：背包食物 + 营业中店铺里买得起且有货的吃食
+  const edibleNow = () => {
+    const bagFood = (ctx.state.inventory ?? []).filter(i => {
       const def = getItemDef(i.defId);
-      const name = def?.name ?? i.defId;
-      const from = i.giftedBy ? `（${i.giftedBy}给的）` : "";
-      return `${name}${from}（免费）`;
-    }).join("、");
-    parts.push(`你身上有：${bagList}`);
-  }
-
-  if (shopFood.length > 0) {
-    const shopList = shopFood.map(s => `${s.name}（${s.price}金币）`).join("、");
-    parts.push(`店里有：${shopList}`);
-  }
+      return def && def.effects && (def.type === "consumable" || (def.type === "gift" && def.effects));
+    });
+    const locOpen = isLocationOpen(ctx.location, ctx.hour)
+      && !((ctx.location.bans?.[ctx.state.id] ?? 0) > (ctx.tick ?? 0)); // 拉黑期内店里的东西吃不上
+    const shopFood = !locOpen ? [] : (ctx.location.shop ?? []).filter(s => {
+      const def = getItemDef(s.id);
+      const hasStock = ctx.location.stock?.[s.id] === undefined || ctx.location.stock[s.id]! > 0;
+      return def && def.effects && def.type === "consumable" && ctx.gold >= s.price && hasStock;
+    });
+    return { bagFood, shopFood };
+  };
 
   return {
     tool: {
       name: "eat",
-      description: `吃点东西。${parts.join("。")}`,
+      description: `吃点东西——你身上带着的（免费）或这里店里卖的（花钱）。手边有什么可吃的看下方环境快照和随身物品。`,
       parameters: {
         type: "object",
         properties: {
@@ -898,6 +1230,7 @@ function buildEatTool(
       },
     },
     handler: (args, actx): ActionResult => {
+      const { bagFood, shopFood } = edibleNow();
       let rawItem = (args.item as string | undefined)?.trim();
       // 没说吃什么就随手拿最顺手的：背包第一个食物 > 店里最便宜的。
       // 真人饿了不会因为"没想好吃什么"而吃不上饭——此前这里直接失败白烧一次重试。
@@ -908,10 +1241,19 @@ function buildEatTool(
         }
         rawItem = fallbackId;
       }
-      // 支持 ID 和中文名
-      const def = resolveItem(rawItem);
+      // 支持 ID 和中文名；解析不了的（"冰箱里的东西"、"速食咖喱包"——半日实测 11 次幻觉食物）
+      // 降级：带着吃的就吃带着的（真人饿了不挑），什么都没有就明确指路，别让模型对着幻觉重试
+      let def = resolveItem(rawItem);
       if (!def) {
-        return { description: `不知道${rawItem}是什么`, effects: [], success: false };
+        const fallback = bagFood[0] ? getItemDef(bagFood[0].defId) : undefined;
+        if (fallback) {
+          def = fallback;
+        } else {
+          return {
+            description: `想吃${rawItem}，但手边根本没有这个——身上没带吃的，想吃东西得去有吃食的店里买，或者买食材回家做`,
+            effects: [], success: false,
+          };
+        }
       }
       const itemId = def.id; // 统一使用标准 ID
       const effects = def.effects
@@ -936,6 +1278,13 @@ function buildEatTool(
           _useItem: itemId,
         } as ActionResult & { _useItem: string };
       } else if (shopItem) {
+        // 执行期校验（原为工具集合门槛，为保前缀稳定挪到这里）：营业、钱够、库存
+        if (!isLocationOpen(ctx.location, ctx.hour)) {
+          return { description: `想买${def.name}吃，但店这个点已经打烊了`, effects: [], success: false };
+        }
+        if (actx.gold < shopItem.price) {
+          return { description: `想买${def.name}吃，但身上的钱不够`, effects: [], success: false };
+        }
         // 执行时复检库存（并行决策下最后一份可能同 tick 刚被买走）
         if (ctx.location.stock && ctx.location.stock[itemId] !== undefined && ctx.location.stock[itemId]! <= 0) {
           return { description: `想买${def.name}吃，结果刚好卖完了`, effects: [], success: false };
@@ -990,34 +1339,49 @@ function buildCookTool(ctx: ToolBuildContext): ActionDefinition {
 }
 
 function buildGiveTool(ctx: ToolBuildContext): ActionDefinition {
-  const itemList = ctx.state.inventory.map(i => {
-    const def = getItemDef(i.defId);
-    return def?.name ?? i.defId;
-  }).join("、");
-  const who = nearbyNames(ctx);
-
+  // 缓存纪律：描述静态。带了什么看 user prompt 的随身物品段，在场者看"你现在看见了谁"。
   return {
     tool: {
       name: "give",
-      description: `把东西给别人。你有：${itemList}。在场：${who}`,
+      description: `把你身上带的东西或金币给在场的人（给钱填 gold，给东西填 item，至少填一样）。说"给你"不算给，用这个工具才是真的给。`,
       parameters: {
         type: "object",
         properties: {
-          thought: { type: "string", description: "你在想什么，为什么想送" },
-          target: { type: "string", description: `给谁：${who}` },
-          item: { type: "string", description: "给什么" },
+          thought: { type: "string", description: "你在想什么，为什么想给" },
+          target: { type: "string", description: `给谁（角色 ID，必须此刻在场）` },
+          item: { type: "string", description: "给什么东西（你随身物品里的，可不填）" },
+          gold: { type: "number", description: "给多少金币（可不填）" },
         },
-        required: ["target", "item"],
+        required: ["target"],
       },
     },
     handler: (args, actx): ActionResult => {
       const target = args.target as string;
-      const rawItem = args.item as string;
-      const def = resolveItem(rawItem);
-      const itemId = def?.id ?? rawItem;
       if (!actx.nearbyCharacters.includes(target)) {
         return { description: `${target}不在这里`, effects: [], success: false };
       }
+      // 给钱：真金白银的转移（还小钱/凑份子/接济，机制上第一次有路可走）
+      const goldAmount = Math.round((args.gold as number) || 0);
+      if (goldAmount > 0 && !args.item) {
+        if (actx.gold < goldAmount) {
+          return { description: `想给${target}${goldAmount}金币，但你身上只有${actx.gold}`, effects: [], success: false };
+        }
+        return {
+          description: `把 ${goldAmount} 金币给了${target}`,
+          effects: [
+            { type: "need_change", targetId: actx.characterId, field: "social", delta: 3 },
+          ],
+          duration: 1,
+          observableState: `正把几枚金币递到${nearbyDisplayName(ctx, target)}手里。`,
+          _giveGold: { targetId: target, amount: goldAmount },
+        } as ActionResult & { _giveGold: { targetId: string; amount: number } };
+      }
+      const rawItem = args.item as string;
+      if (!rawItem) {
+        return { description: "想给点什么，但没说清给什么", effects: [], success: false };
+      }
+      const def = resolveItem(rawItem);
+      const itemId = def?.id ?? rawItem;
       if (!hasItem(ctx.state.inventory ?? [], itemId)) {
         return { description: `你没有${def?.name ?? rawItem}`, effects: [], success: false };
       }
@@ -1080,35 +1444,37 @@ function buildItemEnabledTool(toolId: string, itemName: string, ctx: ToolBuildCo
 
 // ── 地点工具（从 YAML 读取，自然语言描述） ──
 
-function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefinition | null {
-  // 检查条件
-  if (lt.condition) {
-    if (lt.condition === "isWorkplace") {
-      const workplace = ctx.state.life?.workplace ?? ctx.card.life?.workplace;
-      if (workplace && ctx.location.id !== workplace) {
-        return null;
-      }
-    } else if (lt.condition.includes("<")) {
-      const match = lt.condition.match(/(\w+)\s*<\s*(\d+)/);
-      if (match) {
-        const field = match[1]!;
-        const threshold = parseInt(match[2]!, 10);
-        const isNight = ctx.hour !== undefined && (ctx.hour >= 22 || ctx.hour < 5);
-        const isSleepTool = lt.name === "sleep";
-        if (isSleepTool && isNight) {
-          // 深夜总是可以睡觉
-        } else if (ctx.state.needs[field] !== undefined && ctx.state.needs[field] >= threshold) {
-          return null;
-        }
-      }
+/** 需求条件未满足时的自然语言反馈（按需求字段给人话，交给 tool-feedback 纠偏） */
+function conditionNotMetMessage(field: string, ltName: string): string {
+  switch (field) {
+    case "energy": return ltName === "sleep" ? "你现在精神还不错，躺下也睡不着" : "你现在不怎么累，没必要休息";
+    case "hunger": return "你现在不饿，吃不下";
+    case "hygiene": return "你现在还挺干净，不用洗";
+    case "bladder": return "你现在还不急";
+    case "fun": return "你现在没这个心情";
+    case "social": return "你现在没这个心情";
+    default: return "你现在没这个需要";
+  }
+}
+
+function buildLocationTool(
+  lt: LocationTool,
+  ctx: ToolBuildContext,
+  opts?: { isWorkerTool?: boolean },
+): ActionDefinition | null {
+  // 缓存纪律：集合级只保留静态条件（isWorkplace 随角色×地点不变）。
+  // 需求阈值/金币/营业这类每 tick 抖动的门槛全部挪到执行期校验。
+  if (lt.condition === "isWorkplace") {
+    const workplace = ctx.state.life?.workplace ?? ctx.card.life?.workplace;
+    if (workplace && ctx.location.id !== workplace) {
+      return null;
     }
   }
 
-  // 检查金币
-  if (lt.cost && ctx.gold < lt.cost) return null;
-
   // 构建自然语言描述
   const desc = describeLocationTool(lt, ctx);
+
+  const isWorkerHere = (ctx.state.life?.workplace ?? ctx.card.life?.workplace) === ctx.location.id;
 
   return {
     tool: {
@@ -1122,6 +1488,33 @@ function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefin
       },
     },
     handler: (_args, actx): ActionResult => {
+      // ── 执行期校验（原为工具集合门槛，为保前缀稳定挪到这里） ──
+      // 顾客侧工具在打烊的商铺不可用（员工不受限：可以进来备货/收拾）
+      if (!opts?.isWorkerTool && ctx.location.type === "commercial" && !isWorkerHere && !isLocationOpen(ctx.location, ctx.hour)) {
+        return { description: "这里这个点已经打烊了，做不成", effects: [], success: false };
+      }
+      // 员工工具：体力太低做不动
+      if (opts?.isWorkerTool && (ctx.state.needs.energy ?? 100) < 15) {
+        return { description: "想干点活，但累得连手都抬不起来了", effects: [], success: false };
+      }
+      // 需求阈值条件（如 "energy < 40"）：不满足时给自然语言反馈；深夜总是可以睡觉
+      if (lt.condition && lt.condition.includes("<")) {
+        const match = lt.condition.match(/(\w+)\s*<\s*(\d+)/);
+        if (match) {
+          const field = match[1]!;
+          const threshold = parseInt(match[2]!, 10);
+          const isNight = ctx.hour !== undefined && (ctx.hour >= 22 || ctx.hour < 5);
+          const isSleepTool = lt.name === "sleep";
+          if (!(isSleepTool && isNight) && ctx.state.needs[field] !== undefined && ctx.state.needs[field] >= threshold) {
+            return { description: conditionNotMetMessage(field, lt.name), effects: [], success: false };
+          }
+        }
+      }
+      // 金币不够
+      if (lt.cost && actx.gold < lt.cost) {
+        return { description: "摸了摸口袋，身上带的钱不够", effects: [], success: false };
+      }
+
       const effects: ActionResult["effects"] = Object.entries(lt.effects).map(([field, delta]) => ({
         type: "need_change" as const,
         targetId: actx.characterId,
@@ -1143,4 +1536,78 @@ function buildLocationTool(lt: LocationTool, ctx: ToolBuildContext): ActionDefin
       return result;
     },
   };
+}
+
+// ── 环境快照（user prompt 末尾的动态可供性信息） ──
+
+/**
+ * 生成"此刻的环境"快照文本，注入 user prompt 末尾的易变区。
+ *
+ * 这是缓存手术的另一半：工具描述里挪出去的动态信息（各地点谁在/是否营业、
+ * 店里现价/库存/买不买得起）全部在这里补回给模型。工具表保持字节稳定，
+ * 时效信息作为消息内容随每 tick 更新——对应 Claude Code 的 system-reminder 模式。
+ */
+export function buildEnvironmentSnapshot(ctx: ToolBuildContext): string {
+  const lines: string[] = [];
+
+  // 镇上人物分布 + 营业状态（原 go_to 工具描述里的动态部分）
+  const myHome = ctx.card.home;
+  const otherLocations = ctx.allLocations
+    .filter((l) => l.id !== ctx.location.id)
+    .filter((l) => l.type !== "residential" || l.id === myHome);
+  if (otherLocations.length > 0) {
+    const locBits = otherLocations.map((l) => {
+      const label = l.id === myHome ? "家" : l.name;
+      const notes: string[] = [];
+      const people = l.presentCharacters
+        .filter((cid) => cid !== ctx.card.id)
+        .map((cid) => ctx.characterNames?.get(cid) ?? cid)
+        .filter((name) => name.length > 0);
+      if (people.length > 0) notes.push(`${people.join("、")}在那里`);
+      if (l.type === "commercial" && !isLocationOpen(l, ctx.hour)) notes.push("这个点已打烊");
+      return notes.length > 0 ? `${label}（${notes.join("；")}）` : label;
+    });
+    lines.push(`镇上其他地方：${locBits.join("、")}。`);
+  }
+
+  // 本地点商店现况（原 buy/eat 工具描述里的动态部分）
+  if (ctx.location.shop && ctx.location.shop.length > 0) {
+    if (!isLocationOpen(ctx.location, ctx.hour)) {
+      lines.push("这里的店这个点已经打烊了，买不了东西。");
+    } else {
+      const season = ctx.season ?? "spring";
+      const itemBits = ctx.location.shop.map((s) => {
+        const stock = ctx.location.stock?.[s.id];
+        if (stock !== undefined && stock <= 0) return `${s.name}（卖完了）`;
+        const p = effectivePrice(s.price, s.id, season);
+        const tag = p < s.price ? "，应季实惠" : p > s.price ? "，反季偏贵" : "";
+        const afford = ctx.gold < p ? "，你带的钱不够" : "";
+        return `${s.name}（${p}金币${tag}${afford}）`;
+      });
+      lines.push(`店里现在卖：${itemBits.join("、")}。`);
+    }
+  }
+
+  // 欠账（账压在心上：欠了谁、欠多少，见了面才好还）
+  if (ctx.state.debts && ctx.state.debts.length > 0) {
+    const bits = ctx.state.debts.map((d) => {
+      const name = ctx.characterNames?.get(d.lenderId) ?? d.lenderId;
+      return `${name}的${d.amount}金币`;
+    });
+    lines.push(`你还欠着${bits.join("、")}没还——这账一直压在心上。`);
+  }
+
+  // 菜地状态（世界可改造的部分要被主人惦记着）
+  if (ctx.state.garden && ctx.tick !== undefined) {
+    const g = ctx.state.garden;
+    if (gardenIsMature(g, ctx.tick)) {
+      lines.push("你在农田种的菜已经熟了，该去收了——再放下去要老在地里。");
+    } else {
+      const remainHours = Math.ceil((g.matureTicks - (ctx.tick - g.plantedTick)) / 4);
+      lines.push(`你在农田种着一块菜地，大约还要${remainHours}小时成熟（去照看照看能熟得快点）。`);
+    }
+  }
+
+  if (lines.length === 0) return "";
+  return lines.join("\n");
 }
