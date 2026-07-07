@@ -32,17 +32,32 @@ export async function generateMorningPlan(params: {
   todayAppointments?: string[];
   weather?: Weather;
   workplaceName?: string;
+  /** 镇上真实存在的地点名（可供性锚：打算只能安排真去得了的地方） */
+  townLocations?: string[];
+  /** 镇上真实存在的其他居民名（可供性锚：打算只能安排真见得到的人） */
+  townPeople?: string[];
+  /** 是不是模拟第一天（首日没有"昨天"，防编造"昨天那批可颂"类往事） */
+  isFirstDay?: boolean;
 }): Promise<MorningPlanResult> {
   const { card, provider, modelId } = params;
   const life = params.state.life ?? card.life;
   const occupation = life?.occupation ?? card.occupation;
+
+  // 可供性锚（防幻觉）：AUDIT 实锤——打算里出现过 C.C./地下室/证件系统等世界里不存在的实体，
+  // 然后指挥一整天的行为。把真实地点/居民清单放进 prompt，打算只许在这个世界里落脚。
+  const affordanceAnchor = params.townLocations && params.townLocations.length > 0
+    ? `\n这个镇就这么大——你今天能去的地方：${params.townLocations.join("、")}。${
+      params.townPeople && params.townPeople.length > 0 ? `镇上你可能碰到的人：${params.townPeople.join("、")}。` : ""
+    }
+打算只安排真实存在的地点和人。你过去认识的人不在镇上也联系不上，可以在心里惦记，但别把"见他/找他/等他消息"排进今天。`
+    : "";
 
   const system = `你是 ${card.name}，${occupation}。
 性格：${card.personality.traits.join("、")}${life?.aspiration ? `\n你内心深处一直想：${life.aspiration}` : ""}
 
 现在是清晨，你刚醒，躺在床上想今天要做什么。
 用第一人称，按你的性格随意想 1-3 件今天想做的事（不是任务清单，就是心里有个数）。
-每行一件，以"- "开头，一句话一件。别写套话，写具体的事。`;
+每行一件，以"- "开头，一句话一件。别写套话，写具体的事。${affordanceAnchor}`;
 
   const userParts: string[] = [];
   if (params.yesterdayInsights && params.yesterdayInsights.length > 0) {
@@ -55,7 +70,12 @@ export async function generateMorningPlan(params: {
   }
   if (params.weather) userParts.push(`今天天气：${weatherDescription(params.weather)}`);
   if (params.workplaceName) userParts.push(`你在${workplaceHint(params.workplaceName, occupation)}`);
-  if (userParts.length === 0) userParts.push("昨天是平平常常的一天。");
+  if (params.isFirstDay) {
+    // 半日实测实锤：D1 清晨就编"昨天那批可颂发酵不够""昨天打翻的摩卡"——首日没有昨天
+    userParts.push("这是你在这个镇上新生活的头一个清晨，还没有'昨天'——打算里别提及昨天发生过的具体事。");
+  } else if (userParts.length === 0) {
+    userParts.push("昨天是平平常常的一天。");
+  }
 
   try {
     const response = await provider.chat(
@@ -64,6 +84,8 @@ export async function generateMorningPlan(params: {
         messages: [{ role: "user", content: userParts.join("\n") }],
         temperature: 0.9,
         maxTokens: 150,
+        kind: "morning-plan",
+        tag: card.id,
       },
       modelId,
     );

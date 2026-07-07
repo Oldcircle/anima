@@ -14,6 +14,7 @@ import type { CharacterState } from "../world/types.js";
 import type { LLMProvider } from "../providers/types.js";
 import type { ShortTermMemory } from "../memory/short-term.js";
 import type { ImpressionStore } from "../memory/impressions.js";
+import { observationJudgmentPermission } from "./break-config.js";
 
 export interface ObservationContext {
   /** 观察者的角色卡 */
@@ -91,9 +92,11 @@ export async function generateObservation(
     : "";
 
   const occupation = ctx.observerCard.life?.occupation ?? ctx.observerCard.occupation;
+  const judgePermission = observationJudgmentPermission();
   const system = `你是${ctx.observerCard.name}，${occupation}。你正在${ctx.locationName}。
 请用一句话描述你对${target.name}此刻状态的观察和推测。
-不要展开，不要对话，只用一句自然的内心想法。`;
+不要展开，不要对话，只用一句自然的内心想法。
+只解读你真看到的动作神态，不要虚构没看到的具体事件或物品交割。${judgePermission ? "\n" + judgePermission : ""}`;
 
   const user = `${impHint}
 你注意到${target.name}${target.action}。${stayHint}
@@ -101,7 +104,7 @@ export async function generateObservation(
 
   try {
     const response = await provider.chat(
-      { system, messages: [{ role: "user", content: user }], temperature: 0.7, maxTokens: 128 },
+      { system, messages: [{ role: "user", content: user }], temperature: 0.7, maxTokens: 128, kind: "observation", tag: ctx.observerCard.id },
       modelId,
     );
 
