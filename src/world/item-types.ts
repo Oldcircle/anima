@@ -28,6 +28,8 @@ export interface ItemDef {
   stackable?: boolean;
   /** 标签（用于事件触发和 prompt 描述） */
   traits?: string[];       // ["romantic", "handmade", "fragile", "seasonal"]
+  /** 保质期（tick）：鲜货放久了会馊（每天 06:00 清一次），undefined = 不腐坏 */
+  perishTicks?: number;
 }
 
 /**

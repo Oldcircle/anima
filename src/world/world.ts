@@ -319,6 +319,13 @@ export class World {
     return this._appointments.filter((a) => a.status === "pending" && tick >= a.atTick);
   }
 
+  /** 提前兑现窗内（还没到点）的约定：双方提前碰上聊上了可以直接算兑现 */
+  getEarlyWindowAppointments(tick: number, windowTicks: number): Appointment[] {
+    return this._appointments.filter(
+      (a) => a.status === "pending" && tick < a.atTick && tick >= a.atTick - windowTicks,
+    );
+  }
+
   markAppointment(id: string, status: "kept" | "missed"): void {
     const a = this._appointments.find((x) => x.id === id);
     if (a) a.status = status;

@@ -15,6 +15,11 @@ shop:
   - { id: bento, name: 便当, price: 10 }
   - { id: onigiri, name: 饭团, price: 5 }
   - { id: water_bottle, name: 矿泉水, price: 3 }
+  - { id: fruit_candy, name: 水果糖, price: 3 }
+  - { id: medicine, name: 感冒药, price: 12 }
+  - { id: vegetable_seeds, name: 蔬菜种子, price: 4 }
+  - { id: guitar, name: 吉他, price: 80 }
+  - { id: camera, name: 相机, price: 50 }
 
 tools:
   - name: buy_supplies

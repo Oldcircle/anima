@@ -41,6 +41,8 @@ export interface Location {
   openHours?: { open: number; close: number } | null;
   /** 店铺库存（劳动产出闭环）：undefined=不追踪（无限），有员工的店每日重置+prepare 增补，卖一件少一件 */
   stock?: Record<string, number>;
+  /** 店铺拉黑名单（偷店被抓的真实后果）：characterId → 解禁 tick，期间 buy/eat 被拒 */
+  bans?: Record<string, number>;
   /** 当前在此地点的角色 ID */
   presentCharacters: string[];
   /** 感官描述（按时段/天气） */
@@ -97,6 +99,22 @@ export interface CharacterIntent {
   targetId?: string;
   createdTick: number;
   expiresAt: number;
+}
+
+/** 一笔欠账：欠谁、欠多少、什么时候借的（同一债主多次借款合并累加） */
+export interface Debt {
+  lenderId: string;
+  amount: number;
+  borrowedTick: number;
+}
+
+/** 菜园地块：种的什么、什么时候种的、还要长多久（tend 可以少量提前） */
+export interface GardenPlot {
+  /** 收获物的 item defId */
+  cropId: string;
+  plantedTick: number;
+  /** 成熟所需 tick（种下时确定，照看可减少） */
+  matureTicks: number;
 }
 
 export interface CharacterObservableState {
@@ -163,6 +181,16 @@ export interface CharacterState {
    * 不再靠 getRecentThoughts 的字符串前缀匹配碰运气（记忆被挤出就断链）。
    */
   lastReflection?: { day: number; insights: string[]; mood: string; wish?: string; concern?: string };
+  /**
+   * 菜园：在农田认领的一小块地。世界可改造——种下去的东西真实存在、跨日生长、
+   * 收获物可吃可送可卖。随档持久化（garden_json）。
+   */
+  garden?: GardenPlot;
+  /**
+   * 欠账（我欠别人的）。借钱不是一句话——是要还的世界状态：见到债主且钱够时
+   * repay_debt 浮现；拖着不还债主会催、会伤交情。随档持久化（debts_json）。
+   */
+  debts?: Debt[];
   /** 当前留在外界可被旁人观察到的生活痕迹 */
   observableState?: CharacterObservableState;
   /** D3: director 注入的"想聊的话题"，角色 talk 时 prompt 会引导围绕这些话题展开 */
