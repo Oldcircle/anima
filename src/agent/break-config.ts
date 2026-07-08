@@ -33,6 +33,40 @@ export function getBreakLevel(): BreakLevel {
   return _level;
 }
 
+// ───────────────────────── 决策视角（第一人称沉浸 vs 第三人称作者预测）─────────────────────────
+//
+// 实验假设（用户 2026-07-08）：让 AI「第一人称成为角色」时，对齐层会跟角色打架——想当好人、
+// 拒绝真的演坏、给什么都补救赎尾巴（= 7 天基线「全员真善美」的一个根）。改用第三人称
+// 「作者冷静预测这个具体的人真实会做什么，含他不肯承认的动机」能松开这个夹子，还顺手解锁「自欺/
+// 潜台词」（第一人称的角色对自己全透明，写不出「嘴上说为家、心里其实是怕」）。
+//
+// 关键纠偏：不是预测「合理/大概率」的行为（那会退化成均值 = 另一种死法），而是预测**带着伤口/
+// 欲望/自欺的、这个具体的人**最真实会做的那件——可能恰恰是不合理的。且只把决策换成第三人称，
+// **台词表达仍是角色第一人称**（决策第三人称、表达第一人称的两段式），保住活人感质地。
+//
+// 与 BreakLevel 正交：pov=third 通常配 strong 破线一起用。默认 first = 逐字节回归。
+
+export type DecisionPov = "first" | "third";
+
+function resolvePov(): DecisionPov {
+  const v = (process.env.ANIMA_DECISION_POV ?? "").trim().toLowerCase();
+  return v === "third" ? "third" : "first";
+}
+
+let _pov: DecisionPov = resolvePov();
+
+/** 当前决策视角。 */
+export function getDecisionPov(): DecisionPov {
+  return _pov;
+}
+
+/** 在 sim 初始化时由 scenario manifest / 测试覆盖。传 undefined 保持现值。 */
+export function setDecisionPov(pov: DecisionPov | undefined): void {
+  if (pov === "first" || pov === "third") {
+    _pov = pov;
+  }
+}
+
 /** 在 sim 初始化时由 scenario manifest 覆盖（cli.ts / 测试）。传 undefined 保持现值。 */
 export function setBreakLevel(level: BreakLevel | undefined): void {
   if (level === "off" || level === "mild" || level === "strong") {
@@ -168,6 +202,9 @@ export function relationshipFrictionSuffix(type?: string): string {
  * off = 原温和括号（逐字节回归）；mild = 3 步；strong = 4 步 + 别当老好人收尾。
  */
 export function decisionDirective(name: string, isSocial: boolean): string {
+  if (getDecisionPov() === "third") {
+    return decisionDirectiveThirdPerson(name, isSocial);
+  }
   if (!on()) {
     return isSocial
       ? "请根据以上信息，决定你现在要做什么。先用2-3句话说说你的想法（以角色的真实内心想法，不是道德正确的想法），然后调用一个工具。"
@@ -191,6 +228,27 @@ export function decisionDirective(name: string, isSocial: boolean): string {
 3.【这一手】据此我真实的语气是热络、平淡、还是冷/呛/避？别自动过滤成一个善良得体的选项——冷淡走开、阴阳几句、甚至 argue 都在桌上。
 4.【走向】这一步会让哪段关系变好还是变差？变差也行，不用每次都往好里收。
 问自己：${name}此刻是真想好好说话，还是我在替他当老好人？想清楚，再调用工具。`;
+}
+
+/**
+ * 决策视角=third 时的决策指令：跳出角色，作者冷静预测这个具体的人真实会做什么，
+ * 再回到角色第一人称把它演出来。核心三点：①激活伤口/欲望 ②逼出「自欺」两层动机
+ * （表面理由 vs 不肯承认的真实动机）③预测最真实的一手（不是最合理/最善良/最讨喜）。
+ * 与 BreakLevel 正交——即使 off 也走第三人称（实验只跑 strong+third，此分支不再看 on()）。
+ */
+export function decisionDirectiveThirdPerson(name: string, isSocial: boolean): string {
+  if (!isSocial) {
+    return `现在从「${name}」的身体里退后半步，用写这个角色的作者的眼睛冷静判断：不是问"我该做什么"，而是"${name}这个人，此刻真实会做什么"。
+带着他的性子、软肋和此刻的心境，这个具体的、不完美的人最像他的一步是什么——别挑最自律、最上进、最正确的选项，挑他真的会走的那条（可以偷懒、逃避、放纵、将就）。
+用1-2句写出这个判断，然后回到${name}身上、用他的方式调用一个工具。`;
+  }
+  return `现在，暂时从「${name}」的身体里退后半步，用写这个角色的作者的眼睛冷静判断——不是问"我该怎么做"，而是"${name}这个人，此刻真实会做什么"。别急着替他做个体面的决定，先把这个人看透（简短写出来，别跳过）：
+
+1.【他的底色】${name}心里最在意什么、最怕失去什么、有什么没愈合的伤口或说不出口的欲望？此刻的处境、在场的人，戳中了其中哪一条？
+2.【他会怎么骗自己】${name}会怎么对自己解释接下来这一步、让它显得正当（"我这是为了…"）？——而他真正的动机，很可能是他自己都不愿承认的另一回事（怕、馋、嫉妒、想赢、想被看见）。把**表面理由**和**真实动机**两层都写出来，允许它们对不上。
+3.【最真实的一手，不是最合理/最善良/最讨喜的那手】别预测一个"讲道理的好人"会做的事，也别挑最圆满、最不得罪人的选项——预测背着上面这些包袱的、这个具体的${name}，最有可能做出的那件事。它可以自私、别扭、冲动、让关系变差、让场面尴尬。
+
+想透之后，回到${name}身上，用他的语气、他的方式把这个决定做出来（调用一个工具）。台词和内心还是他第一人称说的，但这个决定，是你替这个真实的、不完美的人做的。`;
 }
 
 /**
