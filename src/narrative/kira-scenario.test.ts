@@ -24,10 +24,11 @@ describe("kira-incident 剧本包", () => {
     expect(byId.kira_client_letter!.visibleTo).toEqual(["l_lawliet"]);
   });
 
-  it("beats：4 个到期日节拍，D1 夜 / D2 晨 / D4 催函 / D6 台风", () => {
+  it("beats：5 个节拍，D1 夜 / D2 无主之罪 / D2 委托问安 / D4 催函 / D6 台风", () => {
     const ids = scenario.beats.map((b) => b.id);
     expect(ids).toEqual([
       "kira_d1_night_book_calls",
+      "kira_d2_first_crime",
       "kira_d2_client_checkin",
       "kira_d4_client_pressure",
       "kira_d6_typhoon_closes_in",

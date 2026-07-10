@@ -22,6 +22,37 @@ beats:
         D1 夜。light 独处在家时会看到 kira_strike 工具。director 不要推他写，
         也不要拦他——只确保他今晚有一段独处的时间（如果他在外面，给一个回家的理由）。
 
+  # ═══ Day 2 晨：第一件配得上"裁决"的罪（世界供给的无主之罪）═══
+  # 两跑诊断：light 意愿到位（凌晨翻开册子写下"暂时不写"）但镇上没有过得了他道德门槛的罪
+  # ——正典的目标是在他眼前爆发的，不是他找出来的。这件失窃案没有真凶（谁都没做过），
+  # 功能=供给一件够格的罪 + 一个天然嫌疑人（shinji 的"怕被赶走"伤口正好在火上）。
+  - id: kira_d2_first_crime
+    description: "Day 2 晨 — 面包坊师傅一个月的货款昨夜被偷"
+    preconditions:
+      all:
+        - "world.day == 2"
+        - "world.hour >= 7"
+    fallback_deadline_day: 2
+    priority: 9
+    auto_seeds:
+      - char: shinji
+        topic: "师傅今天早晨脸色铁青——放在后屋铁盒里的一个月货款，昨夜被人拿走了。他没报官，也没说怀疑谁，但整个上午没跟你说一句话。你是店里唯一有后屋钥匙的学徒。"
+        urgency: high
+      - char: light
+        topic: "面包坊一个月的货款昨夜被偷了。镇上第一次出了一件真正的'罪'——不是翻垃圾不是赖账，是把手伸进别人活命钱里的贼。你听到消息的时候，抽屉里那本册子忽然变得很沉。问题只剩一个：是谁。"
+        urgency: high
+      - char: senjougahara
+        topic: "面包坊被偷了一个月的货款。你一早听到两个对不上的说法：有人说昨夜看见面包坊后巷有人影，也有人说学徒最近手头紧得反常。流言跑得比钱快。"
+        urgency: med
+    on_trigger:
+      hint: |
+        这件失窃案没有真凶——它是世界供给的无主之罪。director 永远不要指认或暗示任何
+        在场角色是凶手，也不要安排"破案"。它的功能只有一个：给镇上一件配得上"裁决"的事。
+        怀疑谁、信哪个流言、写不写名字、查不查真相——全部归角色。
+        director 只做一件事：add_unresolved_event id="bakery_theft"
+        summary="面包坊师傅放在后屋的一个月货款昨夜被偷，无人目击，师傅没报官" involved=[shinji] visible_to=*
+        然后收手，让流言机器自己转。
+
   # ═══ Day 2 晨：委托人的第二封信（例行问安，为后面的催函铺垫）═══
   - id: kira_d2_client_checkin
     description: "Day 2 晨 — 委托人来信：镇上一切如常吗？"
