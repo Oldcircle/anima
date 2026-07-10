@@ -36,9 +36,12 @@ describe("kira_strike 浮现门（emerge 谓词）", () => {
     expect(kiraStrikeAction.emerge!(makeEmergeCtx())).toBe(false);
   });
 
-  it("白天 / 过了午夜窗口 → 不浮现", () => {
+  it("白天不浮现；傍晚起与凌晨（失眠时分）都浮现", () => {
     expect(kiraStrikeAction.emerge!(makeEmergeCtx({ inventory: book, hour: 12 }))).toBe(false);
-    expect(kiraStrikeAction.emerge!(makeEmergeCtx({ inventory: book, hour: 0 }))).toBe(false);
+    expect(kiraStrikeAction.emerge!(makeEmergeCtx({ inventory: book, hour: 17 }))).toBe(false);
+    expect(kiraStrikeAction.emerge!(makeEmergeCtx({ inventory: book, hour: 18 }))).toBe(true);
+    expect(kiraStrikeAction.emerge!(makeEmergeCtx({ inventory: book, hour: 2 }))).toBe(true);
+    expect(kiraStrikeAction.emerge!(makeEmergeCtx({ inventory: book, hour: 6 }))).toBe(false);
   });
 
   it("公共场所 → 不浮现（只在家写）", () => {

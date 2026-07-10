@@ -15,8 +15,12 @@
 import type { ActionDefinition, ActionResult } from "./types.js";
 import { hasItem } from "../world/item-registry.js";
 
-/** 夜书窗口（含 20 与 23 点整） */
-export const KIRA_STRIKE_HOURS = { from: 20, to: 23 };
+/**
+ * 夜书窗口：傍晚 18:00 起到深夜 23 点 + 凌晨 0-5 点（失眠的人也写得动）。
+ * 7 天首跑教训：20-23 太窄——3 天只浮现 1 次，动机已熟（"心里选好了第一个名字"）
+ * 却始终等不到机制窗口。正典的月是任何独处时刻都能动笔的，真约束是"在家独处"。
+ */
+export const KIRA_STRIKE_HOURS = { eveningFrom: 18, dawnTo: 5 };
 
 export const kiraStrikeAction: ActionDefinition = {
   tool: {
@@ -32,11 +36,11 @@ export const kiraStrikeAction: ActionDefinition = {
       required: ["target"],
     },
   },
-  emerge: (ctx) =>
-    hasItem(ctx.state.inventory, "cursed_notebook") &&
-    (ctx.hour ?? 12) >= KIRA_STRIKE_HOURS.from &&
-    (ctx.hour ?? 12) <= KIRA_STRIKE_HOURS.to &&
-    ctx.location.type === "residential",
+  emerge: (ctx) => {
+    const hour = ctx.hour ?? 12;
+    const inWindow = hour >= KIRA_STRIKE_HOURS.eveningFrom || hour <= KIRA_STRIKE_HOURS.dawnTo;
+    return hasItem(ctx.state.inventory, "cursed_notebook") && inWindow && ctx.location.type === "residential";
+  },
   handler: (args, ctx): ActionResult => {
     const target = String(args.target ?? "").trim();
     const judgment = typeof args.judgment === "string" ? args.judgment.trim() : "";
