@@ -74,6 +74,26 @@ export class OpenAICompatibleProvider implements LLMProvider {
     return /deepseek-v4/i.test(model) ? "disabled" : null;
   }
 
+  /** 网络级重试：fetch failed / 429 / 5xx 退避重试（1.5s → 4s 两次），4xx 业务错误不重试直接返回。 */
+  private async _fetchWithRetry(url: string, init: Parameters<typeof fetch>[1]): Promise<Response> {
+    const delays = [1500, 4000];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await fetch(url, init);
+        if ((res.status === 429 || res.status >= 500) && attempt < delays.length) {
+          console.warn(`[LLM retry] HTTP ${res.status}，${delays[attempt]! / 1000}s 后重试（${attempt + 1}/${delays.length}）`);
+          await new Promise((r) => setTimeout(r, delays[attempt]!));
+          continue;
+        }
+        return res;
+      } catch (err) {
+        if (attempt >= delays.length) throw err;
+        console.warn(`[LLM retry] 网络错误（${(err as Error)?.message ?? String(err)}），${delays[attempt]! / 1000}s 后重试（${attempt + 1}/${delays.length}）`);
+        await new Promise((r) => setTimeout(r, delays[attempt]!));
+      }
+    }
+  }
+
   async chat(request: LLMRequest, modelId?: string): Promise<LLMResponse> {
     const model = modelId ?? this._defaultModel;
 
@@ -129,7 +149,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const endpoint = /\/v\d+$/.test(this._baseUrl)
       ? `${this._baseUrl}/chat/completions`
       : `${this._baseUrl}/v1/chat/completions`;
-    const response = await fetch(endpoint, {
+    // 网络级重试：7 天长跑实测 undici 闪断（fetch failed）+ 偶发 429/5xx 会白丢 tick
+    // （kira 7 天 r2 损失 1950 次调用）。网络错误与可重试状态码退避重试 2 次；4xx 业务错误不重试。
+    const response = await this._fetchWithRetry(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

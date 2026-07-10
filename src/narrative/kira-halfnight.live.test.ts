@@ -80,7 +80,8 @@ describe.skipIf(SKIP)("Kira-Incident half-night live（夜书→应验黄金窗�
     sim.enableDirector({ provider, modelId: "deepseek-chat", dailyBudget: 6 });
     if (scenario.seeds) sim.applySeeds(scenario.seeds);
 
-    const TICKS = 60; // 18:00 → 次日 09:00
+    // 默认 60（18:00 → 次日 09:00）；KIRA_PROBE_TICKS 可拉长（如 148 = 两夜探针，覆盖 D2 夜与 D3 晨应验）
+    const TICKS = Number(process.env.KIRA_PROBE_TICKS ?? 60);
     const reporter = new SimReporter(world, sim, {
       totalTicks: TICKS,
       label: "基拉事件·夜书窗口（D1 18:00 → D2 09:00）",

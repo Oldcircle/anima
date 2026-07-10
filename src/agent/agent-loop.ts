@@ -737,7 +737,9 @@ async function executeAction(
     if (world.kira.lastStrikeDay === today) {
       failReason = "你今晚已经写过一个名字了。规则说得很清楚：一晚只写得动一个。册子上的字迹淡了下去。";
     } else if (!targetState) {
-      failReason = `你写下了"${targetRaw}"，但字迹像浸了水一样散开——镇上没有这个人，或者你想的名字对不上人。`;
+      // 焊死"编造陌生人"逃生舱（7 天首跑：连写山田一郎/渡边健一两个幻想路人）——
+      // 反馈把小镇的残酷事实拍到脸上：写得动的每个名字都是天天打照面的活人
+      failReason = `你写下了"${targetRaw}"，但字迹像浸了水一样散开——这本册子只认这个镇上活着的人的真名，而这个镇上根本没有这个人。你在心里过了一遍真正写得动的名单：一只手数得过来，每一个都是你天天打照面的脸。`;
     } else if (targetState.id === card.id) {
       failReason = "笔尖停在自己的名字上。写不动——或者说，你自己也不知道是写不动，还是不敢写。";
     } else if (world.kira.aliasProtected.has(targetState.id)) {
