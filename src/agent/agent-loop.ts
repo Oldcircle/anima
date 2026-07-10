@@ -24,6 +24,8 @@ import { applySocialModifier } from "./social-modifier.js";
 import { addMoodlet, type MoodletEmotion } from "../world/moodlets.js";
 import { textSimilarity } from "../memory/mmr.js";
 import { applyNarrativeTags, extractTagsFromArgs, hasAnyTags } from "../narrative/tag-applier.js";
+import { getDecisionPov } from "./break-config.js";
+import { parseMotiveChannel, type MotiveChannel } from "./motive-channel.js";
 import { v4 as uuid } from "uuid";
 
 export interface AgentConfig {
@@ -40,6 +42,8 @@ export interface AgentTickResult {
   result?: ActionResult;
   skipped?: boolean;
   skipReason?: string;
+  /** 私有通道（third 档）：两层动机。观看者可见；角色互不可见，真心层也不回流本人记忆 */
+  motive?: MotiveChannel;
 }
 
 export async function runAgentTick(params: {
@@ -255,6 +259,13 @@ export async function runAgentTick(params: {
   }
 
   const thought = response.content;
+
+  // 私有通道（七反转④）：third 档从决策文本解析两层动机行。
+  // 真心层只走观看者通道（result.motive → WS/日志），不进任何角色的 prompt。
+  const motive = getDecisionPov() === "third" ? parseMotiveChannel(thought) : undefined;
+  if (motive?.twoLayer) {
+    console.log(`[${card.id}] 🎭 [motive] 表面「${motive.surface.slice(0, 50)}」｜真心「${motive.hidden.slice(0, 50)}」`);
+  }
 
   // 检测 token 截断
   if (response.finishReason === "length") {
@@ -513,14 +524,19 @@ export async function runAgentTick(params: {
   }
 
   // 存入短期记忆：内心想法（让角色记住自己想过什么）
+  // third 档私有通道：解析成功时只回流【表面】层（他对自己的说法）——真心层与作者分析
+  // 都不进本人记忆，角色下个 tick "记得"的是自己的自我叙事，自欺不因回流坍塌（七反转③）
   if (params.memory && thought && thought.length > 5) {
+    const selfStory = motive && motive.surface.length > 5 ? motive.surface : thought;
     params.memory.add(card.id, {
       tick: gameTime.tick,
       type: "thought",
-      content: truncateThought(thought, 200),
+      content: truncateThought(selfStory, 200),
       importance: 3,
     });
   }
+
+  if (motive) result.motive = motive;
 
   updateCurrentIntent({
     world,

@@ -148,7 +148,7 @@ DEEPSEEK_API_KEY=sk-xxx          # DeepSeek API key
 DEEPSEEK_BASE_URL=https://api.deepseek.com  # 可选，默认值
 DEEPSEEK_THINKING=disabled        # 思考模式（auto/disabled/enabled），仅 deepseek-v4-* 生效
 ANIMA_BREAK_LEVEL=mild            # 破线强度 off/mild/strong（下行通道解锁），默认 mild；scenario manifest break_level 优先级更高
-ANIMA_DECISION_POV=first          # 决策视角 first/third，默认 first。third=作者第三人称预测（解锁自欺/两层动机），与 BREAK_LEVEL 正交，见 STATUS 决策视角实验
+ANIMA_DECISION_POV=first          # 决策视角 first/third，默认 first。third=作者预测框架（深翻顶块+决策指令）+ 私有通道：两层动机行【表面】｜【真心】经 motive-channel.ts 解析，真心层只走观看者通道（WS motive 字段/🎭 日志）、本人记忆只回流表面层。与 BREAK_LEVEL 正交，见 STATUS
 ANIMA_PROMPT_DUMP=1               # 可选调试：把每次 LLM 请求体落盘 logs/prompt-dumps/<kind>/，供相邻请求 diff 前缀断点
 PORT=3001                         # Web 服务端口，可选
 ```

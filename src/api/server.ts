@@ -123,6 +123,7 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
             description: r.result?.description ?? null,
             observableState: r.result?.observableState ?? null,
             thought: r.thought || null,
+            motive: r.motive ?? null,
             skipped: r.skipped ?? false,
             skipReason: r.skipReason ?? null,
             success: r.result?.success ?? true,
