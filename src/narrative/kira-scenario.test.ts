@@ -1,6 +1,6 @@
 /** kira-incident 剧本包完整性：manifest 新字段解析 + 信息图 visible_to + 开局道具应用。 */
 import { describe, it, expect } from "vitest";
-import { loadScenario, applyInitialItems } from "./scenario-loader.js";
+import { loadScenario, applyInitialItems, applyKiraProtections } from "./scenario-loader.js";
 import { World } from "../world/world.js";
 import { TEST_LOCATIONS } from "../../test/helpers/test-world.js";
 import { hasItem } from "../world/item-registry.js";
@@ -41,5 +41,19 @@ describe("kira-incident 剧本包", () => {
     applyInitialItems(world, scenario.manifest);
     expect(hasItem(world.getCharacter("light")!.inventory, "cursed_notebook")).toBe(true);
     expect(hasItem(world.getCharacter("shinji")!.inventory, "cursed_notebook")).toBe(false);
+  });
+
+  it("真名保护：manifest 解析 + applyKiraProtections 写进 world", () => {
+    expect(scenario.manifest.kiraAliasProtected).toEqual(["l_lawliet"]);
+    const world = new World(TEST_LOCATIONS, 24);
+    applyKiraProtections(world, scenario.manifest);
+    expect(world.kira.aliasProtected.has("l_lawliet")).toBe(true);
+  });
+
+  it("议程种子带正典浓度：无例外项 + 真名规则进规则卡", () => {
+    const seeds = scenario.seeds!;
+    const byId = Object.fromEntries(seeds.unresolvedEvents.map((e) => [e.id, e]));
+    expect(byId.kira_worldview!.summary).toContain("没有例外项");
+    expect(byId.kira_notebook_found!.summary).toContain("真名");
   });
 });

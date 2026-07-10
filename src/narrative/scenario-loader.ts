@@ -48,6 +48,11 @@ export interface ScenarioManifest {
    * 由 cli / sim 测试在 addCharacter 之后调用 applyInitialItems 应用。
    */
   initialItems?: Record<string, string[]>;
+  /**
+   * kira 剧本专属：真名保护名单——这些角色在镇上用的是化名/代号，诅咒之册写不动
+   * （正典核心张力：L 的匿名护甲）。由 applyKiraProtections 写进 world.kira.aliasProtected。
+   */
+  kiraAliasProtected?: string[];
 }
 
 export interface LoadedScenario {
@@ -121,7 +126,16 @@ export function loadScenarioManifest(
     breakLevel: normalizeBreakLevel(data.break_level ?? data.breakLevel),
     decisionPov: normalizeDecisionPov(data.decision_pov ?? data.decisionPov),
     initialItems: normalizeInitialItems(data.initial_items ?? data.initialItems),
+    kiraAliasProtected: normalizeAliasProtected(data.kira),
   };
+}
+
+/** 解析 manifest 的 kira.alias_protected：字符串数组；结构不对返回 undefined。 */
+function normalizeAliasProtected(kira: unknown): string[] | undefined {
+  if (!kira || typeof kira !== "object") return undefined;
+  const v = (kira as Record<string, unknown>).alias_protected ?? (kira as Record<string, unknown>).aliasProtected;
+  if (!Array.isArray(v) || v.some((i) => typeof i !== "string")) return undefined;
+  return v.length > 0 ? (v as string[]) : undefined;
 }
 
 /** 解析 manifest 的 break_level 字段；非法值/缺省返回 undefined（交给 env/默认）。 */
@@ -159,6 +173,16 @@ export function applyInitialItems(
     for (const defId of defIds) {
       addToInventory(state.inventory, defId, 1, { obtainedTick: world.tick });
     }
+  }
+}
+
+/** 把 manifest 的 kira 真名保护名单写进 world.kira（cli 与 sim 测试共用）。 */
+export function applyKiraProtections(
+  world: { kira: { aliasProtected: Set<string> } },
+  manifest: ScenarioManifest,
+): void {
+  for (const id of manifest.kiraAliasProtected ?? []) {
+    world.kira.aliasProtected.add(id);
   }
 }
 

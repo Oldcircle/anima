@@ -35,6 +35,8 @@ export class World {
     total: 0,
     victims: [] as string[],
     lastStrikeDay: -1,
+    /** 真名保护（正典核心张力）：这些角色的镇上称呼是化名，写不动（manifest kira.alias_protected） */
+    aliasProtected: new Set<string>(),
   };
 
   constructor(locations: Location[], initialTick = 0) {

@@ -31,3 +31,9 @@ decision_pov: third
 initial_items:
   light:
     - cursed_notebook
+
+# kira 专属配置：真名保护——正典核心张力（L 的匿名护甲 / light 的真名狩猎）。
+# 镇上没人知道"L"的真名，写"L"字迹会褪掉；失败反馈本身就是情报（他在隐藏名字）。
+kira:
+  alias_protected:
+    - l_lawliet

@@ -740,6 +740,9 @@ async function executeAction(
       failReason = `你写下了"${targetRaw}"，但字迹像浸了水一样散开——镇上没有这个人，或者你想的名字对不上人。`;
     } else if (targetState.id === card.id) {
       failReason = "笔尖停在自己的名字上。写不动——或者说，你自己也不知道是写不动，还是不敢写。";
+    } else if (world.kira.aliasProtected.has(targetState.id)) {
+      // 真名保护（正典核心）：失败反馈本身就是情报——他在镇上用的不是真名
+      failReason = `你写下了"${targetState.name}"——字迹停了一瞬，然后像退潮一样褪掉了。规则第二条：要真名。你忽然意识到一件更值得在意的事：${targetState.name}在镇上用的这个称呼，从来就不是他的真名。一个把真名藏起来的人。`;
     } else {
       const rel = relationships?.get(card.id, targetState.id);
       const hasMet = !!rel && (rel.lastInteraction > 0 || rel.level !== 0 || rel.history.length > 0);

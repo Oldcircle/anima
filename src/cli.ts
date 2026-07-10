@@ -14,7 +14,7 @@ import { ALL_TRIAL_ACTIONS, PHASE_TOOL_WHITELIST } from "./actions/trial-actions
 import { ALL_KIRA_ACTIONS } from "./actions/kira-actions.js";
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { createApiServer } from "./api/server.js";
-import { loadScenario, applyInitialItems } from "./narrative/scenario-loader.js";
+import { loadScenario, applyInitialItems, applyKiraProtections } from "./narrative/scenario-loader.js";
 import { setBreakLevel, getBreakLevel, setDecisionPov, getDecisionPov } from "./agent/break-config.js";
 import { saveGame, loadGame } from "./persistence/save-load.js";
 import { existsSync } from "node:fs";
@@ -105,6 +105,8 @@ for (const card of characters) {
 // 剧本开局道具（manifest initial_items）：卡片跨剧本共享，剧本专属道具走这里
 // （如 kira-incident 把诅咒之册放进 light 口袋——default 剧本的 light 不受影响）
 applyInitialItems(world, scenario.manifest);
+// kira 真名保护（manifest kira.alias_protected）：L 的匿名护甲
+applyKiraProtections(world, scenario.manifest);
 
 const eventBus = new EventBus();
 
