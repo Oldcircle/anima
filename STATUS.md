@@ -27,8 +27,17 @@
 缩回）；L 卡片自带 Kira 案执念 × 委托信 D1 就开始拼「信和夜神月之间差一环」。**小镇版残酷命题自动
 显形：没有匿名罪犯可写，每个写得动的名字都是明天要打照面的人。**
 
-**下次入口**：7 天 kira 全戏（等用户放行，与既定联合复验的关系另议：同款机制栈，可直接用 kira 剧本跑
-7 天一石二鸟——两层动机稳定性 + 5 条遗留观察项 + kira 弧线）。前端 motive/怪病可视化未做。
+**7 天三跑战报（判决见 logs/sim-kira-7day-20260710-VERDICT.md）**：r1 被后台超时杀（教训=screen 脱管）；
+r2 完跑=联合复验遗留项大丰收（⚡argue 86 次七天首爆、两层动机 65% 无塌缩、关系通胀根治）但 kira 第二幕
+未开演——三重根因全修（宽窗/焊死"编造陌生人"逃生舱/provider 网络重试）；两夜探针确认人已到位（凌晨翻册
+写下"暂时不写"、把册子藏进图书馆《圣经》）、缺的是配得上裁决的罪 → **D2 无主之罪 beat 已上**（面包坊
+货款失窃，无真凶，shinji 天然入嫌）。r3 全配置起跑正常，D2 起 **API 402 余额耗尽**作废。
+
+**下次入口（阻塞：DeepSeek 充值）**：充值后一条命令重跑决定版——
+`screen -dmS kira7 bash -c 'cd ~/Opensource/projects/ai/anima && ANIMA_LIVE_TEST=1 npx vitest run --config vitest.sim.config.ts src/narrative/kira-seven-day.sim.test.ts > logs/sim-kira-7day-r4-console.log 2>&1; echo R4_EXIT=$? >> logs/sim-kira-7day-r4-console.log'`
+（~2700 调用/~30-50 分钟）。看点：无主之罪供给后 light 写不写真实镇民（若信流言写 shinji=错判开幕）、
+应验→风声→L 阶梯全链首演。新观察项：全员赤贫断供时无自救路径（饿倒+15 不够翻身）。
+前端 motive/怪病可视化未做。
 
 ### POV 深翻 + 私有通道 v1 落地，半日门禁 PASS · 判决见 [logs/halfday-povdeep-20260710-VERDICT.md](./logs/halfday-povdeep-20260710-VERDICT.md)
 
