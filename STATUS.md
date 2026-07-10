@@ -5,6 +5,31 @@
 
 ## 当前状态（2026-07-10）
 
+### kira-incident 剧本包上线（死亡笔记非致死移植）· 半夜窗口 live PASS · 判决见 [logs/kira-halfnight-20260710-VERDICT.md](./logs/kira-halfnight-20260710-VERDICT.md)
+
+用户拍板方向：用互联网广为流传、有传播属性的剧本给 anima 加剧情（候选让子弹飞/甄嬛传/死亡笔记，
+选定 DN——传播钩子「AI 版 L 真的抓到 AI 版 Kira 了吗」+ 现有 L/light 卡的对决已在自燃 + 零新卡零新图）。
+设计全文见 [PLAN-kira.md](./PLAN-kira.md)，一句话：**移植五个结构属性（信息门控/双面人格/模式可推理/
+所有权可转移/硬到期日），不移植情节；正典=冷读者基线，收敛证明结构、偏离证明活人。**
+
+落地件（632 单测绿 + 半夜窗口 live 275 调用 PASS）：
+1. **诅咒之册**：keepsake 物品（give 可转手=正典所有权转移）；manifest 新增 `initial_items`（卡片跨
+   剧本共享，专属道具走剧本）+ `decision_pov` 字段（cli 应用链 setDecisionPov）
+2. **kira_strike**：phase 工具 + 新增 `ActionDefinition.emerge` 条件浮现谓词（持册+夜间 20-23+在家；
+   koukou trial 工具不受影响）；执行期校验=独处/每晚一次/**见过面**（关系 lastInteraction 代理）
+3. **应验链**：06:00 结算 → collapse_cursed 倒下 8 tick + 怪病 moodlet 2 天（每 tick 掉精力、吃药无效）
+   + 本人/目击/全镇风声三层记忆（第 2 例起风声带模式）；`📓 [kira]` 日志；引擎不点名调查者（⑦）
+4. **剧本包**：seeds 信息图（light 独知册子+议程【酒馆写法：已然判断+不肯承认的钩子】/L 独知委托）
+   + 4 个到期日 beats（D1 夜册子发烫/D2 委托问安/D4 催函/D6 台风收拢）
+
+**live 亮点**：light 真的动笔了——写「码头船屋的老男人」（幻想镇民），存在性门当场拒绝（防现实分叉）；
+私有通道抓到完整跨线心理阶梯（回避→侦察→「'只是看看'不算动手」→「让第一次更像测试而不是杀人」→
+缩回）；L 卡片自带 Kira 案执念 × 委托信 D1 就开始拼「信和夜神月之间差一环」。**小镇版残酷命题自动
+显形：没有匿名罪犯可写，每个写得动的名字都是明天要打照面的人。**
+
+**下次入口**：7 天 kira 全戏（等用户放行，与既定联合复验的关系另议：同款机制栈，可直接用 kira 剧本跑
+7 天一石二鸟——两层动机稳定性 + 5 条遗留观察项 + kira 弧线）。前端 motive/怪病可视化未做。
+
 ### POV 深翻 + 私有通道 v1 落地，半日门禁 PASS · 判决见 [logs/halfday-povdeep-20260710-VERDICT.md](./logs/halfday-povdeep-20260710-VERDICT.md)
 
 07-08 判决的「下一步」两件事已做完（617 单测绿 + third+strong 半日 live 门禁 PASS）：

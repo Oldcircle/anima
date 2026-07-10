@@ -722,6 +722,47 @@ async function executeAction(
     }
   }
 
+  // kira_strike（诅咒之册）：执行期校验 + 登记（steal/_appointment 同款后门）。
+  // 校验失败改写为 failure，走 Layer D 重试反馈让模型自纠。
+  // handler 只在成功路径挂 _kiraStrike 标记（失败分支早退无标记），检查标记即可
+  const kiraStrike = (result as any)?._kiraStrike;
+  if (toolCall.name === "kira_strike" && kiraStrike) {
+    const today = gameTime.day;
+    const targetRaw = String(kiraStrike.target);
+    const all = world.getAllCharacters();
+    const targetState = all.find(
+      (c) => c.id === targetRaw || c.name === targetRaw || targetRaw.includes(c.name) || c.name.includes(targetRaw),
+    );
+    let failReason: string | undefined;
+    if (world.kira.lastStrikeDay === today) {
+      failReason = "你今晚已经写过一个名字了。规则说得很清楚：一晚只写得动一个。册子上的字迹淡了下去。";
+    } else if (!targetState) {
+      failReason = `你写下了"${targetRaw}"，但字迹像浸了水一样散开——镇上没有这个人，或者你想的名字对不上人。`;
+    } else if (targetState.id === card.id) {
+      failReason = "笔尖停在自己的名字上。写不动——或者说，你自己也不知道是写不动，还是不敢写。";
+    } else {
+      const rel = relationships?.get(card.id, targetState.id);
+      const hasMet = !!rel && (rel.lastInteraction > 0 || rel.level !== 0 || rel.history.length > 0);
+      if (!hasMet) {
+        failReason = `你写下了${targetState.name}的名字，但字迹散开了。规则第一条：只写得动你亲眼见过、打过照面的人——你们还从没打过交道。`;
+      }
+    }
+    if (failReason) {
+      result.success = false;
+      result.description = failReason;
+      result.effects = [];
+    } else {
+      world.kira.pending.push({
+        by: card.id,
+        target: targetState!.id,
+        judgment: String(kiraStrike.judgment ?? ""),
+        writtenDay: today,
+      });
+      world.kira.lastStrikeDay = today;
+      console.log(`[${card.id}] 📓 [kira] 写下了 ${targetState!.id}${kiraStrike.judgment ? `｜"${String(kiraStrike.judgment).slice(0, 40)}"` : ""}（明晨应验）`);
+    }
+  }
+
   // 库存效果：员工 prepare 的产出进店铺货架（劳动第一次留下能被别人买到的东西）
   const stockItem = (result as any)?._stockItem;
   if (stockItem && typeof stockItem === "object" && location) {

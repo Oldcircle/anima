@@ -52,7 +52,22 @@ export type ActionHandler = (
   ctx: ActionContext,
 ) => ActionResult;
 
+/**
+ * 条件浮现谓词的上下文子集——tool-builder 的 ToolBuildContext 结构性满足它，
+ * actions 层不需要反向 import agent 层。
+ */
+export interface EmergeContext {
+  state: { inventory: import("../world/item-types.js").ItemInstance[]; locationId: string };
+  location: { id: string; type: string };
+  hour?: number;
+}
+
 export interface ActionDefinition {
   tool: ToolDefinition;
   handler: ActionHandler;
+  /**
+   * phase 工具的条件浮现谓词（缺省 = 阶段激活即浮现，koukou trial 工具不受影响）。
+   * 只允许低频翻转条件（持有物/时段/地点型）——缓存纪律"残余抖动可接受"条目。
+   */
+  emerge?: (ctx: EmergeContext) => boolean;
 }

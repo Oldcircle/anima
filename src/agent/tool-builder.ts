@@ -231,9 +231,11 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     }
   }
 
-  // 5. Phase-specific 工具 (N6.4)：仅在 active_phase 在剧本白名单中时浮现
+  // 5. Phase-specific 工具 (N6.4)：仅在 active_phase 在剧本白名单中时浮现。
+  // 带 emerge 谓词的工具（kira_strike 等）再过一道条件浮现（持有物/时段/地点，低频翻转）。
   if (ctx.activePhase && ctx.phaseTools && ctx.phaseTools.length > 0) {
     for (const t of ctx.phaseTools) {
+      if (t.emerge && !t.emerge(ctx)) continue;
       tools.push(t);
     }
   }

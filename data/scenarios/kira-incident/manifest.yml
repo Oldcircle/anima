@@ -1,0 +1,33 @@
+id: kira-incident
+name: 基拉事件
+description: |
+  死亡笔记第一部的小镇非致死移植（设计见 PLAN-kira.md）。
+  夜神月捡到一本「诅咒之册」：写下见过面的人的名字，那人次日清晨怪病倒下。
+  L 受镇外委托留意"不合常理的模式"。其余五人毫不知情。
+
+  移植的是结构不是情节：能力的信息门控（见过面才写得动）、双面人格（私有通道的
+  极限测试场）、模式可推理（打击有指纹）、所有权可转移（册子是物品，give 可转手）、
+  硬到期日（委托人的信一封比一封急）。写谁、写不写、谁赢——全归 agents。
+  正典是冷读者基线：收敛处证明结构成立，偏离处证明角色活着。
+
+# 与 default 相同的七人阵容（复用现有角色卡，零新卡）
+characters:
+  - asuka
+  - l_lawliet
+  - lelouch
+  - light
+  - rei
+  - senjougahara
+  - shinji
+
+# 全部启用的默认地点（监狱等 disabled 地点不会加载）
+locations: "*"
+
+# 双面人格剧本：强破线 + 作者视角（深翻+私有通道）
+break_level: strong
+decision_pov: third
+
+# 剧本开局道具：诅咒之册在 light 口袋里（卡片跨剧本共享，专属道具只能走这里）
+initial_items:
+  light:
+    - cursed_notebook

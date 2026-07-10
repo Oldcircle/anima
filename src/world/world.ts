@@ -24,6 +24,19 @@ export class World {
   /** 叙事状态命名空间（N2 引入）。与 needs/relationships 平级。 */
   readonly narrative: NarrativeState;
 
+  /**
+   * kira-incident 剧本状态（诅咒之册）。瞬态不入档（v1：一次 sim 跑完整个事件，
+   * 中途存读档丢 pending 可接受——只丢一夜未应验的打击，TODO 若剧本转常驻再补列）。
+   * - pending：已写下、待次日 06:00 应验的名字
+   * - total/victims：已应验计数（升级钩子用）；lastStrikeDay：每晚一次冷却
+   */
+  readonly kira = {
+    pending: [] as { by: string; target: string; judgment: string; writtenDay: number }[],
+    total: 0,
+    victims: [] as string[],
+    lastStrikeDay: -1,
+  };
+
   constructor(locations: Location[], initialTick = 0) {
     this._state = {
       tick: initialTick,

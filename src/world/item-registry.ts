@@ -65,6 +65,8 @@ const KEEPSAKES: ItemDef[] = [
   { id: "photo", name: "照片", type: "keepsake", value: 0, traits: ["memory", "personal"] },
   { id: "pressed_flower", name: "压花书签", type: "keepsake", value: 0, traits: ["flower", "handmade", "delicate"] },
   { id: "old_ticket", name: "旧票根", type: "keepsake", value: 0, traits: ["memory", "small"] },
+  // kira-incident 剧本道具：keepsake 类型=店主不收（卖不掉）、不可食用；give 可转手=正典的所有权转移
+  { id: "cursed_notebook", name: "诅咒之册", type: "keepsake", value: 0, traits: ["mystery", "book", "personal"], description: "一本黑色封皮的旧册子，纸页比看上去的更凉。扉页写着几行使用规则，字迹不像人写的" },
 ];
 
 const QUEST: ItemDef[] = [

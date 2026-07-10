@@ -122,6 +122,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 | `default` | asuka, L, lelouch, light, rei, senjougahara, shinji（7 个） | CLI 默认 |
 | `mygo-seaside` | tomori, anon, sakiko, mutsumi, soyo（5 个 MyGO） | 备用剧本 |
 | `koukou-judgment` | 14 个魔法少女（艾玛/希罗/雪莉/诺亚/蕾雅/...） | 弹丸论破式审判，含 seeds + beats + trial 工具 |
+| `kira-incident` | default 同款 7 人 | 死亡笔记非致死移植：诅咒之册 + kira_strike 夜书 + 怪病应验 + 委托人到期日（见 PLAN-kira.md） |
 
 另有 `last-ferry`（3 角色狗血版，3 重 climax + 全 beat auto_seeds）与 `seaside-trio`；完整清单以 `data/scenarios/` 为准。
 
@@ -131,6 +132,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 ## 活跃文档
 
 - [STATUS.md](./STATUS.md) — **会话交接文档**（当前进度 + 下次入口 + 跨会话教训），进项目先读这个
+- [PLAN-kira.md](./PLAN-kira.md) — kira-incident 剧本包（死亡笔记非致死移植）：正典解剖 + 诅咒之册机制 + 信息图/到期日设计
 - [AUDIT-aliveness-20260704.md](./AUDIT-aliveness-20260704.md) — **活人感全面体检报告**（93 条验证后发现：6 个实锤 bug + 六大结构性根因 + quick wins/deep work 修复路线），「过家家感」问题以此为准
 - [PLAN-appointments.md](./PLAN-appointments.md) — 约定系统（arrange_meet 工具 + 到点结算赴约/爽约 + 记挂/愧疚钩子），已实施
 - [PLAN-tool-feedback.md](./PLAN-tool-feedback.md) — Tool Feedback Loop 改造（✅ 已实施，保留作设计依据）

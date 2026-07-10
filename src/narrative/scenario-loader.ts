@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { parse as parseYAML } from "yaml";
 import { loadCharacterFromYAML, loadCharactersFromDir } from "../character/loader.js";
 import { loadLocationsFromDir } from "../world/location-loader.js";
+import { addToInventory } from "../world/item-registry.js";
 import type { CharacterCard } from "../character/types.js";
 import type { Location } from "../world/types.js";
 import { parseBeatsConfig, type BeatDefinition } from "./beat-engine.js";
@@ -37,6 +38,16 @@ export interface ScenarioManifest {
    * cozy 剧本可写 off/mild，狗血剧本可写 strong。
    */
   breakLevel?: "off" | "mild" | "strong";
+  /**
+   * 决策视角：first=第一人称沉浸（默认）/ third=作者预测框架（深翻+私有通道，见 break-config.ts）。
+   * 未指定时由 env `ANIMA_DECISION_POV` 决定。kira-incident 等双面人格剧本写 third。
+   */
+  decisionPov?: "first" | "third";
+  /**
+   * 开局随身物品：characterId → 物品 defId 列表（如 kira-incident 把诅咒之册放进 light 口袋）。
+   * 由 cli / sim 测试在 addCharacter 之后调用 applyInitialItems 应用。
+   */
+  initialItems?: Record<string, string[]>;
 }
 
 export interface LoadedScenario {
@@ -108,6 +119,8 @@ export function loadScenarioManifest(
     characterDir: data.character_dir ?? DEFAULT_CHARACTER_DIR,
     locationDir: data.location_dir ?? DEFAULT_LOCATION_DIR,
     breakLevel: normalizeBreakLevel(data.break_level ?? data.breakLevel),
+    decisionPov: normalizeDecisionPov(data.decision_pov ?? data.decisionPov),
+    initialItems: normalizeInitialItems(data.initial_items ?? data.initialItems),
   };
 }
 
@@ -115,6 +128,38 @@ export function loadScenarioManifest(
 function normalizeBreakLevel(v: unknown): "off" | "mild" | "strong" | undefined {
   if (v === "off" || v === "mild" || v === "strong") return v;
   return undefined;
+}
+
+/** 解析 manifest 的 decision_pov 字段；非法值/缺省返回 undefined（交给 env/默认）。 */
+function normalizeDecisionPov(v: unknown): "first" | "third" | undefined {
+  if (v === "first" || v === "third") return v;
+  return undefined;
+}
+
+/** 解析 manifest 的 initial_items：{characterId: [defId, ...]}；结构不对返回 undefined。 */
+function normalizeInitialItems(v: unknown): Record<string, string[]> | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [charId, items] of Object.entries(v as Record<string, unknown>)) {
+    if (!Array.isArray(items) || items.some((i) => typeof i !== "string")) return undefined;
+    out[charId] = items as string[];
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** 把 manifest.initialItems 发到已加入世界的角色背包里（cli 与 sim 测试共用）。 */
+export function applyInitialItems(
+  world: { getCharacter(id: string): { inventory: import("../world/item-types.js").ItemInstance[] } | undefined; tick: number },
+  manifest: ScenarioManifest,
+): void {
+  if (!manifest.initialItems) return;
+  for (const [charId, defIds] of Object.entries(manifest.initialItems)) {
+    const state = world.getCharacter(charId);
+    if (!state) continue;
+    for (const defId of defIds) {
+      addToInventory(state.inventory, defId, 1, { obtainedTick: world.tick });
+    }
+  }
 }
 
 function normalizeSelector(

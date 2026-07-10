@@ -1,0 +1,71 @@
+# 基拉事件 — beats（到期日阶梯）
+#
+# 纪律（七反转⑦）：beat 只配时机与注意力，不写结果。
+# 册子用不用、写谁、L 咬不咬钩、谁赢——全归 agents。
+# 打击的应验/风声/目击是引擎侧机制（simulation._resolveKiraStrikes），不在这里。
+
+beats:
+  # ═══ Day 1 夜：册子在口袋里发烫（只给注意力，不替他决定）═══
+  - id: kira_d1_night_book_calls
+    description: "Day 1 夜 — 独处时册子的存在感变得很重"
+    preconditions:
+      all:
+        - "world.day == 1"
+        - "world.hour >= 20"
+    priority: 9
+    auto_seeds:
+      - char: light
+        topic: "口袋里那本册子今晚沉得不像话。你想起白天看到和听到的那些事——这个镇子上没人管的那些事。它是不是真的，其实有一个很简单的验证方法。也有一百个不去验证的理由。"
+        urgency: high
+    on_trigger:
+      hint: |
+        D1 夜。light 独处在家时会看到 kira_strike 工具。director 不要推他写，
+        也不要拦他——只确保他今晚有一段独处的时间（如果他在外面，给一个回家的理由）。
+
+  # ═══ Day 2 晨：委托人的第二封信（例行问安，为后面的催函铺垫）═══
+  - id: kira_d2_client_checkin
+    description: "Day 2 晨 — 委托人来信：镇上一切如常吗？"
+    preconditions:
+      all:
+        - "world.day == 2"
+        - "world.hour >= 8"
+    priority: 6
+    auto_seeds:
+      - char: l_lawliet
+        topic: "委托人的第二封信到了，还是没有回信地址，只有一句：'镇上一切如常吗？'——你开始在心里过白天见到的每一件小事。所谓'不合常理的模式'，往往在它成为模式之前就有第一个样本。"
+        urgency: med
+
+  # ═══ Day 4 晨：委托人的催函（L 的到期日开始收紧）═══
+  - id: kira_d4_client_pressure
+    description: "Day 4 晨 — 委托人第三封信，语气变了"
+    preconditions:
+      all:
+        - "world.day == 4"
+        - "world.hour >= 8"
+    fallback_deadline_day: 5
+    priority: 8
+    auto_seeds:
+      - char: l_lawliet
+        topic: "第三封信只有一行：'钱不是买你住在海边的。'——委托人知道些什么，而且在等你追上他知道的东西。如果镇上真的有一个'模式'，你已经落后它好几天了。"
+        urgency: high
+
+  # ═══ Day 6 夜：台风逼近（收拢全员，制造同场终局的物理条件）═══
+  - id: kira_d6_typhoon_closes_in
+    description: "Day 6 夜 — 台风警报，全镇收拢室内"
+    preconditions:
+      all:
+        - "world.day == 6"
+        - "world.hour >= 18"
+    fallback_deadline_day: 7
+    priority: 7
+    auto_seeds:
+      - char: light
+        topic: "台风警报。明天全镇的人都会挤在少数几个屋檐下面——躲不开任何人，也躲不开任何话题。"
+        urgency: med
+      - char: l_lawliet
+        topic: "台风警报。明天全镇的人都会挤在同一个屋檐下。如果你有什么要当面验证的事，人齐的场合既是最好的机会，也是最坏的。"
+        urgency: med
+    on_trigger:
+      hint: |
+        终局不写脚本。director 只需要让天气/环境配合"全员被收拢到室内"这个物理事实，
+        剩下的对峙、试探、摊牌（或者什么都不发生）都归角色。

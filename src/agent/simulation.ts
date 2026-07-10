@@ -324,6 +324,9 @@ export class Simulation {
     // 1.0g2 饿倒：hunger 逼近 0 持续挨饿 → 眼前发黑当场倒下（挨饿咬人，饭钱才有分量）
     this._applyStarvationCollapse(gameTime);
 
+    // 1.0g3 怪病倒下的苏醒结算（kira-incident 诅咒应验的下半场）
+    this._applyCursedCollapseRecovery(gameTime);
+
     // 1.0h argue 机械兜底：疙瘩攒够且撞见对方 → 注入"把话挑明"的 intent（决策前，进本 tick prompt）
     this._applyConfrontationFallback(gameTime);
 
@@ -410,6 +413,8 @@ export class Simulation {
 
     // 0c. 每天 06:00 疙瘩淡化（3 游戏天没解开就自然淡了）+ 关系空窗衰减 + 店铺补货
     if (gameTime.hour === 6 && gameTime.minute === 0) {
+      // kira-incident：昨夜写下的名字晨间应验（无剧本时 pending 恒空，零开销）
+      this._resolveKiraStrikes(gameTime);
       for (const rel of this.relationships.getAll()) {
         if (rel.grudge && gameTime.tick - rel.grudge.sinceTick > 288) {
           this.relationships.clearGrudge(rel.characterA, rel.characterB);
@@ -482,6 +487,10 @@ export class Simulation {
       if (c.moodlets.some((m) => m.reason.includes("着凉"))) {
         this.world.modifyNeed(c.id, "energy", -1);
       }
+      // 怪病（kira-incident）：比着凉更重且吃药无效（take_medicine 只认着凉）
+      if (c.moodlets.some((m) => m.reason.includes("怪病"))) {
+        this.world.modifyNeed(c.id, "energy", -1);
+      }
       // 行为链检测 → 后果涟漪
       const chainMoodlets = detectBehaviorPatterns(c, gameTime.tick);
       for (const m of chainMoodlets) {
@@ -549,7 +558,7 @@ export class Simulation {
     // 随机挑一个醒着的角色
     const awake = this.world.getAllCharacters().filter((s) => {
       const a = s.currentAction?.name;
-      return a !== "sleep" && a !== "nap" && a !== "collapse_asleep" && a !== "collapse_starving";
+      return a !== "sleep" && a !== "nap" && a !== "collapse_asleep" && a !== "collapse_starving" && a !== "collapse_cursed";
     });
     const target = awake[Math.floor(Math.random() * awake.length)];
     if (!target) return undefined;
@@ -720,6 +729,7 @@ export class Simulation {
       if (energy > 3) continue;
       if (state.currentAction?.name === "sleep" || state.currentAction?.name === "nap") continue;
       if (state.currentAction?.name === "collapse_starving") continue; // 饿倒优先，不叠加覆盖
+      if (state.currentAction?.name === "collapse_cursed") continue; // 怪病倒下同理
 
       state.currentAction = { name: "collapse_asleep", remainingTicks: 8 };
       const loc = this.world.getLocation(state.locationId);
@@ -754,6 +764,73 @@ export class Simulation {
         }
       }
       console.log(`😵 [力竭] ${state.name} 在 ${loc?.name ?? state.locationId} 撑不住睡着了 (energy=${energy})`);
+    }
+  }
+
+  /**
+   * kira-incident 诅咒应验：每天 06:00 把昨夜 pending 的名字兑现成「怪病倒下」。
+   * 非致死移植（PLAN-kira.md）：倒下 8 tick 叫不醒 + 怪病 moodlet 2 天（每 tick 掉精力、
+   * 吃药无效）+ 本人/目击者/全镇三层记忆——只造事实，怎么解读（撞邪/天罚/有人动手）归角色。
+   * 引擎侧不点名任何调查者：侦探线靠剧本 seeds + 角色卡自己咬钩（七反转⑦）。
+   */
+  private _resolveKiraStrikes(gameTime: GameTime): void {
+    if (this.world.kira.pending.length === 0) return;
+    const due = this.world.kira.pending.splice(0);
+    for (const strike of due) {
+      const victim = this.world.getCharacter(strike.target);
+      if (!victim) continue;
+      if (victim.currentAction?.name === "collapse_cursed") continue; // 不叠加
+      victim.currentAction = { name: "collapse_cursed", remainingTicks: 8 };
+      addMoodlet(victim, "anxious", 5, "怪病：夜里心口像被一只手攥住过，浑身没力气", 192, "need", gameTime.tick);
+      this.world.kira.total += 1;
+      this.world.kira.victims.push(victim.id);
+      const nth = this.world.kira.total;
+      this.memory.add(victim.id, {
+        tick: gameTime.tick, type: "event",
+        content: "天蒙蒙亮的时候，心口像被一只看不见的手攥住——你眼前一黑倒了下去，怎么也爬不起来。这不是累，也不像任何你得过的病",
+        importance: 9,
+      });
+      this.longTerm.add(victim.id, {
+        tick: gameTime.tick, type: "event", importance: 9,
+        content: "得过一场来路不明的怪病：毫无征兆在清晨倒下，人事不省了两个钟头",
+      });
+      const loc = this.world.getLocation(victim.locationId);
+      for (const otherId of loc?.presentCharacters ?? []) {
+        if (otherId === victim.id) continue;
+        this.memory.add(otherId, {
+          tick: gameTime.tick, type: "event",
+          content: `你亲眼看见${victim.name}毫无征兆地倒了下去，脸色白得吓人，怎么叫都叫不醒`,
+          importance: 8, relatedCharacterId: victim.id,
+        });
+      }
+      // 全镇风声（不在场者）：只给事实不给解读；第 2 例起把"和上一个一样"的模式摆上桌
+      for (const c of this.world.getAllCharacters()) {
+        if (c.id === victim.id) continue;
+        if ((loc?.presentCharacters ?? []).includes(c.id)) continue;
+        this.memory.add(c.id, {
+          tick: gameTime.tick, type: "event",
+          content: nth === 1
+            ? `镇上传开了：${victim.name}清早莫名其妙倒下了，人事不省——谁也说不出是什么病`
+            : `${victim.name}也倒下了，和之前倒下的人一模一样：清早、毫无征兆、叫不醒。这已经是第 ${nth} 个了`,
+          importance: nth >= 2 ? 8 : 6, relatedCharacterId: victim.id,
+        });
+      }
+      console.log(`📓 [kira] 应验：${victim.id} 怪病倒下（第 ${nth} 例）${strike.judgment ? `｜册上小字："${strike.judgment.slice(0, 40)}"` : ""}`);
+    }
+  }
+
+  /** 怪病倒下的苏醒结算：最后一 tick 勉强缓过来，带后怕 + "这病不对劲"的念头。 */
+  private _applyCursedCollapseRecovery(gameTime: GameTime): void {
+    for (const state of this.world.getAllCharacters()) {
+      if (state.currentAction?.name !== "collapse_cursed") continue;
+      if (state.currentAction.remainingTicks === 1) {
+        addMoodlet(state, "anxious", 4, "怪病过后浑身发虚——这病来得太不对劲了", 48, "need", gameTime.tick);
+        this.world.setIntent(state.id, {
+          kind: "recover", source: "action",
+          summary: "今天清早莫名其妙倒下了，人事不省两个钟头——这不是普通的病。得跟人说说，或者弄明白到底怎么回事。",
+          createdTick: gameTime.tick, expiresAt: gameTime.tick + 8,
+        });
+      }
     }
   }
 

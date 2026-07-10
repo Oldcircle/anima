@@ -11,10 +11,11 @@ import { World } from "./world/world.js";
 import { Simulation } from "./agent/simulation.js";
 import { ALL_BASIC_ACTIONS } from "./actions/basic-actions.js";
 import { ALL_TRIAL_ACTIONS, PHASE_TOOL_WHITELIST } from "./actions/trial-actions.js";
+import { ALL_KIRA_ACTIONS } from "./actions/kira-actions.js";
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { createApiServer } from "./api/server.js";
-import { loadScenario } from "./narrative/scenario-loader.js";
-import { setBreakLevel, getBreakLevel } from "./agent/break-config.js";
+import { loadScenario, applyInitialItems } from "./narrative/scenario-loader.js";
+import { setBreakLevel, getBreakLevel, setDecisionPov, getDecisionPov } from "./agent/break-config.js";
 import { saveGame, loadGame } from "./persistence/save-load.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -62,6 +63,11 @@ setBreakLevel(scenario.manifest.breakLevel);
 const breakSource = scenario.manifest.breakLevel ? "scenario" : process.env.ANIMA_BREAK_LEVEL ? "env" : "默认";
 console.log(`🔥 破线强度 (breakLevel): ${getBreakLevel()} [${breakSource}]`);
 
+// --- 决策视角：scenario manifest > env ANIMA_DECISION_POV > 默认 first ---
+setDecisionPov(scenario.manifest.decisionPov);
+const povSource = scenario.manifest.decisionPov ? "scenario" : process.env.ANIMA_DECISION_POV ? "env" : "默认";
+console.log(`🎭 决策视角 (decisionPov): ${getDecisionPov()} [${povSource}]`);
+
 // --- LLM Provider ---
 // settings.json（前端 Settings 写入）优先于 .env
 import { SettingsStore } from "./api/settings-store.js";
@@ -96,6 +102,9 @@ for (const card of characters) {
     }
   }
 }
+// 剧本开局道具（manifest initial_items）：卡片跨剧本共享，剧本专属道具走这里
+// （如 kira-incident 把诅咒之册放进 light 口袋——default 剧本的 light 不受影响）
+applyInitialItems(world, scenario.manifest);
 
 const eventBus = new EventBus();
 
@@ -113,12 +122,14 @@ if (scenario.beats.length > 0) {
   console.log(`🎬 加载了 ${scenario.beats.length} 个 beats（规则导演）`);
 }
 
-// 注册 phase-specific 工具（N6.4）— koukou-judgment 的 trial/investigation tools
+// 注册 phase-specific 工具（N6.4）— koukou-judgment 的 trial/investigation tools + kira-incident 的夜书
 {
   const phaseTools: Record<string, typeof ALL_TRIAL_ACTIONS> = {};
   for (const [phase, names] of Object.entries(PHASE_TOOL_WHITELIST)) {
     phaseTools[phase] = ALL_TRIAL_ACTIONS.filter((a) => names.includes(a.tool.name));
   }
+  // kira 阶段工具（seeds.yml active_phase: kira 时激活；kira_strike 自带 emerge 谓词再过滤持册/夜间/在家）
+  phaseTools["kira"] = ALL_KIRA_ACTIONS;
   simulation.registerPhaseTools(phaseTools);
   console.log(`🎬 注册了 phase 工具: ${Object.keys(phaseTools).join(",")}`);
 }
