@@ -97,10 +97,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
   async chat(request: LLMRequest, modelId?: string): Promise<LLMResponse> {
     const model = modelId ?? this._defaultModel;
 
-    const messages: Array<Record<string, unknown>> = [
-      { role: "system", content: request.system },
-      ...request.messages,
-    ];
+    // request.system 为空时不前置空 system 消息——酒馆模式把 system 块内联在 request.messages 里，
+    // system 字段留空，避免污染前缀。legacy 路径 system 恒非空，行为不变。
+    const messages: Array<Record<string, unknown>> = request.system
+      ? [{ role: "system", content: request.system }, ...request.messages]
+      : [...request.messages];
 
     // Prefill: 预填充助手回复开头，引导模型进入"已接受创作任务"状态
     if (request.prefill) {
@@ -116,13 +117,21 @@ export class OpenAICompatibleProvider implements LLMProvider {
     // 思考模式：deepseek-v4-* 默认 disabled。enabled 时 temperature 等会被服务端忽略，
     // 为避免无效字段污染 body，开启思考时主动不发 temperature。
     const thinking = this.resolveThinking(model);
+    // 采样参数（酒馆预设照抄）；思考模式下 DeepSeek 忽略，故 enabled 时全不发。
+    const applySampling = () => {
+      body.temperature = request.temperature ?? 0.7;
+      if (request.topP !== undefined) body.top_p = request.topP;
+      if (request.topK !== undefined && request.topK > 0) body.top_k = request.topK;
+      if (request.frequencyPenalty !== undefined) body.frequency_penalty = request.frequencyPenalty;
+      if (request.presencePenalty !== undefined) body.presence_penalty = request.presencePenalty;
+    };
     if (thinking === "enabled") {
       body.thinking = { type: "enabled" };
     } else if (thinking === "disabled") {
       body.thinking = { type: "disabled" };
-      body.temperature = request.temperature ?? 0.7;
+      applySampling();
     } else {
-      body.temperature = request.temperature ?? 0.7;
+      applySampling();
     }
 
     if (request.tools && request.tools.length > 0) {

@@ -41,6 +41,9 @@ export interface ToolCall {
 /** LLM 请求消息（OpenAI 多轮 tool-calling 协议）。 */
 export type LLMMessage =
   | { role: "user" | "assistant"; content: string }
+  /** 内联 system 消息：酒馆预设需要把 system 块散布在对话前后（破限/post-history 在历史之后），
+   *  故允许 system 出现在 messages 数组里，而非只走 LLMRequest.system 单一字段。 */
+  | { role: "system"; content: string }
   | {
       /** assistant 发起工具调用：content 可空，tool_calls 必填。 */
       role: "assistant";
@@ -65,6 +68,11 @@ export interface LLMRequest {
   tools?: ToolDefinition[];
   maxTokens?: number;
   temperature?: number;
+  /** 采样参数（酒馆预设照抄）。思考模式下 DeepSeek 会忽略这些，provider 层按模式取舍。 */
+  topP?: number;
+  topK?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
   /** 预填充助手回复开头（prefill），引导模型进入特定状态 */
   prefill?: string;
   /** 调用类型（decision/conversation/reflection/...），用于前缀缓存命中率分桶统计 */

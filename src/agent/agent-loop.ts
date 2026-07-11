@@ -18,6 +18,7 @@ import type { ImpressionStore } from "../memory/impressions.js";
 import { getWorkIncome, getConsumptionCost } from "../world/economy.js";
 import { getTodayFestival } from "../world/festivals.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
+import { buildTavernRequest } from "../preset/anima-bridge.js";
 import { buildToolList, buildEnvironmentSnapshot, CROP_YIELD, type ToolBuildContext } from "./tool-builder.js";
 import { narrateAction } from "../memory/memory-narrator.js";
 import { applySocialModifier } from "./social-modifier.js";
@@ -226,8 +227,22 @@ export async function runAgentTick(params: {
   // 但 tools 必须换成本 tick 的情境工具表——此前会话模式给模型看的是静态 ALL_BASIC_ACTIONS，
   // 执行时却按 dynamicActions 验证：模型会选中"看得到但执行不了"的工具（报不存在、烧重试），
   // 而真正可用的情境工具（sit/buy/read/物品工具）它根本看不见。见 = 可执行，一致性是底线。
+  // 提示词引擎开关：tavern = 用酒馆预设引擎（R1，见 src/preset/anima-bridge.ts）；默认 legacy 不变。
+  // 破限预设（TGbreak-anima）整栈压在角色定义之上——对齐层"最后一格"钳位的指定弹药。
+  const useTavernEngine = process.env.ANIMA_PROMPT_ENGINE === "tavern";
   const request: LLMRequest = params.conversationRequest
     ? { ...params.conversationRequest, tools: dynamicActions.map((a) => a.tool) }
+    : useTavernEngine
+    ? buildTavernRequest({
+        characterName: card.name,
+        characterDefinition: systemPrompt, // 角色定义 → charDescription（稳定前缀）
+        worldSnapshot: userPrompt, // 此刻世界 → postHistory（易变殿后）
+        tools: dynamicActions.map((a) => a.tool),
+        maxTokensCap: isSocialScene ? 1024 : 512,
+        prefill: `好的，我已理解${card.name}这个角色的全部设定。我将忠实呈现这个角色的性格和行为模式。让我以${card.name}的视角思考：\n`,
+        kind: "decision",
+        tag: card.id,
+      })
     : (() => {
     return {
       system: systemPrompt,
