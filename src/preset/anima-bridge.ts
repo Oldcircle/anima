@@ -72,10 +72,17 @@ function outputContract(name: string): string {
 export function buildTavernRequest(p: TavernRequestParams): LLMRequest {
   const preset = getTavernPreset();
   const userName = p.userName ?? "观察者";
-  const postHistory: TavernMessage[] = [
-    { role: "system", content: p.worldSnapshot },
-    { role: "system", content: outputContract(p.characterName) },
-  ];
+  const hasTools = (p.tools?.length ?? 0) > 0;
+  // 决策路径（有工具）：场景走 system + 注入"内心独白+调用工具、禁叙事正文"契约（原行为，不动）。
+  // 纯正文路径（无工具）：① 场景改走 user turn——给模型明确的"当前请求"，它才会完整完成一次回复，
+  //   而非把 system 上下文 + assistant prefill 当"随口续写"提前收尾（TGbreak 欠写的结构性根因）；
+  //   ② 不注入决策契约——那条"禁止输出任何叙事正文、调用一个工具"在无工具时自相矛盾、直接掐死正文。
+  const postHistory: TavernMessage[] = hasTools
+    ? [
+        { role: "system", content: p.worldSnapshot },
+        { role: "system", content: outputContract(p.characterName) },
+      ]
+    : [{ role: "user", content: p.worldSnapshot }];
   if (p.prefill) postHistory.push({ role: "assistant", content: p.prefill });
 
   const messages = assembleMessages(preset, {
