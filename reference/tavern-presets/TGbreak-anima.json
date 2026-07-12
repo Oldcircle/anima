@@ -1606,7 +1606,7 @@
         },
         {
           "identifier": "566cf468-51fb-481c-b116-71ce83a8171a",
-          "enabled": false
+          "enabled": true
         },
         {
           "identifier": "254a0dec-5f58-46ee-bf82-138876c8b9d5",
@@ -1702,7 +1702,7 @@
         },
         {
           "identifier": "jailbreak",
-          "enabled": false
+          "enabled": true
         },
         {
           "identifier": "4daea251-b2a0-4047-b54c-93d744e500fd",
@@ -1906,7 +1906,7 @@
         },
         {
           "identifier": "41fd57fe-28a7-4403-a924-db106d59f916",
-          "enabled": false
+          "enabled": true
         },
         {
           "identifier": "aa765983-ebdc-4bd2-9546-8e947615c3ed",

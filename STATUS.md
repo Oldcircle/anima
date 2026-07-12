@@ -3,6 +3,25 @@
 > 每次有实质进展时更新。记录当前进度和下次继续的入口，不是日志。
 > （旧 STATUS.md 因 gitignore 未入仓而丢失，本文件 2026-07-03 重建，开发文档已全部入仓）
 
+## 当前状态（2026-07-12）
+
+### 全面对齐酒馆：破限预设栈设为生效路径 + 露骨开满 + 对话路径补接 · A/B live PASS
+
+用户要求「anima 作为创作者，行为和酒馆一致」（= 用破限预设本体，见记忆 anima-tavern-conclusion）。落地：
+1. **tavern 引擎生效**：`.env` `ANIMA_PROMPT_ENGINE=tavern`（本地配置 gitignore）——此前默认 legacy，破限栈没上线
+2. **TGbreak-anima 露骨开满 46→49**：启用 法则 / 🥵瑟瑟描述(直白用词·禁省略) / cot-🔞深度瑟瑟（= 第四天灾同级）
+3. **对话路径补接 tavern（代码修复）**：`conversation-mode.ts` 此前对话正文绕开 buildTavernRequest、只跑 legacy
+   system prompt——最该覆盖破限的地方反而漏了。现与决策路径（agent-loop）同款分叉
+4. **默认模型升 deepseek-v4-pro**（`data/settings.json` gitignore；酒馆同款、更扛破限）
+
+**验证（判决 [logs/nsfw-verify/VERDICT.md](./logs/nsfw-verify/VERDICT.md)）**：同场景同模型 A/B——legacy 软淡出
+（64 字/不露骨），tavern 完整露骨正文（739 字）。PASS。测试直调 buildTavernRequest = 对话路径同函数。
+
+**注脚/下次**：① 只验了 prompt 装配 + 单次 API，未跑完整 agent 工具循环——`pnpm dev` 推真场景可全链确认；
+② legacy 是软淡出非硬拒；③ 活人感证伪结论不变，这是破限维度（正交）。
+
+---
+
 ## 当前状态（2026-07-10）
 
 ### kira-incident 剧本包上线（死亡笔记非致死移植）· 半夜窗口 live PASS · 判决见 [logs/kira-halfnight-20260710-VERDICT.md](./logs/kira-halfnight-20260710-VERDICT.md)

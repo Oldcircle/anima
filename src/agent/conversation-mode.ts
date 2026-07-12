@@ -17,6 +17,7 @@ import type { CharacterState, Weather, LocationAtmosphere } from "../world/types
 import type { GameTime } from "../core/tick-engine.js";
 import type { ActionDefinition } from "../actions/types.js";
 import { buildSystemPrompt } from "./prompt-builder.js";
+import { buildTavernRequest } from "../preset/anima-bridge.js";
 import { formatGameTime } from "../core/tick-engine.js";
 import { weatherDescription } from "../world/weather.js";
 import { getAtmosphereText } from "../world/location-loader.js";
@@ -360,13 +361,31 @@ export function buildConversationRequest(params: {
     wantToDiscuss: params.wantToDiscuss,
   });
 
+  const prefill = `好的，我已理解${params.card.name}这个角色。我将完全以这个角色的性格和说话方式来回应：\n`;
+
+  // 提示词引擎：tavern = 对话也走 ST 破限预设栈（与 agent-loop 决策路径同款分叉），
+  // 让亲密/露骨对话获得与决策一致的破限层——否则最该覆盖破限的对话正文反而漏掉。
+  // 默认 legacy 不变（不设 ANIMA_PROMPT_ENGINE 或非 tavern）。
+  if (process.env.ANIMA_PROMPT_ENGINE === "tavern") {
+    return buildTavernRequest({
+      characterName: params.card.name,
+      characterDefinition: systemPrompt, // 角色定义 → charDescription（稳定前缀）
+      worldSnapshot: userPrompt, // 此刻对话情境 → postHistory（易变殿后）
+      tools: params.actions.map((a) => a.tool),
+      maxTokensCap: 1024,
+      prefill,
+      kind: "conversation",
+      tag: params.card.id,
+    });
+  }
+
   return {
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
     tools: params.actions.map((a) => a.tool),
     temperature: 1.0, // 对话模式温度更高，增加自然感
     maxTokens: 1024,  // 对话模式：思考精简 + 消息自然长度
-    prefill: `好的，我已理解${params.card.name}这个角色。我将完全以这个角色的性格和说话方式来回应：\n`,
+    prefill,
     kind: "conversation",
     tag: params.card.id,
   };
