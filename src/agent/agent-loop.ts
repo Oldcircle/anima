@@ -18,7 +18,7 @@ import type { ImpressionStore } from "../memory/impressions.js";
 import { getWorkIncome, getConsumptionCost } from "../world/economy.js";
 import { getTodayFestival } from "../world/festivals.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
-import { buildTavernRequest } from "../preset/anima-bridge.js";
+import { buildTavernRequest, cleanTavernOutput } from "../preset/anima-bridge.js";
 import { buildToolList, buildEnvironmentSnapshot, CROP_YIELD, type ToolBuildContext } from "./tool-builder.js";
 import { narrateAction } from "../memory/memory-narrator.js";
 import { applySocialModifier } from "./social-modifier.js";
@@ -273,6 +273,11 @@ export async function runAgentTick(params: {
     return { characterId: card.id, thought: "", skipped: true, skipReason: "LLM 调用失败" };
   }
 
+  // 酒馆预设输出清洗：剥离思维链 / 提取 <content> 交付区 / 清残留标签（对齐 ST reasoning 解析）。
+  // 仅 tavern 引擎生效；legacy 路径逐字节不变。
+  if (process.env.ANIMA_PROMPT_ENGINE === "tavern") {
+    response.content = cleanTavernOutput(response.content);
+  }
   const thought = response.content;
 
   // 私有通道（七反转④）：third 档从决策文本解析两层动机行。
@@ -303,7 +308,9 @@ export async function runAgentTick(params: {
       const nudge = await provider.chat({ ...request, messages: nudgeMessages, prefill: undefined }, modelId);
       if (nudge.toolCalls.length > 0) {
         console.log(`[${card.id}] 💬 只想不做救回 → ${nudge.toolCalls[0]!.name}`);
-        response = nudge;
+        response = process.env.ANIMA_PROMPT_ENGINE === "tavern"
+          ? { ...nudge, content: cleanTavernOutput(nudge.content) }
+          : nudge;
       }
     } catch (err: any) {
       console.warn(`[${card.id}] 只想不做救回失败:`, err?.message ?? err);

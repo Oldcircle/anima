@@ -102,3 +102,31 @@ export function buildTavernRequest(p: TavernRequestParams): LLMRequest {
     tag: p.tag,
   };
 }
+
+/**
+ * 清洗酒馆预设的原始输出——对齐 SillyTavern 的 reasoning 自动解析 + 正文交付区提取。
+ *
+ * 破限预设常在正文前吐一大段思维链/元认知（`<thinking>`/`<content>` 结构）。ST 前端用
+ * reasoning 自动解析 + 正则把它们隐藏/剥离；Anima 引擎此前缺这层，导致：
+ *   - COT 整段泄漏进正文（明月秋青：`<thinking>[metacognition]…</thinking>` 直接出现在输出里）
+ *   - 残留孤立/未闭合标签（夏瑾：结尾漏出 `</textarea>`）
+ * 此函数补上这层：优先取 `<content>`/`<正文>` 交付区，否则剥离成对 reasoning 块，再清残留标签。
+ */
+export function cleanTavernOutput(raw: string): string {
+  if (!raw) return raw;
+  let s = raw;
+  // 交付区优先：<content>/<正文> 里是真正的正文，思维链在外——直接取内部。
+  // 兼容被 length 截断、缺闭合标签的情况（取到闭合标签或字符串结尾）。
+  const delivered = s.match(/<content>([\s\S]*?)(?:<\/content>|$)/i) ?? s.match(/<正文>([\s\S]*?)(?:<\/正文>|$)/);
+  if (delivered) {
+    s = delivered[1]!;
+  } else {
+    // 无交付标签：剥离成对的 reasoning 块（对齐 ST reasoning auto-parse：<think>/<thinking>）
+    s = s.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "");
+  }
+  // 去 HTML 注释自检块（TGbreak 的 <!-- 草稿自检 -->）+ 残留孤立/未闭合标签泄漏
+  s = s
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<\/?(?:textarea|content|thinking|think|正文|meta_notes|analysis|interactive_input)\b[^>]*>/gi, "");
+  return s.trim();
+}
