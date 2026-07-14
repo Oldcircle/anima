@@ -18,7 +18,7 @@ import type { ImpressionStore } from "../memory/impressions.js";
 import { getWorkIncome, getConsumptionCost } from "../world/economy.js";
 import { getTodayFestival } from "../world/festivals.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
-import { buildTavernRequest } from "../preset/anima-bridge.js";
+import { buildTavernRequest, cleanTavernOutput } from "../preset/anima-bridge.js";
 import { buildToolList, buildEnvironmentSnapshot, CROP_YIELD, type ToolBuildContext } from "./tool-builder.js";
 import { narrateAction } from "../memory/memory-narrator.js";
 import { applySocialModifier } from "./social-modifier.js";
@@ -273,6 +273,32 @@ export async function runAgentTick(params: {
     return { characterId: card.id, thought: "", skipped: true, skipReason: "LLM 调用失败" };
   }
 
+  // 酒馆预设输出清洗：剥离思维链 / 提取 <content> 交付区 / 清残留标签（对齐 ST reasoning 解析）。
+  // 仅 tavern 引擎生效；legacy 路径逐字节不变。
+  if (useTavernEngine) {
+    const rawContent = response.content;
+    response.content = cleanTavernOutput(response.content);
+    // 决策路径剥壳取芯：模型把内心独白包进 <thinking> 时（预设交付结构外溢到决策），
+    // 独白就是我们要的思考本体（记忆/动机通道消费），取内文而不是当思维链丢弃。
+    // 仅清洗后归空时启用；取回的思考若无工具调用，交给下游"只想不做"救回转成行动。
+    if (!response.content.trim() && rawContent.trim()) {
+      const inner = rawContent.match(/<think(?:ing)?>([\s\S]*?)(?:<\/think(?:ing)?>|$)/i)?.[1]?.trim();
+      if (inner) response.content = inner;
+    }
+    // 空重试兜底（generateTavernProse 同款语义）：raw 非空但清洗后归空、且没有任何工具调用，
+    // 说明整跑只有脚手架/应答白（compare4 失败模式）——无思考也无行动，这个 tick 等于白烧。
+    // provider 层重试只兜 raw 全空；这一类要清洗后才暴露，就地原样重打一次（不叠加循环）。
+    if (!response.content.trim() && response.toolCalls.length === 0 && rawContent.trim()) {
+      console.warn(`[${card.id}] 🔁 [tavern-retry] 清洗后归空且无工具调用，原样重试一次`);
+      try {
+        const retried = await provider.chat(request, modelId);
+        retried.content = cleanTavernOutput(retried.content);
+        response = retried;
+      } catch (err: any) {
+        console.warn(`[${card.id}] [tavern-retry] 重试失败:`, err?.message ?? err);
+      }
+    }
+  }
   const thought = response.content;
 
   // 私有通道（七反转④）：third 档从决策文本解析两层动机行。
@@ -303,7 +329,9 @@ export async function runAgentTick(params: {
       const nudge = await provider.chat({ ...request, messages: nudgeMessages, prefill: undefined }, modelId);
       if (nudge.toolCalls.length > 0) {
         console.log(`[${card.id}] 💬 只想不做救回 → ${nudge.toolCalls[0]!.name}`);
-        response = nudge;
+        response = process.env.ANIMA_PROMPT_ENGINE === "tavern"
+          ? { ...nudge, content: cleanTavernOutput(nudge.content) }
+          : nudge;
       }
     } catch (err: any) {
       console.warn(`[${card.id}] 只想不做救回失败:`, err?.message ?? err);

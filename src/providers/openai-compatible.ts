@@ -94,7 +94,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
   }
 
-  async chat(request: LLMRequest, modelId?: string): Promise<LLMResponse> {
+  async chat(request: LLMRequest, modelId?: string, _isEmptyRetry = false): Promise<LLMResponse> {
     const model = modelId ?? this._defaultModel;
 
     // request.system 为空时不前置空 system 消息——酒馆模式把 system 块内联在 request.messages 里，
@@ -232,6 +232,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
       name: tc.function.name,
       arguments: JSON.parse(tc.function.arguments),
     }));
+
+    // 空返回重试：DeepSeek 偶发返回 200 但 content 空且无工具调用（非长度截断）——重试一次，
+    // 避免真机跑对话时"角色一句话不说、这个 tick 白费"。_isEmptyRetry 锁死递归深度为 1。
+    if (content.trim() === "" && toolCalls.length === 0 && choice.finish_reason !== "length" && !_isEmptyRetry) {
+      console.warn(`[LLM retry] 空返回（200 但 content 空 + 无工具调用），重试一次`);
+      return this.chat(request, modelId, true);
+    }
 
     return {
       content,
