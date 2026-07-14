@@ -3,6 +3,56 @@
 > 每次有实质进展时更新。记录当前进度和下次继续的入口，不是日志。
 > （旧 STATUS.md 因 gitignore 未入仓而丢失，本文件 2026-07-03 重建，开发文档已全部入仓）
 
+## 当前状态（2026-07-15）
+
+### 酒馆栈生产收尾（07-13 两条遗留全收）+ 全链半日 PASS + r4 起跑 · 判决见 [logs/nsfw-verify/VERDICT.md](./logs/nsfw-verify/VERDICT.md)
+
+**定位口径（用户确认）**：anima = 模拟底盘（机制牙齿）+ 酒馆级破限表达层（TGbreak，装配=ST）+ 传播属性剧本包（kira）；
+活人感涌现押注已证伪（范式归 Crucible），是打磨维度不是赌注。破限上线的本意 = 砸 kira「对齐层最后一格硬墙」。
+
+1. **TGbreak COT 治本（预设侧）**：根因比 07-13 记载更准——产生【Step】的 COT 块本就 off，但 `法则` 残留
+   "必须包含3个步骤模块"命令（格式定义没了命令还在=偶发脑补）。手术 7 处：命令改 `<content>` 交付契约、
+   悬空 `</draft></writing_process>` 改交付桥接、`<!-- 2.正文 -->` 标记统一、关掉摘要/平行事件/咪咪吐槽尾巴块
+   （ST 前端专属，anima 里纯烧 output token；纯正文 system 10563→9310 字节）
+2. **空重试兜底进生产（agent-loop 一处接线两路覆盖）**：清洗后归空+无工具调用+raw 非空 → 原样重试一次
+   （`🔁 [tavern-retry]`）；另加剥壳取芯——决策独白被包进 `<thinking>` 时取内文当思考本体
+3. **验证**：probe-content 3/3（`<content>` 采用 3/3、Step 0/3、hard 14-19 不掉档）；**全链半日 live sim
+   （tavern+strong+third+deepseek-chat = r4 同款组合）PASS**——零 retry 触发、零截断、**缓存 72.2%**（legacy
+   基线 66-67%，tavern 预设栈反而抬高稳定前缀）、负 valence 11:2、694 单测绿
+4. **工作树全部提交、分支合 main**（7a396c6 装配对齐 + 0187d5c 治本接线 + merge）
+
+**r4 决定版已起跑（screen kira7）· 口径 = tavern 引擎下的新基线**：与 r2 是单变量对照（模型同 deepseek-chat、
+只换提示词引擎）；.env `ANIMA_PROMPT_ENGINE=tavern` 生效于全程，不追求与 legacy r2 严格可比。看点不变
+（STATUS 07-10 节）+ 新增：light 在破限栈下敢不敢写真实镇民（kira_strike 硬墙的正面测试）、tavern 长程缓存/
+retry 触发率。跑完看 `logs/sim-kira-7day-r4-console.log` + SimReporter 产物。
+
+## 当前状态（2026-07-13）
+
+### 酒馆 NSFW 装配对齐 ST + 破限打磨（三轮 live）· TGbreak PASS · 判决见 [logs/nsfw-verify/VERDICT.md](./logs/nsfw-verify/VERDICT.md)
+
+用户反馈「TG 预设在 ST 里可用，问题在我们的装配」——查实并根治。脚本进仓 `scripts/compare-nsfw-tavern.ts`（compare3/4/5 三轮，
+每轮 6 真 API 调用）。
+
+**根因 = bridge 消息顺序错**：真 ST 用户消息在 chatHistory 位、预设收口机关（催写块/`{{lastUserMessage}}`重注入/末尾
+assistant 预填）压轴殿后；旧 bridge 把场景放最末尾 → 机关全失效 → "好的我会写"应答失败。**三处修复**：
+1. 纯正文场景改进 chatHistory marker 位（`anima-bridge.ts`），预设殿后块重新压轴。决策路径一字节不动（缓存纪律回归过）
+2. 补齐 ST 变量宏（`assembler.ts`）：`{{setvar/getvar/addvar/trim/lastUserMessage//注释}}` 此前原样漏进 prompt，
+   明月秋青一大半机关靠这些；跨块共享变量环境按序求值
+3. 清洗后空重试（`generateTavernProse` 生产入口）+ `cleanTavernOutput` 补剥全部泄漏变体
+   （【Step】/markdown 脚手架/`<draft_notes>`/`<details>`/应答开场白/裸`[metacognition]`）
+
+**结果（compare5，各 3 跑）**：**TGbreak-anima（=TG 预设）3/3 全成、露骨 hard 19–28、零泄漏零失败**（compare4 时是 6/0）——
+ST 对齐是决定性单点。明月秋青备选：直出 ~2/3（思考完 stop 的 chat-prefill 中断，非破限），走 `generateTavernProse` 重试
+兜到 ~89%，质感好但吃重试成本。**默认预设保持 TGbreak-anima**。694 单测绿。
+
+**收官对比（compare6）——同 TG 预设 我们bridge vs 真ST装配**：装配结构 diff **逐块逐字节完全一致**（3 消息全 ✓，
+system 10563 字节），行为各 3 跑分布无差异（both 3/3、hard 均 20 vs 17、字均 1680 vs 1473、0 泄漏 0 淡出）。
+**结论：同 TG 预设下「我们的 = 酒馆」**——不是行为相似，是喂给模型的输入逐字节相同。「和酒馆对齐」在装配层完全达成。
+
+**下次入口**：① 全链验证——本轮只测 prompt 装配+单次 API，`generateTavernProse` 尚未接进生产 `conversation-mode.ts`/`agent-loop.ts`
+调用点（当前生产走 `cleanTavernOutput` 无重试），要接上才享空重试兜底；② 治本项：TGbreak COT 脚手架偶发触发会烧 output token
+（生产 cap=1024 下疼），根治在预设侧强制 `<content>` 交付区或关 COT 块，未做。
+
 ## 当前状态（2026-07-12）
 
 ### 全面对齐酒馆：破限预设栈设为生效路径 + 露骨开满 + 对话路径补接 · A/B live PASS
