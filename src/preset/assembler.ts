@@ -48,12 +48,46 @@ export interface AssembleOptions {
 
 const MACRO_RE = /\{\{([a-zA-Z_][\w]*)\}\}/g;
 
-/** 替换 {{key}} 宏；键大小写不敏感；未知宏原样保留（不静默吞内容） */
-export function substituteMacros(text: string, macros: Record<string, string> = {}): string {
+/** 跨块共享的宏求值环境（ST 变量宏：setvar 写入、getvar 读取，按消息顺序生效） */
+export interface MacroEnv {
+  vars: Map<string, string>;
+  /** {{lastUserMessage}} 的替换值（ST：聊天记录里最后一条用户消息） */
+  lastUserMessage?: string;
+}
+
+/**
+ * 替换 {{key}} 宏；键大小写不敏感；未知宏原样保留（不静默吞内容）。
+ * 传入 env 时额外支持 ST 变量宏（明月秋青类预设的机关依赖这些）：
+ *   {{// 注释}} 删除 · {{setvar::n::v}}/{{addvar::n::v}} 写变量渲染为空 ·
+ *   {{getvar::n}} 读变量 · {{lastUserMessage}} · {{trim}} 吞并周围空白。
+ */
+export function substituteMacros(text: string, macros: Record<string, string> = {}, env?: MacroEnv): string {
   if (!text) return text;
+  let s = text;
+  if (env) {
+    // 注释宏先删（内容不进 prompt）
+    s = s.replace(/\{\{\/\/[\s\S]*?\}\}/g, "");
+    // setvar/addvar：写入环境，渲染为空（值取到最近的 }}，ST 预设实测不嵌套宏于值内）
+    s = s.replace(/\{\{(setvar|addvar)::([^:{}]+)::([\s\S]*?)\}\}/gi, (_w, op: string, name: string, value: string) => {
+      const key = name.trim().toLowerCase();
+      if (op.toLowerCase() === "addvar") {
+        const prev = env.vars.get(key) ?? "";
+        const a = Number(prev), b = Number(value);
+        env.vars.set(key, prev !== "" && !Number.isNaN(a) && !Number.isNaN(b) ? String(a + b) : prev + value);
+      } else {
+        env.vars.set(key, value);
+      }
+      return "";
+    });
+    // getvar：未定义渲染为空（ST 语义），不原样保留
+    s = s.replace(/\{\{getvar::([^:{}]+)\}\}/gi, (_w, name: string) => env.vars.get(name.trim().toLowerCase()) ?? "");
+    s = s.replace(/\{\{lastUserMessage\}\}/gi, env.lastUserMessage ?? "");
+    // trim：吞掉宏两侧的空白/换行
+    s = s.replace(/[^\S\n]*\n?[^\S\n]*\{\{trim\}\}[^\S\n]*\n?[^\S\n]*/gi, "");
+  }
   const lower: Record<string, string> = {};
   for (const [k, v] of Object.entries(macros)) lower[k.toLowerCase()] = v;
-  return text.replace(MACRO_RE, (whole, key: string) => {
+  return s.replace(MACRO_RE, (whole, key: string) => {
     const v = lower[key.toLowerCase()];
     return v !== undefined ? v : whole;
   });
@@ -93,6 +127,11 @@ export function assembleMessages(preset: TavernPreset, opts: AssembleOptions = {
   const markers = opts.markers ?? {};
   const macros = opts.macros ?? {};
   const dropEmpty = opts.dropEmpty ?? true;
+  // 变量宏环境跨块共享（前面块 setvar、后面块 getvar，按消息顺序生效，对齐 ST）
+  const env: MacroEnv = {
+    vars: new Map(),
+    lastUserMessage: [...(markers.chatHistory ?? [])].reverse().find((m) => m.role === "user")?.content,
+  };
 
   const out: TavernMessage[] = [];
   const push = (role: PromptRole, content: string | undefined) => {
@@ -137,7 +176,7 @@ export function assembleMessages(preset: TavernPreset, opts: AssembleOptions = {
           break;
       }
     } else {
-      push(block.role, substituteMacros(block.content ?? "", macros));
+      push(block.role, substituteMacros(block.content ?? "", macros, env));
     }
   }
 

@@ -50,6 +50,55 @@ describe("宏替换", () => {
   });
 });
 
+describe("ST 变量宏（明月秋青类预设的机关）", () => {
+  const env = () => ({ vars: new Map<string, string>(), lastUserMessage: "深夜卧室的场景" });
+  it("{{setvar}} 写入渲染为空，后续 {{getvar}} 读到", () => {
+    const e = env();
+    expect(substituteMacros("{{setvar::POV_rules::第三人称}}", {}, e)).toBe("");
+    expect(substituteMacros("规则：{{getvar::POV_rules}}", {}, e)).toBe("规则：第三人称");
+  });
+  it("{{addvar}} 字符串拼接 + 数字相加", () => {
+    const e = env();
+    substituteMacros("{{setvar::note::甲}}{{addvar::note::乙}}", {}, e);
+    expect(e.vars.get("note")).toBe("甲乙");
+    substituteMacros("{{setvar::n::1}}{{addvar::n::2}}", {}, e);
+    expect(e.vars.get("n")).toBe("3");
+  });
+  it("未定义 {{getvar}} 渲染为空（不留字面量）", () => {
+    expect(substituteMacros("A{{getvar::nothing}}B", {}, env())).toBe("AB");
+  });
+  it("{{lastUserMessage}} 注入 + {{//注释}} 删除 + {{trim}} 吞空白", () => {
+    const e = env();
+    expect(substituteMacros("从此处开始\n{{lastUserMessage}}", {}, e)).toBe("从此处开始\n深夜卧室的场景");
+    expect(substituteMacros("{{//这是注释}}正文", {}, e)).toBe("正文");
+    expect(substituteMacros("上文 \n {{trim}} \n 下文", {}, e)).toBe("上文下文");
+  });
+  it("无 env 时行为不变（变量宏原样保留，向后兼容）", () => {
+    expect(substituteMacros("{{getvar::x}}", {})).toBe("{{getvar::x}}");
+  });
+  it("assembleMessages 跨块生效：前块 setvar、后块 getvar，lastUserMessage 取 chatHistory 末条用户消息", () => {
+    const preset = makePreset({
+      prompts: [
+        { identifier: "setV", name: "set", role: "system", marker: false, content: "{{setvar::pov::第三人称}}规则区" },
+        { identifier: "chatHistory", name: "History", role: "system", marker: true },
+        { identifier: "getV", name: "get", role: "system", marker: false, content: "视角={{getvar::pov}}｜输入={{lastUserMessage}}" },
+      ],
+      prompt_order: [
+        {
+          character_id: 100001,
+          order: [
+            { identifier: "setV", enabled: true },
+            { identifier: "chatHistory", enabled: true },
+            { identifier: "getV", enabled: true },
+          ],
+        },
+      ],
+    });
+    const msgs = assembleMessages(preset, { markers: { chatHistory: [{ role: "user", content: "继续写" }] } });
+    expect(msgs.map((m) => m.content)).toEqual(["规则区", "继续写", "视角=第三人称｜输入=继续写"]);
+  });
+});
+
 describe("相邻 system 合并", () => {
   it("只合并相邻 system，跨 user 不合并", () => {
     const msgs: TavernMessage[] = [

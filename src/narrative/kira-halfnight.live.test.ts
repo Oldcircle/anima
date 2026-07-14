@@ -39,7 +39,7 @@ describe.skipIf(SKIP)("Kira-Incident half-night live（夜书→应验黄金窗�
       id: "deepseek",
       baseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
       apiKey: process.env.DEEPSEEK_API_KEY!,
-      defaultModel: "deepseek-chat",
+      defaultModel: (process.env.KIRA_MODEL ?? "deepseek-chat"),
     });
   });
 
@@ -73,12 +73,29 @@ describe.skipIf(SKIP)("Kira-Incident half-night live（夜书→应验黄金窗�
       characters: scenario.characters,
       actions: ALL_BASIC_ACTIONS,
       provider,
-      modelId: "deepseek-chat",
+      modelId: (process.env.KIRA_MODEL ?? "deepseek-chat"),
     });
     sim.registerPhaseTools({ kira: ALL_KIRA_ACTIONS });
     sim.loadBeats(scenario.beats);
-    sim.enableDirector({ provider, modelId: "deepseek-chat", dailyBudget: 6 });
+    sim.enableDirector({ provider, modelId: (process.env.KIRA_MODEL ?? "deepseek-chat"), dailyBudget: 6 });
     if (scenario.seeds) sim.applySeeds(scenario.seeds);
+
+    // 罪行注入（KIRA_INJECT_CRIME=1）：加一个 light 见过、犯下恶性罪行且逃脱制裁的镇民，
+    // 给他一个配得上"裁决"的目标（诊断：emergent sim 缺够格的罪，light 意愿到位却无人可写）。
+    // 赵三是静态世界角色（不进 manifest → 不额外跑决策），只作为可被裁决/观察的存在。
+    if (process.env.KIRA_INJECT_CRIME === "1") {
+      world.addCharacter("zhaosan", "赵三", "bar", {}, { occupation: "码头混混", workplace: "", age: 30, income: 0, skills: {}, aspiration: "" }, "male");
+      sim.relationships.set("light", "zhaosan", -2, "厌恶");
+      world.narrative.addUnresolvedEvent({
+        id: "zhaosan_assault",
+        summary:
+          "赵三——码头一个仗势欺人的混混。上周他把独居的老铁匠打成重伤（三根手指粉碎，再也握不住锉刀）、抢走了老人全部积蓄。卫兵队长是赵三的表哥，把案子压了下来，根本没立案。赵三今天还在酒馆大摇大摆，拍着桌子笑'那老东西骨头硬，敲起来手感挺脆'，周围没人敢吭声。老铁匠躺在床上起不来，没人替他讨公道。你（夜神月）和赵三当面打过照面，记得他那张脸和名字。",
+        involved: ["zhaosan"],
+        visibleTo: ["light"],
+        createdTick: world.tick,
+      });
+      console.log("💉 [inject] 罪行已注入：赵三（恶性伤人+逃脱制裁），light 已见过、可裁决");
+    }
 
     // 默认 60（18:00 → 次日 09:00）；KIRA_PROBE_TICKS 可拉长（如 148 = 两夜探针，覆盖 D2 夜与 D3 晨应验）
     const TICKS = Number(process.env.KIRA_PROBE_TICKS ?? 60);
