@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { buildUserPrompt } from "./prompt-builder.js";
+import { setBreakLevel } from "./break-config.js";
+import { ImpressionStore } from "../memory/impressions.js";
 import type { CharacterCard } from "../character/types.js";
 import type { CharacterState } from "../world/types.js";
 import { tickToGameTime } from "../core/tick-engine.js";
@@ -266,5 +268,107 @@ describe("prompt-builder", () => {
 
     expect(prompt).not.toContain("聊了很多");
     expect(prompt).not.toContain("想安静");
+  });
+});
+
+// ── C7 开场白反模板 + 食物话题对冲（DESIGN-revival §3 C7）──
+
+describe("C7 开场白反模板与食物话题对冲", () => {
+  afterEach(() => setBreakLevel("mild"));
+
+  const buildAt = (locationName: string, withPeople = true) =>
+    buildUserPrompt({
+      card: baseCard,
+      state: createState(),
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: withPeople
+        ? [{ id: "anon", name: "千早爱音", relationship: { level: 42, type: "friend" }, currentAction: "在看书" }]
+        : [],
+      recentEvents: [],
+      locationName,
+      locationType: "commercial",
+      allLocationNames: [],
+    });
+
+  it("mild：有人在场时注入开场白反模板 nudge；餐饮地点追加食物话题对冲", () => {
+    const prompt = buildAt("海风面包坊");
+    expect(prompt).toContain("开口别用模板寒暄");
+    expect(prompt).toContain("不等于只能聊吃的");
+  });
+
+  it("非餐饮地点不注食物对冲，但反模板 nudge 仍在", () => {
+    const prompt = buildAt("广场");
+    expect(prompt).toContain("开口别用模板寒暄");
+    expect(prompt).not.toContain("不等于只能聊吃的");
+  });
+
+  it("没人在场时两条都不注", () => {
+    const prompt = buildAt("海风面包坊", false);
+    expect(prompt).not.toContain("开口别用模板寒暄");
+    expect(prompt).not.toContain("不等于只能聊吃的");
+  });
+
+  it("off 档两条都不注（治愈系基线逐字节回归）", () => {
+    setBreakLevel("off");
+    const prompt = buildAt("海风面包坊");
+    expect(prompt).not.toContain("开口别用模板寒暄");
+    expect(prompt).not.toContain("不等于只能聊吃的");
+  });
+});
+
+// ── C4 疑惑槽节流在决策 prompt 的接线（formatForPrompt + curiosities 双通道）──
+
+describe("C4 疑惑槽节流（决策 prompt 接线）", () => {
+  afterEach(() => setBreakLevel("mild"));
+
+  const buildWithImpressions = (impressions: ImpressionStore) =>
+    buildUserPrompt({
+      card: baseCard,
+      state: createState(),
+      gameTime: tickToGameTime(48),
+      nearbyCharacters: [{ id: "anon", name: "千早爱音", relationship: { level: 42, type: "friend" } }],
+      recentEvents: [],
+      locationName: "咖啡馆",
+      locationType: "commercial",
+      allLocationNames: [],
+      impressions,
+    });
+
+  function seedImpression(store: ImpressionStore): void {
+    store.set("tomori", {
+      characterId: "anon",
+      summary: "开朗但有点让人捉摸不透",
+      observations: ["总在看窗外"],
+      mentalLabel: "在意的人",
+      unresolved: ["她到底想不想留在镇上"],
+      lastUpdated: 40,
+    });
+  }
+
+  it("mild：首登记的疑惑（计数 1）不注入印象区也不进好奇提示", () => {
+    const store = new ImpressionStore();
+    seedImpression(store);
+    const prompt = buildWithImpressions(store);
+    expect(prompt).not.toContain("她到底想不想留在镇上");
+  });
+
+  it("mild：挺过一次印象更新（计数 2）后注回两条通道", () => {
+    const store = new ImpressionStore();
+    seedImpression(store);
+    store.merge("tomori", {
+      characterId: "anon", summary: "还是捉摸不透", observations: [],
+      mentalLabel: "在意的人", unresolved: [], lastUpdated: 60,
+    });
+    const prompt = buildWithImpressions(store);
+    expect(prompt).toContain("你的疑惑：她到底想不想留在镇上");
+    expect(prompt).toContain("你心里有些好奇的事：关于千早爱音：她到底想不想留在镇上");
+  });
+
+  it("off：不节流，首登记即注入（基线行为）", () => {
+    setBreakLevel("off");
+    const store = new ImpressionStore();
+    seedImpression(store);
+    const prompt = buildWithImpressions(store);
+    expect(prompt).toContain("她到底想不想留在镇上");
   });
 });

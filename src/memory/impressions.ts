@@ -24,8 +24,36 @@ export interface CharacterImpression {
    * 纯叙事可见，不直接改关系数值（关系数值由 valence −3..+3 负责）。
    */
   frictions?: string[];
+  /**
+   * C4 疑惑槽节流（DESIGN-revival §3）：每条 unresolved 的"未解次数"——该疑惑
+   * 经历过多少次印象更新仍未解（首次登记 = 1，之后每次 merge 存活 +1）。
+   * 未解 ≥2 次才注回 prompt，切断"模型读到自己上轮的疑惑→本轮接着试探"的反馈回路。
+   * 随档结构用 Record 不用 Map（§4.5）；旧档缺此字段时读档 normalize 为成熟值。
+   */
+  unresolvedCounts?: Record<string, number>;
   /** 最后更新的 tick */
   lastUpdated: number;
+}
+
+/**
+ * C4 疑惑槽节流：只取"未解 ≥ minCount 次"的疑惑注回 prompt。
+ * minCount ≤ 1 = 不节流（off 档治愈系基线行为）；缺计数的条目视为已成熟（旧档兼容）。
+ */
+export function filterMatureUnresolved(imp: CharacterImpression, minCount: number): string[] {
+  if (minCount <= 1) return imp.unresolved;
+  return imp.unresolved.filter((q) => (imp.unresolvedCounts?.[q] ?? minCount) >= minCount);
+}
+
+/** 把计数 Record 归一到当前 unresolved 列表：只留现存疑惑的计数，缺省 defaultCount */
+function normalizeCounts(
+  unresolved: string[],
+  counts: Record<string, number> | undefined,
+  defaultCount: number,
+): Record<string, number> | undefined {
+  if (unresolved.length === 0) return undefined;
+  const out: Record<string, number> = {};
+  for (const q of unresolved) out[q] = counts?.[q] ?? defaultCount;
+  return out;
 }
 
 /**
@@ -61,6 +89,9 @@ export class ImpressionStore {
       impression.frictions = impression.frictions.slice(-3);
     }
 
+    // C4：疑惑计数归一——只保留现存疑惑的计数，缺省 1（首次登记）
+    impression.unresolvedCounts = normalizeCounts(impression.unresolved, impression.unresolvedCounts, 1);
+
     this._data.set(key, impression);
   }
 
@@ -87,15 +118,22 @@ export class ImpressionStore {
       existing.observations = existing.observations.slice(-5);
     }
 
-    // unresolved 追加新的，保留最近 3 条
+    // unresolved 追加新的，保留最近 3 条。
+    // C4 疑惑计数：存量疑惑又挺过一次印象更新仍未解 → 次数 +1；新登记 = 1
+    const counts: Record<string, number> = {};
+    for (const q of existing.unresolved) {
+      counts[q] = (existing.unresolvedCounts?.[q] ?? 1) + 1;
+    }
     for (const q of update.unresolved) {
       if (!existing.unresolved.includes(q)) {
         existing.unresolved.push(q);
+        counts[q] = update.unresolvedCounts?.[q] ?? 1;
       }
     }
     if (existing.unresolved.length > 3) {
       existing.unresolved = existing.unresolved.slice(-3);
     }
+    existing.unresolvedCounts = normalizeCounts(existing.unresolved, counts, 1);
 
     // frictions 追加新的，保留最近 3 条（对称于 unresolved，让积怨能累积成弧线）
     if (update.frictions && update.frictions.length > 0) {
@@ -122,8 +160,12 @@ export class ImpressionStore {
     return results;
   }
 
-  /** 格式化印象为 prompt 文本 */
-  formatForPrompt(observerId: string, targetId: string): string | undefined {
+  /**
+   * 格式化印象为 prompt 文本。
+   * opts.unresolvedMinCount：C4 疑惑槽节流——未解 ≥ 该次数的疑惑才注回
+   * （调用方用 break-config.unresolvedThrottleMinCount() 取档位值；缺省 1 = 不节流基线）。
+   */
+  formatForPrompt(observerId: string, targetId: string, opts?: { unresolvedMinCount?: number }): string | undefined {
     const imp = this.get(observerId, targetId);
     if (!imp) return undefined;
 
@@ -143,8 +185,9 @@ export class ImpressionStore {
       parts.push(`你对TA的疙瘩：${imp.frictions.join("；")}`);
     }
 
-    if (imp.unresolved.length > 0) {
-      parts.push(`你的疑惑：${imp.unresolved.join("；")}`);
+    const injectable = filterMatureUnresolved(imp, opts?.unresolvedMinCount ?? 1);
+    if (injectable.length > 0) {
+      parts.push(`你的疑惑：${injectable.join("；")}`);
     }
 
     return parts.join("\n");

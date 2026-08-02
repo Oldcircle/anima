@@ -24,7 +24,7 @@ import { getAtmosphereText } from "../world/location-loader.js";
 import { formatBodyFeelings } from "../world/need-definitions.js";
 import { formatMoodlets } from "../world/moodlets.js";
 import { formatInventory } from "../world/item-registry.js";
-import { conversationSelfCheck } from "./break-config.js";
+import { conversationSelfCheck, foodTopicHedge } from "./break-config.js";
 
 // ── 对话追踪 ──
 
@@ -154,6 +154,12 @@ export interface ConversationPromptParams {
   sharedHistory?: string;
   /** D3: director 注入的"想聊的话题" */
   wantToDiscuss?: Array<{ topic: string; urgency: "low" | "med" | "high"; targetChar?: string }>;
+  /**
+   * C2 对话所求（conversation-desire.computeConversationDesire 算出的 1 行）。
+   * off 档与来源判定收敛在 conversation-desire.ts；此处只负责渲染在尾部此刻区
+   * （对话记录之后 = 缓存分歧点之后，不砸对话桶前缀）。
+   */
+  conversationDesire?: string;
 }
 
 /**
@@ -255,6 +261,10 @@ ${conversationSelfCheck(partnerCard.name)}先用2-3句话写出你的内心活�
 - **做自己**：不要为了有趣而说话。如果你的角色此刻没什么想说的，那就不说。
 - **不要重复**：看看下面的 ## 对话记录，**严禁**说你已经说过的话或问你已经问过的问题。如果对方一直在重复同样的追问，你也不能用同样的话回应——要么换个角度（认错/反问/讲细节），要么沉默/离开。如果你发现自己又想说之前那句话，请改用 sit / journal / go_to 等行为代替。`);
 
+  // C7 食物话题对冲：餐饮类地点的对话别被菜单占满（地点在对话内不变，不抖前缀缓存；off = ""）
+  const hedge = foodTopicHedge(locationName);
+  if (hedge) parts.push(`\n${hedge}`);
+
   // 4. 完整对话历史（含身体语言）
   if (history.length > 0) {
     parts.push(`\n## 对话记录`);
@@ -292,6 +302,11 @@ ${conversationSelfCheck(partnerCard.name)}先用2-3句话写出你的内心活�
     parts.push(`⚠️ 你饿得胃在抽。满脑子都是吃的，聊什么都心不在焉，可以直接打断话题去找吃的。`);
   }
   if (params.recentMemories) parts.push(`最近的经历：\n${params.recentMemories}`);
+
+  // C2 对话所求：此刻区 1 行（位于 append-only 对话记录=缓存分歧点之后）
+  if (params.conversationDesire) {
+    parts.push(`\n${params.conversationDesire}`);
+  }
 
   // 4b. D3: seed_topic 注入的"你心里有些话想说"
   if (params.wantToDiscuss && params.wantToDiscuss.length > 0) {
@@ -353,6 +368,8 @@ export function buildConversationRequest(params: {
   colleagueNames?: string[];
   /** D3: director 注入的"想聊的话题" */
   wantToDiscuss?: Array<{ topic: string; urgency: "low" | "med" | "high"; targetChar?: string }>;
+  /** C2 对话所求（此刻区 1 行） */
+  conversationDesire?: string;
 }): LLMRequest {
   const systemPrompt = buildSystemPrompt(params.card, params.workplaceName, params.colleagueNames);
   const userPrompt = buildConversationPrompt({
@@ -370,6 +387,7 @@ export function buildConversationRequest(params: {
     recentMemories: params.recentMemories,
     sharedHistory: params.sharedHistory,
     wantToDiscuss: params.wantToDiscuss,
+    conversationDesire: params.conversationDesire,
   });
 
   const prefill = `好的，我已理解${params.card.name}这个角色。我将完全以这个角色的性格和说话方式来回应：\n`;

@@ -84,6 +84,7 @@ export class AnimaDB {
         mental_label TEXT DEFAULT '',
         unresolved TEXT DEFAULT '[]',
         frictions TEXT,
+        unresolved_counts TEXT,
         last_updated INTEGER DEFAULT 0,
         PRIMARY KEY (observer_id, target_id)
       );
@@ -149,6 +150,10 @@ export class AnimaDB {
     );
     if (!impCols.has("frictions")) {
       this.db.exec("ALTER TABLE impressions ADD COLUMN frictions TEXT");
+    }
+    // C4 疑惑槽节流：老档 impressions 表补 unresolved_counts 列（未解次数 Record）
+    if (!impCols.has("unresolved_counts")) {
+      this.db.exec("ALTER TABLE impressions ADD COLUMN unresolved_counts TEXT");
     }
 
     // 爽约派生计数：老档 appointments 表补 missed_by 列（单方爽约的缺席者）
@@ -315,33 +320,48 @@ export class AnimaDB {
 
   saveImpression(observerId: string, imp: {
     characterId: string; summary: string; observations: string[];
-    mentalLabel: string; unresolved: string[]; frictions?: string[]; lastUpdated: number;
+    mentalLabel: string; unresolved: string[]; frictions?: string[];
+    unresolvedCounts?: Record<string, number>; lastUpdated: number;
   }) {
     this.db.prepare(`
-      INSERT OR REPLACE INTO impressions (observer_id, target_id, summary, observations, mental_label, unresolved, frictions, last_updated)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO impressions (observer_id, target_id, summary, observations, mental_label, unresolved, frictions, unresolved_counts, last_updated)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       observerId, imp.characterId, imp.summary, JSON.stringify(imp.observations), imp.mentalLabel,
       JSON.stringify(imp.unresolved),
       imp.frictions && imp.frictions.length > 0 ? JSON.stringify(imp.frictions) : null,
+      imp.unresolvedCounts && Object.keys(imp.unresolvedCounts).length > 0 ? JSON.stringify(imp.unresolvedCounts) : null,
       imp.lastUpdated,
     );
   }
 
-  loadImpressions(): Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; frictions?: string[]; lastUpdated: number } }> {
+  loadImpressions(): Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; frictions?: string[]; unresolvedCounts?: Record<string, number>; lastUpdated: number } }> {
     const rows = this.db.prepare("SELECT * FROM impressions").all() as any[];
-    return rows.map((r) => ({
-      observerId: r.observer_id,
-      impression: {
-        characterId: r.target_id,
-        summary: r.summary,
-        observations: JSON.parse(r.observations),
-        mentalLabel: r.mental_label,
-        unresolved: JSON.parse(r.unresolved),
-        frictions: r.frictions ? JSON.parse(r.frictions) : undefined,
-        lastUpdated: r.last_updated,
-      },
-    }));
+    return rows.map((r) => {
+      const unresolved: string[] = JSON.parse(r.unresolved);
+      // C4 旧档 normalize：无计数（老档/老行）的疑惑视为已成熟（=2）——
+      // 老档的疑惑本来就在被注入，读档后不该突然消失（行为保持）；新字段一律 Record。
+      let counts: Record<string, number> | undefined;
+      if (r.unresolved_counts) {
+        try { counts = JSON.parse(r.unresolved_counts); } catch { counts = undefined; }
+      }
+      const unresolvedCounts = unresolved.length > 0
+        ? Object.fromEntries(unresolved.map((q) => [q, counts?.[q] ?? 2]))
+        : undefined;
+      return {
+        observerId: r.observer_id,
+        impression: {
+          characterId: r.target_id,
+          summary: r.summary,
+          observations: JSON.parse(r.observations),
+          mentalLabel: r.mental_label,
+          unresolved,
+          frictions: r.frictions ? JSON.parse(r.frictions) : undefined,
+          unresolvedCounts,
+          lastUpdated: r.last_updated,
+        },
+      };
+    });
   }
 
   // --- 长期记忆 ---
@@ -406,7 +426,7 @@ export class AnimaDB {
     relationships: any[];
     memories: Array<{ characterId: string; tick: number; type: string; content: string; importance: number }>;
     events: any[];
-    impressions?: Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; frictions?: string[]; lastUpdated: number } }>;
+    impressions?: Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; frictions?: string[]; unresolvedCounts?: Record<string, number>; lastUpdated: number } }>;
     longTermMemories?: Array<{ characterId: string; tick: number; type: string; content: string; importance: number; relatedCharacterId?: string }>;
     appointments?: import("../world/types.js").Appointment[];
     narrativeJson?: string;

@@ -246,6 +246,26 @@ describe("PressureGraph.update（三路输出）", () => {
     expect(world.narrative.getCharacter("tomori").pressure).toBe(0);
   });
 
+  it("getTopPairFor：返回该角色自己压力最高的对（C2 敌对所求限额判据）", () => {
+    const world = makeWorld();
+    const relationships = new RelationshipManager();
+    const impressions = new ImpressionStore();
+    const graph = new PressureGraph();
+
+    // tomori↔anon 一条疙瘩；tomori↔soyo 三条疙瘩（更高压）
+    friction(impressions, "tomori", "anon", ["小疙瘩"]);
+    friction(impressions, "soyo", "tomori", ["疙瘩1", "疙瘩2", "疙瘩3"]);
+    graph.update({ world, relationships, impressions, tick: 0 });
+
+    const top = graph.getTopPairFor("tomori")!;
+    expect([top.a, top.b].sort()).toEqual(["soyo", "tomori"]);
+    // anon 的 top-1 是它唯一的对
+    const anonTop = graph.getTopPairFor("anon")!;
+    expect([anonTop.a, anonTop.b].sort()).toEqual(["anon", "tomori"]);
+    // 没有任何边的角色 → undefined
+    expect(graph.getTopPairFor("nobody")).toBeUndefined();
+  });
+
   it("热点摘要：有热点出白描、无热点空串", () => {
     const world = makeWorld();
     const relationships = new RelationshipManager();

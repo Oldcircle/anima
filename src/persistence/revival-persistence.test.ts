@@ -144,6 +144,73 @@ describe("frictions 持久化", () => {
   });
 });
 
+describe("C4 unresolvedCounts 随档", () => {
+  afterEach(cleanup);
+
+  it("unresolved_counts round-trip（Record 序列化往返不丢）", () => {
+    const db = new AnimaDB(TEST_DB);
+    db.saveImpression("tomori", {
+      characterId: "anon",
+      summary: "还看不透",
+      observations: [],
+      mentalLabel: "待了解",
+      unresolved: ["她晚上都去哪了"],
+      unresolvedCounts: { "她晚上都去哪了": 3 },
+      lastUpdated: 48,
+    });
+    const imps = db.loadImpressions();
+    db.close();
+    expect(imps[0]!.impression.unresolvedCounts).toEqual({ "她晚上都去哪了": 3 });
+  });
+
+  it("saveGame → loadGame 后节流计数存活（首登记的疑惑仍处于未成熟态）", () => {
+    const sim = buildSim(40);
+    sim.impressions.set("tomori", {
+      characterId: "anon",
+      summary: "有点在意",
+      observations: [],
+      mentalLabel: "在意",
+      unresolved: ["新冒出来的疑惑"],
+      lastUpdated: 40,
+    }); // set() 首登记 → 计数 1
+    saveGame(sim, TEST_DB);
+
+    const restored = buildSim(0);
+    expect(loadGame(restored, TEST_DB)).toBe(true);
+    const imp = restored.impressions.get("tomori", "anon")!;
+    expect(imp.unresolvedCounts).toEqual({ "新冒出来的疑惑": 1 });
+    // 节流口径下读档后仍不注回（计数没有因 save/load 变成熟）
+    expect(
+      restored.impressions.formatForPrompt("tomori", "anon", { unresolvedMinCount: 2 }),
+    ).not.toContain("新冒出来的疑惑");
+  });
+
+  it("老档（无 unresolved_counts 列）→ 迁移补列 + 旧疑惑 normalize 为成熟(2)，注入行为不回退", () => {
+    const raw = new Database(TEST_DB);
+    raw.exec(`
+      CREATE TABLE impressions (
+        observer_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        observations TEXT DEFAULT '[]',
+        mental_label TEXT DEFAULT '',
+        unresolved TEXT DEFAULT '[]',
+        last_updated INTEGER DEFAULT 0,
+        PRIMARY KEY (observer_id, target_id)
+      );
+      INSERT INTO impressions VALUES ('tomori', 'anon', '旧印象', '[]', '老实人', '["旧档里的疑惑"]', 10);
+    `);
+    raw.close();
+
+    const db = new AnimaDB(TEST_DB); // _migrate 补 unresolved_counts 列
+    const imps = db.loadImpressions();
+    db.close();
+    const imp = imps[0]!.impression;
+    // 旧档疑惑本来就在被注入——normalize 成熟值 2，读档后不该突然消失
+    expect(imp.unresolvedCounts).toEqual({ "旧档里的疑惑": 2 });
+  });
+});
+
 describe("爽约 missedBy 随档", () => {
   afterEach(cleanup);
 

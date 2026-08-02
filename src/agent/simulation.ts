@@ -40,7 +40,8 @@ import { updateImpressionsBidirectional } from "./impression-updater.js";
 import { shouldObserve, generateObservation, type ObservationResult } from "./observation-reasoning.js";
 import { tickMoodlets, generateNeedMoodlets, addMoodlet } from "../world/moodlets.js";
 import { APPOINTMENT_GRACE_TICKS, APPOINTMENT_EARLY_TICKS, describeAppointmentTime } from "../world/appointments.js";
-import { getBreakLevel } from "./break-config.js";
+import { getBreakLevel, unresolvedThrottleMinCount } from "./break-config.js";
+import { computeConversationDesire } from "./conversation-desire.js";
 import { FATE_EVENTS, FATE_INTERVAL_MIN_TICKS, FATE_INTERVAL_MAX_TICKS, pickFateEvent, applyFateGold } from "../world/fate-events.js";
 import { getItemDef, resolveItem, hasItem, removeFromInventory, addToInventory } from "../world/item-registry.js";
 import { generateMorningPlan } from "./morning-plan.js";
@@ -728,7 +729,8 @@ export class Simulation {
           const location = this.world.getLocation(state.locationId);
           const rel = this.relationships.get(id, activePartnerId);
           const recentMemoriesText = this.memory.formatForPrompt(id, 12, gameTime.tick);
-          const impressionText = this.impressions.formatForPrompt(id, activePartnerId);
+          // C4 疑惑槽节流：未解 ≥2 次的疑惑才注回（off 档不节流）
+          const impressionText = this.impressions.formatForPrompt(id, activePartnerId, { unresolvedMinCount: unresolvedThrottleMinCount() });
           const wpId = state.life?.workplace ?? config.card.life?.workplace;
           const wpName = wpId ? this.world.getLocation(wpId)?.name : undefined;
           conversationRequest = buildConversationRequest({
@@ -752,6 +754,18 @@ export class Simulation {
               .filter((n): n is string => !!n),
             wantToDiscuss: this.world.getWantToDiscuss(id, gameTime.tick, activePartnerId),
             sharedHistory: this._sharedHistoryFor(id, activePartnerId, gameTime.tick),
+            // C2 对话所求：此刻区 1 行（off 档/来源判定收敛在 conversation-desire.ts）
+            conversationDesire: computeConversationDesire({
+              selfId: id,
+              selfCard: config.card,
+              partnerId: activePartnerId,
+              partnerName: partnerConfig.card.name,
+              relationship: rel,
+              upcomingAppointments: this.world.getUpcomingAppointments(id, gameTime.tick),
+              pressureGraph: this.pressureGraph,
+              tick: gameTime.tick,
+              day: gameTime.day,
+            }),
           });
         }
       }
@@ -1217,7 +1231,8 @@ export class Simulation {
             const location = this.world.getLocation(state.locationId);
             const rel = this.relationships.get(id, partnerId);
             const recentMemories = this.memory.formatForPrompt(id, 12, gameTime.tick);
-            const impressionText = this.impressions.formatForPrompt(id, partnerId);
+            // C4 疑惑槽节流（与主轮一致）
+            const impressionText = this.impressions.formatForPrompt(id, partnerId, { unresolvedMinCount: unresolvedThrottleMinCount() });
             const wpId = state.life?.workplace ?? config.card.life?.workplace;
             const wpName = wpId ? this.world.getLocation(wpId)?.name : undefined;
             const conversationRequest = buildConversationRequest({
@@ -1241,6 +1256,18 @@ export class Simulation {
                 .filter((n): n is string => !!n),
               wantToDiscuss: this.world.getWantToDiscuss(id, gameTime.tick, partnerId),
               sharedHistory: this._sharedHistoryFor(id, partnerId, gameTime.tick),
+              // C2 对话所求（与主轮一致）
+              conversationDesire: computeConversationDesire({
+                selfId: id,
+                selfCard: config.card,
+                partnerId,
+                partnerName: partnerConfig.card.name,
+                relationship: rel,
+                upcomingAppointments: this.world.getUpcomingAppointments(id, gameTime.tick),
+                pressureGraph: this.pressureGraph,
+                tick: gameTime.tick,
+                day: gameTime.day,
+              }),
             });
             r = await runAgentTick({
               config,

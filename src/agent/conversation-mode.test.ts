@@ -208,6 +208,48 @@ describe("buildConversationPrompt", () => {
 
     expect(prompt).toContain('"mutsumi"');
   });
+
+  // ── C2 对话所求 + C7 食物话题对冲（DESIGN-revival §3）──
+
+  it("C2：conversationDesire 渲染在『你现在的状态』之后（此刻区 1 行）", () => {
+    const desire = "💭 见到要乐奏你心里是松快的——最近的事想跟TA分享两句。";
+    const prompt = buildConversationPrompt({
+      card: sakikoCard, state: sakikoState,
+      partnerCard: mariaCard, partnerState: mariaState,
+      history, gameTime, locationName: "咖啡馆",
+      conversationDesire: desire,
+    });
+    const stateIdx = prompt.indexOf("## 你现在的状态");
+    const desireIdx = prompt.indexOf(desire);
+    expect(desireIdx).toBeGreaterThan(stateIdx);
+    expect(desireIdx).toBeGreaterThan(prompt.indexOf("## 对话记录"));
+  });
+
+  it("C2：不传 conversationDesire 时无所求行（底噪基线）", () => {
+    const prompt = buildConversationPrompt({
+      card: sakikoCard, state: sakikoState,
+      partnerCard: mariaCard, partnerState: mariaState,
+      history, gameTime, locationName: "咖啡馆",
+    });
+    expect(prompt).not.toContain("💭");
+  });
+
+  it("C7：餐饮地点注入食物话题对冲，非餐饮地点/off 档不注", async () => {
+    const { setBreakLevel } = await import("./break-config.js");
+    try {
+      const base = {
+        card: sakikoCard, state: sakikoState,
+        partnerCard: mariaCard, partnerState: mariaState,
+        history, gameTime,
+      };
+      expect(buildConversationPrompt({ ...base, locationName: "咖啡馆" })).toContain("不等于只能聊吃的");
+      expect(buildConversationPrompt({ ...base, locationName: "广场" })).not.toContain("不等于只能聊吃的");
+      setBreakLevel("off");
+      expect(buildConversationPrompt({ ...base, locationName: "咖啡馆" })).not.toContain("不等于只能聊吃的");
+    } finally {
+      setBreakLevel("mild");
+    }
+  });
 });
 
 // ── buildConversationRequest tests ──

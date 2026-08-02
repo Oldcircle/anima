@@ -262,6 +262,14 @@ export class PressureGraph {
     return this._lastPairs.slice(0, n);
   }
 
+  /**
+   * 某角色自己参与的压力 top-1 对（C2 敌对所求限额的判据）。
+   * _lastPairs 已按压力降序，首个含该角色的即 top-1；无边 = undefined。
+   */
+  getTopPairFor(charId: string): PairPressure | undefined {
+    return this._lastPairs.find((p) => p.a === charId || p.b === charId);
+  }
+
   /** 某一对的最新压力（B2 surface_grudge 门槛判定用）。无边 = undefined。 */
   getPairPressure(charA: string, charB: string): PairPressure | undefined {
     const key = pairKeyOf(charA, charB);

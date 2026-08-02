@@ -14,6 +14,7 @@ import { climateEnvLine, climateHint, seasonAmbient } from "../world/climate.js"
 import { formatMoodlets } from "../world/moodlets.js";
 import { getAtmosphereText } from "../world/location-loader.js";
 import type { ImpressionStore } from "../memory/impressions.js";
+import { filterMatureUnresolved } from "../memory/impressions.js";
 import { formatBodyFeelings } from "../world/need-definitions.js";
 import { formatInventory as _formatInventory } from "../world/item-registry.js";
 import { formatAppointmentReminder } from "../world/appointments.js";
@@ -33,6 +34,9 @@ import {
   thirdPersonIdentityHead,
   getBreakLevel,
   isWorldEventEnabled,
+  unresolvedThrottleMinCount,
+  openerAntiTemplateNudge,
+  foodTopicHedge,
 } from "./break-config.js";
 
 /**
@@ -482,15 +486,18 @@ export function buildUserPrompt(params: {
     if (hasAnyImpression) {
       parts.push(`\n## 你对他们的主观感觉`);
       const curiosities: string[] = [];
+      // C4 疑惑槽节流：未解 ≥2 次的疑惑才注回（off 档 = 1，不节流基线）
+      const minCount = unresolvedThrottleMinCount();
       for (const c of nearbyCharacters) {
-        const impText = params.impressions!.formatForPrompt(card.id, c.id);
+        const impText = params.impressions!.formatForPrompt(card.id, c.id, { unresolvedMinCount: minCount });
         if (impText) {
           const bondNote = c.relationship?.bond ? describeBond(c.relationship.bond) : "";
           parts.push(`**${c.name}${formatGenderTag(c.gender)}**(ID:${c.id})${bondNote ? " " + bondNote : ""}\n${impText}`);
-          // 收集未解疑惑，作为对话驱动力
+          // 收集未解疑惑，作为对话驱动力（同样过节流闸）
           const imp = params.impressions!.get(card.id, c.id);
-          if (imp && imp.unresolved.length > 0) {
-            curiosities.push(`关于${c.name}：${imp.unresolved[0]}`);
+          const mature = imp ? filterMatureUnresolved(imp, minCount) : [];
+          if (mature.length > 0) {
+            curiosities.push(`关于${c.name}：${mature[0]}`);
           }
         } else {
           parts.push(`- ${c.name}${formatGenderTag(c.gender)}(ID:${c.id})：${describeRelationshipFeel(c.relationship?.type, c.relationship?.bond)}`);
@@ -507,6 +514,13 @@ export function buildUserPrompt(params: {
       parts.push(`\n## 你对他们的主观感觉\n${people}`);
     }
     parts.push(`注意：使用 talk 工具时，target 参数必须填角色 ID（如 "${nearbyCharacters[0]!.id}"），不要填名字。talk 是在当前地点当面开口说话，在场的人也可能注意到。`);
+
+    // C7 开场白反模板 + 食物话题对冲（off 档返回 ""，治愈系基线逐字节回归；
+    // 文本静态、位于此刻区，不抖前缀缓存）
+    const openerNudge = openerAntiTemplateNudge();
+    if (openerNudge) parts.push(openerNudge);
+    const hedge = foodTopicHedge(locationName);
+    if (hedge) parts.push(hedge);
   } else {
     parts.push("\n附近没有其他人。");
   }
