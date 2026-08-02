@@ -191,6 +191,9 @@ export class World {
     const decayRates = getDecayRates();
     const SLEEP_SLOWDOWN_NEEDS = new Set(["hunger", "bladder", "hygiene"]);
     for (const character of this._characters.values()) {
+      // B3/§4.5 NPC 生存豁免：世界注入的静态 NPC 不掉 needs
+      // （否则恶人 NPC 一天内饿倒瘫痪，变成全镇围观的可怜人）
+      if (this.narrative.isStaticNpc(character.id)) continue;
       const isAsleep = character.currentAction?.name === "sleep";
       for (const [needId, delta] of Object.entries(decayRates)) {
         if (character.needs[needId] === undefined) continue;

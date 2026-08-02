@@ -131,6 +131,9 @@ export function createScenarioSim(options: ScenarioSimOptions): ScenarioSimHandl
 
   if (scenario.beats.length > 0) sim.loadBeats(scenario.beats);
 
+  // B3 罪行供给器：与 cli 同款装配（manifest crime_supply）
+  sim.configureCrimeSupply(scenario.manifest.crimeSupply);
+
   // phase 工具与 cli 同款（koukou trial/investigation + kira 夜书）
   {
     const phaseTools: Record<string, typeof ALL_TRIAL_ACTIONS> = {};

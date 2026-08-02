@@ -163,6 +163,22 @@ export function loadGame(sim: Simulation, dbPath: string, scenarioId?: string): 
 
     // 恢复角色状态
     const savedChars = db.loadCharacters();
+
+    // B3：静态 NPC 读档重建——narrative.npcs 登记的世界注入角色不在剧本 cast 里，
+    // 不先 addCharacter 则下面的循环静默跳过（悬空真凶蒸发：赃物/嫌疑链全断）。
+    // 位置/金币/物品由 savedChars 循环照常恢复。
+    for (const [npcId, npc] of Object.entries(sim.world.narrative.getWorld().npcs ?? {})) {
+      if (sim.world.getCharacter(npcId)) continue;
+      const saved = savedChars.find((c) => c.id === npcId);
+      const locId =
+        saved && sim.world.getLocation(saved.locationId)
+          ? saved.locationId
+          : sim.world.getAllLocations()[0]?.id;
+      if (!locId) continue;
+      sim.world.addCharacter(npcId, npc.name, locId, undefined, saved?.life, undefined);
+      console.log(`🕵️ [B3] 读档重建静态 NPC: ${npc.name} (${npcId}) @ ${locId}`);
+    }
+
     for (const sc of savedChars) {
       const char = sim.world.getCharacter(sc.id);
       if (char) {

@@ -130,6 +130,12 @@ if (scenario.beats.length > 0) {
   console.log(`🎬 加载了 ${scenario.beats.length} 个 beats（规则导演）`);
 }
 
+// B3 罪行供给器（manifest crime_supply: cast|npc|off；off 破线档整体禁用）
+simulation.configureCrimeSupply(scenario.manifest.crimeSupply);
+if (scenario.manifest.crimeSupply) {
+  console.log(`🕵️ 罪行供给器 (crime_supply): ${scenario.manifest.crimeSupply.mode}`);
+}
+
 // 注册 phase-specific 工具（N6.4）— koukou-judgment 的 trial/investigation tools + kira-incident 的夜书
 {
   const phaseTools: Record<string, typeof ALL_TRIAL_ACTIONS> = {};

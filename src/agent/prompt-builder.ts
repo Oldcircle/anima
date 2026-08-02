@@ -37,7 +37,55 @@ import {
   unresolvedThrottleMinCount,
   openerAntiTemplateNudge,
   foodTopicHedge,
+  personaDeepeningEnabled,
 } from "./break-config.js";
+
+/**
+ * C3 — 二级 prompt 人设加深（DESIGN-revival §3）：speech.style + psychology 前两行的
+ * 紧凑注入块。reflection / morning-plan / observation 三个二级 prompt 共用——
+ * 它们此前只拿 traits 标签，产出千人一腔。off 档返回 ""（治愈系基线逐字节回归）。
+ * 文本只随角色变化（静态），不抖各自调用的前缀。
+ */
+export function personaDeepeningLines(card: CharacterCard): string {
+  if (!personaDeepeningEnabled()) return "";
+  const parts: string[] = [];
+  const style = card.personality.speech?.style ?? card.personality.speechStyle;
+  if (style && style.trim().length > 0) {
+    parts.push(`你的说话方式：${style.trim()}`);
+  }
+  const psych = (card.personality.psychology ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .slice(0, 2);
+  if (psych.length > 0) {
+    parts.push(`你的内心底色：${psych.join(" ")}`);
+  }
+  return parts.length > 0 ? "\n" + parts.join("\n") : "";
+}
+
+/**
+ * C6 — 独处 tick 轻量人格锚：solo 决策变体的 system prompt 尾部锚（社交场景有
+ * traitReminder，独处场景此前是空窗——独处行为最容易滑向"通用镇民"均值）。
+ * 静态 per 角色（solo 变体本就是独立缓存前缀）；off 档返回 undefined（逐字节回归）。
+ */
+function buildSoloAnchor(card: CharacterCard): string | undefined {
+  if (!personaDeepeningEnabled()) return undefined;
+  const lines: string[] = [
+    `一个人的时候没有观众，但你不会切换成"通用镇民"：想事情的腔调、消磨时间的偏好、烦起来的样子，都还是${card.name}的。`,
+  ];
+  const psychFirst = (card.personality.psychology ?? card.personality.coreTraits ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)[0];
+  if (psychFirst) lines.push(`此刻贴着你的底色：${psychFirst}`);
+  const style = card.personality.speech?.style ?? card.personality.speechStyle;
+  if (style && style.trim().length > 0) {
+    lines.push(`内心独白也保持你的说话方式（${style.trim()}），别写成标准书面语。`);
+  }
+  lines.push("独处的每个小选择（去哪、做什么、想什么）都该带着你的性子，不是任何一个谁都行的镇民的选择。");
+  return lines.join("\n");
+}
 
 /**
  * 把 gender 值翻译成"自我描述"用的中文短语，注入到 system prompt 开头。
@@ -296,6 +344,12 @@ ${socialAngerLine()}
       if (traitReminder) {
         parts.push(`\n## 重要：你是${card.name}\n${traitReminder}`);
       }
+    } else {
+      // C6 独处 tick 轻量人格锚（off 档不加——治愈系基线逐字节回归）
+      const soloAnchor = buildSoloAnchor(card);
+      if (soloAnchor) {
+        parts.push(`\n## 独处的时候你也是你\n${soloAnchor}`);
+      }
     }
     parts.push(`\n## 你的决策方式\n${decisionDirective(card.name, social)}`);
     parts.push("注意：如果你已经在目标地点了，不需要再 go_to 那里，直接做想做的事。");
@@ -412,6 +466,8 @@ export function buildUserPrompt(params: {
   }>;
   /** 晨间打算：今天想做的 1-3 件事（morning-plan 生成） */
   todayPlan?: string[];
+  /** B5 多日执念（≤2 条，agent-loop 从 narrative 读；渲染进此刻区"你心里挂着的事"） */
+  obsessions?: string[];
   /** 环境快照（tool-builder.buildEnvironmentSnapshot）：各地点谁在/营业、店内现价库存 */
   environmentInfo?: string;
 }): string {
@@ -549,6 +605,10 @@ export function buildUserPrompt(params: {
     }
     if (params.currentIntent) {
       lifeHints.push(`你现在还挂着的事：${params.currentIntent.summary}`);
+    }
+    // B5 多日执念：≤2 条，位于此刻区（时间行之后）——只配注意力不写结果
+    for (const ob of (params.obsessions ?? []).slice(0, 2)) {
+      lifeHints.push(`这几天一直压在你心里的：${ob}`);
     }
     const life = state.life ?? card.life;
     if (life?.currentGoal) lifeHints.push(`你最近想做的事：${life.currentGoal}`);

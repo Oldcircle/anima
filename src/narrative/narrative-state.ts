@@ -80,8 +80,10 @@ export function stancePairKey(a: string, b: string): string {
 }
 
 /**
- * B5 多日执念载体（本阶段只落类型 + 登记接口桩；消费——晨间打算输入/此刻区/反思回顾——
- * TODO(S7/B5)：在 S7 接上，5 天衰减、settled 即清，只配注意力不写结果）
+ * B5 多日执念载体（DESIGN-revival §2 B5）：只配注意力不写结果。
+ * 登记点：kira 应验 / B1 立场双方 / 罪案受害·嫌疑 / 同对爽约≥2 派生。
+ * 消费点：晨间打算输入 + 决策 prompt 此刻区 ≤2 条 + 反思回顾。
+ * 5 天衰减（sweepObsessions）、关联事件 settled 即清（clearObsessionsRelatedTo）。
  */
 export interface ObsessionEntry {
   id: string;
@@ -89,6 +91,8 @@ export interface ObsessionEntry {
   createdDay: number;
   decayDays: number;
   source: string;
+  /** 关联的 unresolvedEvent / openStance id——settled/和解时按它清账（可缺省） */
+  relatedId?: string;
 }
 
 export interface CharacterNarrativeState {
@@ -160,6 +164,12 @@ export interface WorldNarrativeState {
   openStances: Record<string, OpenStance[]>;
   /** B1 假阳性防线④：每对每天 ≤1 条敌对立场——pairKey → 最近落账的 game day（随档） */
   stanceDayLog: Record<string, number>;
+  /**
+   * B3 罪行供给器账本（随档）：已处理的 crime key → 处理 tick。
+   * cast 放大器靠它保证同一桩灰行为只补一次被发现链；npc 模式的投放冷却水位
+   * （key "npc_last_crime" / "npc_seeded_at"）也记在这里。Record 不用 Map（JSON 往返安全）。
+   */
+  crimeSupplyLedger: Record<string, number>;
 }
 
 export interface NarrativeStateSnapshot {
@@ -182,6 +192,7 @@ export function emptyNarrativeState(): NarrativeStateSnapshot {
       npcs: {},
       openStances: {},
       stanceDayLog: {},
+      crimeSupplyLedger: {},
     },
     characters: {},
     locations: {},
@@ -309,6 +320,15 @@ export function normalizeNarrativeSnapshot(
     }
   }
 
+  // B3：罪行供给器账本（旧档缺失回填空；脏值清掉——NaN 会让冷却判定永假/永真）
+  if (!w.crimeSupplyLedger || typeof w.crimeSupplyLedger !== "object" || Array.isArray(w.crimeSupplyLedger)) {
+    w.crimeSupplyLedger = {};
+  } else {
+    for (const [k, v] of Object.entries(w.crimeSupplyLedger)) {
+      if (typeof v !== "number" || !Number.isFinite(v)) delete w.crimeSupplyLedger[k];
+    }
+  }
+
   if (!snap.characters || typeof snap.characters !== "object" || Array.isArray(snap.characters)) {
     snap.characters = {};
   }
@@ -339,6 +359,7 @@ export function normalizeNarrativeSnapshot(
       for (const o of c.obsessions) {
         if (typeof o.decayDays !== "number" || !Number.isFinite(o.decayDays)) o.decayDays = 5;
         if (typeof o.source !== "string") o.source = "unknown";
+        if (typeof o.relatedId !== "string") delete o.relatedId;
       }
     }
   }
@@ -443,8 +464,8 @@ export class NarrativeState {
   }
 
   /**
-   * B5 执念登记接口（桩）：只登记不消费。
-   * TODO(S7/B5)：消费端（晨间打算输入 + 此刻区 ≤2 条 + 反思回顾）与 5 天衰减/settled 即清在 S7 接上。
+   * B5 执念登记：同 id 去重、每人上限 6 条（FIFO 挤出最旧）。
+   * 只配注意力不写结果——summary 是"压在心里的事"，不是行动指令。
    */
   registerObsession(charId: string, entry: ObsessionEntry): boolean {
     const c = ensureCharacter(this.snapshot, charId);
@@ -452,6 +473,47 @@ export class NarrativeState {
     c.obsessions.push({ ...entry });
     if (c.obsessions.length > 6) c.obsessions.splice(0, c.obsessions.length - 6);
     return true;
+  }
+
+  /**
+   * B5 消费读取口：未衰减（day - createdDay < decayDays）的执念，取最近登记的 limit 条。
+   * 决策 prompt 此刻区 ≤2 条 / 晨间打算 / 反思回顾都走这里。
+   */
+  getActiveObsessions(charId: string, day: number, limit = 2): ObsessionEntry[] {
+    const c = ensureCharacter(this.snapshot, charId);
+    return c.obsessions
+      .filter((o) => day - o.createdDay < o.decayDays)
+      .slice(-Math.max(0, limit));
+  }
+
+  /** B5 每日衰减 sweep（06:00 调）：清掉已过 decayDays 的执念。返回清掉的条数。 */
+  sweepObsessions(day: number): number {
+    let n = 0;
+    for (const c of Object.values(this.snapshot.characters)) {
+      if (!Array.isArray(c.obsessions)) continue;
+      const before = c.obsessions.length;
+      c.obsessions = c.obsessions.filter((o) => day - o.createdDay < o.decayDays);
+      n += before - c.obsessions.length;
+    }
+    return n;
+  }
+
+  /**
+   * B5 settled 即清：按关联事件/立场 id 清所有角色的执念。
+   * 兼容两种关联方式：显式 relatedId 字段，或 id 内含关联 id（S4 立场执念的 obs_<stanceId>_* 约定）。
+   */
+  clearObsessionsRelatedTo(relatedId: string): number {
+    if (!relatedId) return 0;
+    let n = 0;
+    for (const c of Object.values(this.snapshot.characters)) {
+      if (!Array.isArray(c.obsessions)) continue;
+      const before = c.obsessions.length;
+      c.obsessions = c.obsessions.filter(
+        (o) => o.relatedId !== relatedId && !o.id.includes(relatedId),
+      );
+      n += before - c.obsessions.length;
+    }
+    return n;
   }
 
   setPressure(charId: string, pressure: number): void {
@@ -576,6 +638,20 @@ export class NarrativeState {
 
   isNpc(id: string): boolean {
     return Boolean(this.snapshot.world.npcs?.[id]);
+  }
+
+  /** B3/§4.5：该角色是否为世界注入的静态 NPC（生存循环豁免的判定口） */
+  isStaticNpc(id: string): boolean {
+    return Boolean(this.snapshot.world.npcs?.[id]?.isStatic);
+  }
+
+  /** B3：罪行供给器账本（随档，懒初始化——构造器传入的旧快照没走 normalize） */
+  getCrimeSupplyLedger(): Record<string, number> {
+    const w = this.snapshot.world;
+    if (!w.crimeSupplyLedger || typeof w.crimeSupplyLedger !== "object" || Array.isArray(w.crimeSupplyLedger)) {
+      w.crimeSupplyLedger = {};
+    }
+    return w.crimeSupplyLedger;
   }
 
   // ── B1 立场账 ──

@@ -18,7 +18,7 @@
 
 import type { World } from "../world/world.js";
 import type { ShortTermMemory } from "../memory/short-term.js";
-import { getBreakLevel, isWorldEventEnabled } from "../agent/break-config.js";
+import { getBreakLevel, isWorldEventEnabled, obsessionsEnabled } from "../agent/break-config.js";
 import { addMoodlet } from "../world/moodlets.js";
 import { addToInventory, hasItem, removeFromInventory, resolveItem } from "../world/item-registry.js";
 
@@ -339,6 +339,17 @@ export function processPendingDiscoveries(world: World, memory: ShortTermMemory,
       memory.add(d.victimId, { tick, type: "event", content: d.discoveryMemory, importance: 8 });
       if (d.unresolvedEvent) {
         world.narrative.addUnresolvedEvent({ ...d.unresolvedEvent, createdTick: tick });
+        // B5 罪案受害执念：发现当刻登记，事件 settled 即清（只配注意力不写结果）
+        if (obsessionsEnabled()) {
+          world.narrative.registerObsession(d.victimId, {
+            id: `obs_${d.unresolvedEvent.id}_victim`,
+            summary: d.intentSummary ?? `那笔被偷的钱一直压在心上——这事还没个说法`,
+            createdDay: Math.floor(tick / 96),
+            decayDays: 5,
+            source: "crime",
+            relatedId: d.unresolvedEvent.id,
+          });
+        }
       }
       if (d.observable) {
         world.setObservableState(d.victimId, {

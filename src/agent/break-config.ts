@@ -431,6 +431,31 @@ export function foodTopicHedge(locationName: string): string {
   return `在这里碰面不等于只能聊吃的：菜单、面包、咖啡寒暄一两句就到头了，别让它占满整场对话。人身上的事才值得聊——你好奇的、你膈应的、你们之间没了结的、约好的事，或者你最近高兴、得意、想拉对方一起做的事，都比「今天的可颂怎么样」有分量。`;
 }
 
+// ───────────────────────── C3/C6/B5/C5 开关（DESIGN-revival §3/§2）─────────────────────────
+
+/**
+ * C3/C6 — 二级 prompt 人设加深（reflection/morning-plan/observation 补 speech.style+psychology）
+ * 与独处 tick 轻量人格锚的总闸。off = 不加（治愈系基线逐字节回归，与 C4/C7 同款纪律）。
+ */
+export function personaDeepeningEnabled(): boolean {
+  return on();
+}
+
+/**
+ * B5 — 多日执念载体的总闸（红线②：off 档 B5 关闭——登记与消费两端都不启用）。
+ */
+export function obsessionsEnabled(): boolean {
+  return on();
+}
+
+/**
+ * C5 — 群聊 v1 实验开关（§3 修订版）：默认关。活人感验收基线在 C5=off 下测
+ * （§4.5：回归面=当前唯一稳定的两两对话质量）。每次调用现读 env，测试可开关。
+ */
+export function isGroupSceneEnabled(): boolean {
+  return process.env.ANIMA_GROUP_SCENE === "1";
+}
+
 // ───────────────────────── argue gating（工具浮现门）─────────────────────────
 
 /**

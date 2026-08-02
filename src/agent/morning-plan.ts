@@ -13,6 +13,7 @@ import type { CharacterCard } from "../character/types.js";
 import type { CharacterState, Weather } from "../world/types.js";
 import type { LLMProvider } from "../providers/types.js";
 import { weatherDescription } from "../world/weather.js";
+import { personaDeepeningLines } from "./prompt-builder.js";
 
 export interface MorningPlanResult {
   characterId: string;
@@ -28,6 +29,8 @@ export async function generateMorningPlan(params: {
   yesterdayWish?: string;
   yesterdayConcern?: string;
   yesterdayInsights?: string[];
+  /** B5 多日执念（≤2 条摘要）：这几天一直压在心里的事，打算的输入之一 */
+  obsessions?: string[];
   /** 今天已有的约定（文字描述，如"今天12:00在咖啡馆和X见面"） */
   todayAppointments?: string[];
   weather?: Weather;
@@ -53,7 +56,7 @@ export async function generateMorningPlan(params: {
     : "";
 
   const system = `你是 ${card.name}，${occupation}。
-性格：${card.personality.traits.join("、")}${life?.aspiration ? `\n你内心深处一直想：${life.aspiration}` : ""}
+性格：${card.personality.traits.join("、")}${life?.aspiration ? `\n你内心深处一直想：${life.aspiration}` : ""}${personaDeepeningLines(card)}
 
 现在是清晨，你刚醒，躺在床上想今天要做什么。
 用第一人称，按你的性格随意想 1-3 件今天想做的事（不是任务清单，就是心里有个数）。
@@ -65,6 +68,10 @@ export async function generateMorningPlan(params: {
   }
   if (params.yesterdayWish) userParts.push(`你昨天就想着：${params.yesterdayWish}`);
   if (params.yesterdayConcern) userParts.push(`你有点担心：${params.yesterdayConcern}`);
+  // B5 执念输入：只摆事实不派任务——做不做、怎么做归角色
+  if (params.obsessions && params.obsessions.length > 0) {
+    userParts.push(`这几天你心里一直压着：${params.obsessions.join("；")}（今天要不要为它做点什么，你自己定）`);
+  }
   if (params.todayAppointments && params.todayAppointments.length > 0) {
     userParts.push(`今天已经说定的约：${params.todayAppointments.join("；")}（这个不用列进打算，你记得就行）`);
   }

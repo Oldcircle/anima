@@ -177,6 +177,45 @@ describe("对话路径前缀稳定性", () => {
     console.log(`[对话路径自检] 共同前缀 ${divergeAt}/${u1.length} 字符（对话记录位于 ${historyIdx}）`);
   });
 
+  it("C5 群聊时间线只进尾部此刻区：相邻两轮分歧点仍在对话记录之后", () => {
+    const historyT1 = [
+      ex("tomori", "高松灯", "那个……这本书，你看过吗", 46),
+      ex("anon", "千早爱音", "哪本？给我看看封面", 47),
+    ];
+    const historyT2 = [...historyT1, ex("tomori", "高松灯", "就是这本，讲海的", 48)];
+    const mk = (tick: number, history: ConversationExchange[], interject: string, ijTick: number) =>
+      buildConversationRequest({
+        card: selfCard,
+        state: mkState("tomori", "高松灯", 70),
+        partnerCard,
+        partnerState: mkState("anon", "千早爱音", 80),
+        history,
+        gameTime: tickToGameTime(tick),
+        locationName: "海风咖啡馆",
+        actions: ALL_BASIC_ACTIONS,
+        // C5 实验开关开启时 simulation 注入的第三方插话（每轮内容都在变——最易砸前缀的动态块）
+        groupTimeline: [{ fromId: "rikki", fromName: "莉可", content: interject, tick: ijTick }],
+      });
+
+    const r1 = mk(48, historyT1, "喂，看这边！", 47);
+    const r2 = mk(49, historyT2, "别不理人啊。", 48);
+
+    expect(JSON.stringify(r2.tools)).toBe(JSON.stringify(r1.tools));
+    expect(r2.system).toBe(r1.system);
+
+    const u1 = r1.messages[0]!.content as string;
+    const u2 = r2.messages[0]!.content as string;
+    const divergeAt = commonPrefixLen(u1, u2);
+    const historyIdx = u1.indexOf("## 对话记录");
+    expect(historyIdx).toBeGreaterThan(-1);
+    // 分歧点必须仍在 append-only 对话记录之后——时间线块若插进前缀，这里会当场红
+    expect(divergeAt).toBeGreaterThanOrEqual(historyIdx);
+    // 时间线块位于『## 你现在的状态』（尾部此刻区）之后
+    const stateIdx = u2.indexOf("## 你现在的状态");
+    const blockIdx = u2.indexOf("## 同一处还有人插话");
+    expect(blockIdx).toBeGreaterThan(stateIdx);
+  });
+
   it("C2 所求不注入时（off/底噪）prompt 不出现所求行", () => {
     const r = buildConversationRequest({
       card: selfCard,

@@ -125,6 +125,40 @@ export class ConversationTracker {
   }
 }
 
+// ── C5 群聊 v1（实验开关 ANIMA_GROUP_SCENE=1，DESIGN-revival §3 修订版）──
+
+/** 第三方插话（"pendingInbox"实现：conversationRequest 构建时读 char.inbox 过滤而来） */
+export interface GroupSceneLine {
+  fromId: string;
+  fromName: string;
+  content: string;
+  tick: number;
+}
+
+/** C5 同地点近似窗：插话须发生在近 3 tick 内（Tracker 无地点字段，用"当前同地点"近似） */
+export const GROUP_SCENE_WINDOW_TICKS = 3;
+
+/**
+ * 从 inbox 过滤出"群聊时间线"该收的第三方插话：
+ * 发信者 ≠ 当前对话对象、发信者**当前**与本人同地点、近 GROUP_SCENE_WINDOW_TICKS tick 内。
+ * 纯函数（地点判定注入），simulation 在实验开关开启时调用。
+ */
+export function filterGroupInbox(params: {
+  inbox: ReadonlyArray<GroupSceneLine>;
+  partnerId: string;
+  currentTick: number;
+  sameLocation: (charId: string) => boolean;
+  windowTicks?: number;
+}): GroupSceneLine[] {
+  const window = params.windowTicks ?? GROUP_SCENE_WINDOW_TICKS;
+  return params.inbox.filter(
+    (m) =>
+      m.fromId !== params.partnerId &&
+      params.currentTick - m.tick <= window &&
+      params.sameLocation(m.fromId),
+  );
+}
+
 // ── 对话模式 Prompt ──
 
 export interface ConversationPromptParams {
@@ -160,6 +194,12 @@ export interface ConversationPromptParams {
    * （对话记录之后 = 缓存分歧点之后，不砸对话桶前缀）。
    */
   conversationDesire?: string;
+  /**
+   * C5 群聊 v1（实验开关默认关）：同地点第三方的插话时间线。
+   * **只允许渲染在『## 你现在的状态』之后的尾部此刻区**——插对话记录前会砸对话桶
+   * 68.5% 的前缀命中（评审 blocker）。
+   */
+  groupTimeline?: GroupSceneLine[];
 }
 
 /**
@@ -308,6 +348,14 @@ ${conversationSelfCheck(partnerCard.name)}先用2-3句话写出你的内心活�
     parts.push(`\n${params.conversationDesire}`);
   }
 
+  // C5 群聊时间线（实验开关）：只进尾部此刻区——对话记录之后、绝不插进前缀
+  if (params.groupTimeline && params.groupTimeline.length > 0) {
+    const lines = params.groupTimeline.map(
+      (g) => `- ${g.fromName}(ID:${g.fromId}) 对你说：「${g.content}」`,
+    );
+    parts.push(`\n## 同一处还有人插话\n${lines.join("\n")}\n（你正在和${partnerCard.name}说话，第三个人也在场开了口。你可以回应插话的人——talk 的 target 填TA的 ID——把TA自然带进当前话题，或先跟${partnerCard.name}把话说完，都由你。）`);
+  }
+
   // 4b. D3: seed_topic 注入的"你心里有些话想说"
   if (params.wantToDiscuss && params.wantToDiscuss.length > 0) {
     const urgencyLabel = { high: "【必须说】", med: "【找机会说】", low: "【有空就说】" };
@@ -370,6 +418,8 @@ export function buildConversationRequest(params: {
   wantToDiscuss?: Array<{ topic: string; urgency: "low" | "med" | "high"; targetChar?: string }>;
   /** C2 对话所求（此刻区 1 行） */
   conversationDesire?: string;
+  /** C5 群聊时间线（实验开关默认关；只进尾部此刻区） */
+  groupTimeline?: GroupSceneLine[];
 }): LLMRequest {
   const systemPrompt = buildSystemPrompt(params.card, params.workplaceName, params.colleagueNames);
   const userPrompt = buildConversationPrompt({
@@ -388,6 +438,7 @@ export function buildConversationRequest(params: {
     sharedHistory: params.sharedHistory,
     wantToDiscuss: params.wantToDiscuss,
     conversationDesire: params.conversationDesire,
+    groupTimeline: params.groupTimeline,
   });
 
   const prefill = `好的，我已理解${params.card.name}这个角色。我将完全以这个角色的性格和说话方式来回应：\n`;

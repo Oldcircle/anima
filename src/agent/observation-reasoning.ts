@@ -15,6 +15,7 @@ import type { LLMProvider } from "../providers/types.js";
 import type { ShortTermMemory } from "../memory/short-term.js";
 import type { ImpressionStore } from "../memory/impressions.js";
 import { observationJudgmentPermission } from "./break-config.js";
+import { personaDeepeningLines } from "./prompt-builder.js";
 
 export interface ObservationContext {
   /** 观察者的角色卡 */
@@ -93,7 +94,10 @@ export async function generateObservation(
 
   const occupation = ctx.observerCard.life?.occupation ?? ctx.observerCard.occupation;
   const judgePermission = observationJudgmentPermission();
-  const system = `你是${ctx.observerCard.name}，${occupation}。你正在${ctx.locationName}。
+  // C3 人设加深：speech.style + psychology 前两行——观察是最高频推理面，
+  // 不锚人设就千人一腔（off 档返回 ""，逐字节回归）
+  const persona = personaDeepeningLines(ctx.observerCard);
+  const system = `你是${ctx.observerCard.name}，${occupation}。你正在${ctx.locationName}。${persona}${persona ? "\n用你自己的口吻和眼光去看，不是中立旁白。" : ""}
 请用一句话描述你对${target.name}此刻状态的观察和推测。
 不要展开，不要对话，只用一句自然的内心想法。
 只解读你真看到的动作神态，不要虚构没看到的具体事件或物品交割。${judgePermission ? "\n" + judgePermission : ""}`;

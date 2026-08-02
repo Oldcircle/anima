@@ -9,6 +9,7 @@ import type { CharacterCard, LifeState } from "../character/types.js";
 import type { LLMProvider, LLMRequest } from "../providers/types.js";
 import type { ShortTermMemory, MemoryEntry } from "../memory/short-term.js";
 import type { RelationshipManager } from "../world/relationships.js";
+import { personaDeepeningLines } from "./prompt-builder.js";
 
 export interface ReflectionResult {
   characterId: string;
@@ -30,6 +31,8 @@ export async function runReflection(params: {
   dayEndTick: number;
   /** 今天早上的打算（晨间计划），反思时回顾完成情况 */
   todayPlan?: string[];
+  /** B5 多日执念（≤2 条摘要）：反思时回顾"还压着吗" */
+  obsessions?: string[];
 }): Promise<ReflectionResult> {
   const { card, memory, relationships, provider, modelId } = params;
 
@@ -62,7 +65,7 @@ export async function runReflection(params: {
   const aspirationHint = life?.aspiration ? `\n你一直想：${life.aspiration}` : "";
 
   const system = `你是 ${card.name}，${occupation}。
-性格：${card.personality.traits.join("、")}${aspirationHint}
+性格：${card.personality.traits.join("、")}${aspirationHint}${personaDeepeningLines(card)}
 
 现在是晚上，你在回顾今天发生的事。请：
 1. 总结今天最重要的 2-3 件事（每条一句话）
@@ -83,7 +86,11 @@ export async function runReflection(params: {
   const planReview = params.todayPlan && params.todayPlan.length > 0
     ? `\n\n## 今天早上你的打算\n${params.todayPlan.map((p) => `- ${p}`).join("\n")}\n（回顾一下：做成了吗？没做成的还想做吗？想做的可以体现在"愿望"里。）`
     : "";
-  const user = `## 今天发生的事\n${memorySummary}${planReview}\n\n## 我的人际关系\n${relSummary || "暂无特别关系"}`;
+  // B5 执念回顾：今天有进展吗、还压着吗——压着的自然流进"担忧/愿望"
+  const obsessionReview = params.obsessions && params.obsessions.length > 0
+    ? `\n\n## 这几天一直压在你心里的\n${params.obsessions.map((o) => `- ${o}`).join("\n")}\n（今天这些事有进展吗？还压着的，可以体现在"担忧"或"愿望"里。）`
+    : "";
+  const user = `## 今天发生的事\n${memorySummary}${planReview}${obsessionReview}\n\n## 我的人际关系\n${relSummary || "暂无特别关系"}`;
 
   try {
     const response = await provider.chat(

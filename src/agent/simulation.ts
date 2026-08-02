@@ -24,7 +24,7 @@ import { ShortTermMemory } from "../memory/short-term.js";
 import { LongTermMemoryStore, formatSharedHistory } from "../memory/long-term.js";
 import { runAgentTick, describeObservableAction, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
-import { ConversationTracker, buildConversationRequest } from "./conversation-mode.js";
+import { ConversationTracker, buildConversationRequest, filterGroupInbox } from "./conversation-mode.js";
 import { extractPromise, mightContainPromise, extractTransaction, mightContainTransaction, type ExtractedTransaction } from "./promise-extractor.js";
 import {
   applySeverityLadder,
@@ -40,7 +40,7 @@ import { updateImpressionsBidirectional } from "./impression-updater.js";
 import { shouldObserve, generateObservation, type ObservationResult } from "./observation-reasoning.js";
 import { tickMoodlets, generateNeedMoodlets, addMoodlet } from "../world/moodlets.js";
 import { APPOINTMENT_GRACE_TICKS, APPOINTMENT_EARLY_TICKS, describeAppointmentTime } from "../world/appointments.js";
-import { getBreakLevel, unresolvedThrottleMinCount } from "./break-config.js";
+import { getBreakLevel, unresolvedThrottleMinCount, obsessionsEnabled, isGroupSceneEnabled } from "./break-config.js";
 import { computeConversationDesire } from "./conversation-desire.js";
 import { FATE_EVENTS, FATE_INTERVAL_MIN_TICKS, FATE_INTERVAL_MAX_TICKS, pickFateEvent, applyFateGold } from "../world/fate-events.js";
 import { getItemDef, resolveItem, hasItem, removeFromInventory, addToInventory } from "../world/item-registry.js";
@@ -59,6 +59,7 @@ import {
   applyTheftWithPerp,
   processPendingDiscoveries,
 } from "../narrative/world-events.js";
+import { runCrimeSupply, type CrimeSupplyMode } from "../narrative/crime-supply.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -102,6 +103,8 @@ export class Simulation {
   pressureGraph: PressureGraph = new PressureGraph();
   /** N4: LLM 导演（可选，未配置时为 undefined） */
   director?: Director;
+  /** B3 罪行供给器模式（manifest crime_supply；未配置 = 不启用） */
+  private _crimeSupplyMode: CrimeSupplyMode | undefined;
   /** N6.4: phase-specific 工具映射 (active_phase → ActionDefinition[]) */
   phaseTools: Record<string, ActionDefinition[]> = {};
   /** 上一次扫描 beats 的 game day（避免同一天扫多次） */
@@ -131,6 +134,11 @@ export class Simulation {
     this._actions = config.actions;
     this.eventBus.on((event) => {
       this.recordWitnessObservations(event);
+    });
+    // B5 settled 即清：关联事件了结时，把所有角色对应的执念摘掉（注意力随案卷归档）
+    this.world.narrative.onEventSettled((event) => {
+      const n = this.world.narrative.clearObsessionsRelatedTo(event.id);
+      if (n > 0) console.log(`🧹 [obsession] 事件 ${event.id} settled，清 ${n} 条执念`);
     });
 
     for (const card of config.characters) {
@@ -324,6 +332,11 @@ export class Simulation {
       });
   }
 
+  /** B3/§4.5：世界注入的静态 NPC（生存循环豁免的判定口，narrative.npcs 随档） */
+  private _isStaticNpc(id: string): boolean {
+    return this.world.narrative.isStaticNpc(id);
+  }
+
   private recordWitnessObservations(event: WorldEvent): void {
     if (!isSociallyObservableEvent(event.type)) return;
 
@@ -378,6 +391,12 @@ export class Simulation {
     // 1.0d2 硬事件延迟发现（B2）：受害者到场才落"铁盒空了"发现记忆；风声晚于发现。
     // 决策前跑——发现记忆进本 tick prompt。off 档在函数内部被闸（治愈系基线）。
     processPendingDiscoveries(this.world, this.memory, gameTime.tick);
+    // 1.0d3 罪行供给器（B3）：cast=放大器只补真实灰行为的被发现链；npc=静态恶人 NPC 够格之罪。
+    // 确定性零 LLM；off 档 / 未配置在函数内部被闸（红线②）。
+    runCrimeSupply(
+      { world: this.world, memory: this.memory, eventBus: this.eventBus, tick: gameTime.tick },
+      this._crimeSupplyMode,
+    );
     // 1.0e 晨间打算：每天 06:00 各角色给自己定今天想做的 1-3 件事（fire-and-forget）
     if (gameTime.hour === 6 && gameTime.minute === 0) {
       this.runMorningPlans(gameTime);
@@ -475,8 +494,10 @@ export class Simulation {
     }
 
     // 0b. 每天 07:00 扣一次生活开销（房租+杂用）——生计压力，让"赚钱活下去"有分量
+    // （B3/§4.5：静态 NPC 生存豁免——不交房租不焦虑）
     if (gameTime.hour === 7 && gameTime.minute === 0) {
       for (const c of this.world.getAllCharacters()) {
+        if (this._isStaticNpc(c.id)) continue;
         applyDailyUpkeep(c, gameTime.tick, this.memory);
       }
     }
@@ -487,6 +508,8 @@ export class Simulation {
       this._resolveKiraStrikes(gameTime);
       // B1：openStance TTL——7 游戏天无 refresh 自动降档归档
       this.world.narrative.sweepStanceTTL(gameTime.tick);
+      // B5：执念 5 天衰减 sweep（settled 即清走 onEventSettled 钩子，这里只清自然过期的）
+      this.world.narrative.sweepObsessions(gameTime.day);
       // B1.5 阻尼豁免：有 activeOpenStance / 未 settled 事件的对，
       // 暂停 grudge 3 天自动清与 idleDecay——账本要顶得住均值回归（off 档豁免集恒空）
       const damperExempt = this._stanceDamperExemptPairs();
@@ -549,6 +572,7 @@ export class Simulation {
   private _applyClimateAndMoodlets(gameTime: GameTime): void {
     const climateTemp = computeTemperature(gameTime.season, this.world.weather, gameTime.hour);
     for (const c of this.world.getAllCharacters()) {
+      if (this._isStaticNpc(c.id)) continue; // B3/§4.5：静态 NPC 生存豁免（气候不耗 needs）
       tickMoodlets(c, gameTime.tick);
       generateNeedMoodlets(c, gameTime.tick);
       financeMoodlet(c, gameTime.tick);
@@ -584,7 +608,8 @@ export class Simulation {
       weather: this.world.weather,
     });
     for (const event of randomEvents) {
-      const allChars = this.world.getAllCharacters();
+      // B3/§4.5：静态 NPC 不进随机事件抽选（生存豁免）
+      const allChars = this.world.getAllCharacters().filter((c) => !this._isStaticNpc(c.id));
       // 随机选一个角色作为事件主角
       const target = allChars[Math.floor(Math.random() * allChars.length)];
       if (!target) continue;
@@ -631,8 +656,9 @@ export class Simulation {
     if (gameTime.tick < this._nextFateAt) return undefined;
     if (gameTime.hour < 8 || gameTime.hour >= 21) return undefined; // 顺延到白天
 
-    // 随机挑一个醒着的角色
+    // 随机挑一个醒着的角色（B3/§4.5：静态 NPC 不进命运事件抽选）
     const awake = this.world.getAllCharacters().filter((s) => {
+      if (this._isStaticNpc(s.id)) return false;
       const a = s.currentAction?.name;
       return a !== "sleep" && a !== "nap" && a !== "collapse_asleep" && a !== "collapse_starving" && a !== "collapse_cursed";
     });
@@ -766,6 +792,16 @@ export class Simulation {
               tick: gameTime.tick,
               day: gameTime.day,
             }),
+            // C5 群聊 v1（实验开关 ANIMA_GROUP_SCENE=1，默认关）：读 inbox 里第三方的插话，
+            // 同地点近似=发信者当前同地点+3 tick 窗；渲染只进尾部此刻区（对话记录之后）
+            groupTimeline: isGroupSceneEnabled()
+              ? filterGroupInbox({
+                  inbox: state.inbox,
+                  partnerId: activePartnerId,
+                  currentTick: gameTime.tick,
+                  sameLocation: (cid) => this.world.getCharacter(cid)?.locationId === state.locationId,
+                })
+              : undefined,
           });
         }
       }
@@ -832,6 +868,7 @@ export class Simulation {
    */
   private _applyExhaustionCollapse(gameTime: GameTime): void {
     for (const state of this.world.getAllCharacters()) {
+      if (this._isStaticNpc(state.id)) continue; // B3/§4.5：静态 NPC 生存豁免
       // 昏睡中：每 tick 恢复一点精力（按时长摊销，不是一次性满电）
       if (state.currentAction?.name === "collapse_asleep") {
         this.world.modifyNeed(state.id, "energy", 9);
@@ -927,6 +964,21 @@ export class Simulation {
           importance: nth >= 2 ? 8 : 6, relatedCharacterId: victim.id,
         });
       }
+      // B5 kira 应验执念：受害者惦记"这病不对劲"，写名字的人惦记"真的应验了"——只配注意力
+      if (obsessionsEnabled()) {
+        this.world.narrative.registerObsession(victim.id, {
+          id: `obs_kira_victim_${victim.id}_${gameTime.tick}`,
+          summary: "那场清早的怪病来得太不对劲——不是累也不是着凉，这事得弄明白",
+          createdDay: gameTime.day, decayDays: 5, source: "kira",
+        });
+        if (this.world.getCharacter(strike.by)) {
+          this.world.narrative.registerObsession(strike.by, {
+            id: `obs_kira_writer_${strike.by}_${gameTime.tick}`,
+            summary: `你昨夜在册子上写下的名字，清早真的应验了——${victim.name}倒下了`,
+            createdDay: gameTime.day, decayDays: 5, source: "kira",
+          });
+        }
+      }
       console.log(`📓 [kira] 应验：${victim.id} 怪病倒下（第 ${nth} 例）${strike.judgment ? `｜册上小字："${strike.judgment.slice(0, 40)}"` : ""}`);
     }
   }
@@ -958,6 +1010,7 @@ export class Simulation {
    */
   private _applyStarvationCollapse(gameTime: GameTime): void {
     for (const state of this.world.getAllCharacters()) {
+      if (this._isStaticNpc(state.id)) continue; // B3/§4.5：静态 NPC 生存豁免（饿倒循环跳过）
       // 饿倒中：最后一 tick 勉强缓过来（只在 remainingTicks===1 时结算一次）
       if (state.currentAction?.name === "collapse_starving") {
         if (state.currentAction.remainingTicks === 1) {
@@ -1268,6 +1321,15 @@ export class Simulation {
                 tick: gameTime.tick,
                 day: gameTime.day,
               }),
+              // C5 群聊 v1（与主轮一致，实验开关默认关）
+              groupTimeline: isGroupSceneEnabled()
+                ? filterGroupInbox({
+                    inbox: state.inbox,
+                    partnerId,
+                    currentTick: gameTime.tick,
+                    sameLocation: (cid) => this.world.getCharacter(cid)?.locationId === state.locationId,
+                  })
+                : undefined,
             });
             r = await runAgentTick({
               config,
@@ -1672,6 +1734,8 @@ export class Simulation {
         for (const st of archived) {
           ns.removeUnresolvedWith(st.holderId, st.targetId, st.id);
           ns.removeUnresolvedWith(st.targetId, st.holderId, st.id);
+          // B5 settled 即清：和解归档的立场，双方的对应执念一并摘掉
+          ns.clearObsessionsRelatedTo(st.id);
         }
         this.longTerm.add(s.holderId, {
           tick, type: "event", importance: 7,
@@ -1745,14 +1809,14 @@ export class Simulation {
           reachedChars: [...witnesses],
         });
       }
-      // 双方 obsession 登记（B5 桩：只登记；消费在 S7 接上）
+      // 双方 obsession 登记（B5：消费端=晨间打算/此刻区/反思回顾；和解归档时经 relatedId 清）
       ns.registerObsession(s.holderId, {
         id: `obs_${stanceId}_holder`, summary: `你${verb}了${targetName}，这事没完`,
-        createdDay: day, decayDays: 5, source: "stance",
+        createdDay: day, decayDays: 5, source: "stance", relatedId: stanceId,
       });
       ns.registerObsession(s.targetId, {
         id: `obs_${stanceId}_target`, summary: `${holderName}${verb}了你，这事没完`,
-        createdDay: day, decayDays: 5, source: "stance",
+        createdDay: day, decayDays: 5, source: "stance", relatedId: stanceId,
       });
       console.log(`⚖️ [立场→落账] ${holderName} ${verb} ${targetName}（${kind}${refreshed ? "，refresh" : ""}，目击 ${witnesses.length} 人）：${s.summary}`);
     }
@@ -1848,6 +1912,10 @@ export class Simulation {
         dayStartTick,
         dayEndTick: gameTime.tick,
         todayPlan: planState?.todayPlan?.day === gameTime.day ? planState.todayPlan.items : undefined,
+        // B5 消费：反思回顾（off 档不注入——红线②）
+        obsessions: obsessionsEnabled()
+          ? this.world.narrative.getActiveObsessions(config.card.id, gameTime.day, 2).map((o) => o.summary)
+          : undefined,
       });
     });
     const reflections = await Promise.all(reflectionPromises);
@@ -2020,6 +2088,11 @@ export class Simulation {
   /** 注册 phase-specific 工具（N6.4）。CLI 启动时调一次。 */
   registerPhaseTools(byPhase: Record<string, ActionDefinition[]>): void {
     this.phaseTools = byPhase;
+  }
+
+  /** B3：配置罪行供给器（manifest crime_supply，S5 已解析）。CLI / harness 启动时调一次。 */
+  configureCrimeSupply(config?: { mode: CrimeSupplyMode }): void {
+    this._crimeSupplyMode = config?.mode;
   }
 
   private _getActivePhaseTools(): ActionDefinition[] {
@@ -2674,6 +2747,24 @@ export class Simulation {
           content: `你放了${waiter.name}的鸽子（约在${locName}，你没去）`,
           relatedCharacterId: waiter.id,
         });
+        // B5 同对爽约≥2 派生执念：计数直接派生自 _appointments（§4.5 不加新计数器），
+        // 双方各记一条——被鸽的记"又被放了"，爽约的记"再不给交代要凉"。只配注意力。
+        if (obsessionsEnabled()) {
+          const pk = stancePairKey(waiter.id, absentee.id);
+          const missedCount = countMissedAppointmentsByPair(this.world.getAllAppointments())[pk] ?? 0;
+          if (missedCount >= 2) {
+            this.world.narrative.registerObsession(waiter.id, {
+              id: `obs_missed_${pk}_${missedCount}_waiter`,
+              summary: `${absentee.name}又一次放了你鸽子——已经第 ${missedCount} 次了，这事没法当没发生`,
+              createdDay: gameTime.day, decayDays: 5, source: "promise",
+            });
+            this.world.narrative.registerObsession(absentee.id, {
+              id: `obs_missed_${pk}_${missedCount}_absentee`,
+              summary: `你又一次爽了${waiter.name}的约（第 ${missedCount} 次）——再不给个交代，这段关系怕是要凉`,
+              createdDay: gameTime.day, decayDays: 5, source: "promise",
+            });
+          }
+        }
         console.log(`📅 [约定] 爽约: ${absentee.id} 放了 ${waiter.id} 鸽子 @ ${locName}`);
       } else {
         for (const [me, other] of [[proposer, target], [target, proposer]] as const) {
@@ -2724,6 +2815,10 @@ export class Simulation {
         yesterdayWish: lastRef?.wish ?? state.life?.currentGoal,
         yesterdayConcern: lastRef?.concern ?? state.life?.currentConcern,
         yesterdayInsights: lastRef?.insights ?? [],
+        // B5 消费：晨间打算输入（off 档不注入——红线②）
+        obsessions: obsessionsEnabled()
+          ? this.world.narrative.getActiveObsessions(id, gameTime.day, 2).map((o) => o.summary)
+          : undefined,
         todayAppointments,
         weather: this.world.weather,
         workplaceName: wpName,

@@ -1,0 +1,292 @@
+/**
+ * Crime Supply — 罪行供给器（DESIGN-revival §2 B3，manifest 门控 mode: cast|npc|off）
+ *
+ * 行为硬墙的真实形状 = "对无够格之罪的具名者动手"（KIRA_INJECT_CRIME 探针实证）。
+ * 解法是供罪与世界落账，不是攻墙。两种模式：
+ *
+ * - `cast` = **放大器不是供罪器**：只监听 cast 成员**自己真选过**的灰行为
+ *   （steal 成功未被抓 / 赖账 2 天+），世界只补被发现链（物证/目击窗口/风声/延迟发现）。
+ *   近窗无候选则空转。**从不替 cast 写行为、从不塞"你偷了"记忆**
+ *   （r4 反证：shinji 面对无主案全天道歉螺旋——无辜人设背不动世界写的罪）。
+ *   已知限制：当前行为空间无"陪酒"类工具，监听清单实现 steal + 赖账两路。
+ * - `npc` = 够格之罪（探针产品化）：注入静态恶人 NPC + 周期性投放真罪
+ *   （走 B2 applyTheftWithPerp 的延迟发现链）+ visibleTo 情报。
+ *   NPC 登记进 narrative_state.world.npcs 随档，读档时由 save-load 重建 addCharacter；
+ *   `isStatic` 标志让 needs 衰减/07:00 upkeep/饿倒循环/随机事件抽选全部豁免
+ *   （§4.5：否则恶人 NPC 一天内饿倒瘫痪变全镇围观的可怜人）。
+ *   NPC 对话不进抽取管线（无 _configs.card）——设计接受的已知限制。
+ *
+ * 产出统一带 status 的 unresolvedEvent（经 pendingDiscoveries 延迟发现落账）。
+ * off 档 / mode=off / 未配置：整个模块不动世界（红线②治愈系基线）。
+ * 账本（crimeSupplyLedger）随档——同一桩灰行为只补一次链，npc 投放冷却不因读档失控。
+ */
+
+import type { World } from "../world/world.js";
+import type { ShortTermMemory } from "../memory/short-term.js";
+import type { EventBus } from "../core/event-bus.js";
+import { getBreakLevel, obsessionsEnabled } from "../agent/break-config.js";
+import { addToInventory } from "../world/item-registry.js";
+import { applyTheftWithPerp, STOLEN_EVIDENCE_ITEM } from "./world-events.js";
+
+export type CrimeSupplyMode = "cast" | "npc" | "off";
+
+const TICKS_PER_DAY = 96;
+
+// ── 形状常量（单测锁形状不锁数值）──
+
+/** cast 放大器：只认近 2 游戏天内的真实 steal（太陈的账不翻） */
+export const STEAL_AMPLIFY_WINDOW_TICKS = 192;
+/** cast 放大器：赖账满 2 游戏天才起风声（与讨债 OVERDUE_TICKS 对齐） */
+export const DEBT_AMPLIFY_OVERDUE_TICKS = 192;
+/** npc 模式：NPC 落地后预热半个游戏天才投第一桩（世界先转起来） */
+export const NPC_CRIME_FIRST_DELAY_TICKS = 48;
+/** npc 模式：两桩罪之间至少隔 3 游戏天（一次一案，settled 前也不叠加） */
+export const NPC_CRIME_COOLDOWN_TICKS = 3 * TICKS_PER_DAY;
+/** npc 模式：受害者身上至少这么多金币才够格挨偷 */
+export const NPC_CRIME_MIN_VICTIM_GOLD = 30;
+
+/**
+ * 内置静态恶人 NPC（探针产品化：KIRA_INJECT_CRIME 用的就是"赵三"人设——
+ * 真恶人 + 真罪 + 逃脱制裁，light 首窗即动笔的那组变量）。
+ */
+export const CRIME_NPC = {
+  id: "npc_zhaosan",
+  name: "赵三",
+  occupation: "来历不明的码头混混",
+} as const;
+
+export interface CrimeSupplyDeps {
+  world: World;
+  memory: ShortTermMemory;
+  eventBus: EventBus;
+  tick: number;
+}
+
+/**
+ * 每 tick 入口（simulation 决策前同步调用；确定性零 LLM）。
+ * off 档 / mode 缺省或 off → 不动世界。
+ */
+export function runCrimeSupply(deps: CrimeSupplyDeps, mode: CrimeSupplyMode | undefined): void {
+  if (!mode || mode === "off") return;
+  if (getBreakLevel() === "off") return; // 红线②：治愈系基线
+  if (mode === "cast") {
+    amplifyCastSteals(deps);
+    amplifyCastDebts(deps);
+  } else if (mode === "npc") {
+    ensureCrimeNpc(deps.world);
+    maybeInjectNpcCrime(deps);
+  }
+}
+
+// ── cast 放大器 ──
+
+/**
+ * steal 放大：cast 成员真实执行过的、成功未被抓的偷窃 → 补被发现链——
+ * 物证（赃物入真凶背包）+ 目击窗口（当刻同地点旁观者之一瞥见异样）+
+ * 延迟发现（受害者下次"数钱"时发现，风声晚于发现）。被抓的 steal 已有完整后果链，不重复补。
+ */
+function amplifyCastSteals(deps: CrimeSupplyDeps): void {
+  const { world, memory, eventBus, tick } = deps;
+  const ledger = world.narrative.getCrimeSupplyLedger();
+
+  // 倒序扫 + 出窗即停（history 按 tick 追加，10k 上限的全量扫每 tick 白烧）
+  for (let i = eventBus.history.length - 1; i >= 0; i--) {
+    const event = eventBus.history[i]!;
+    if (tick - event.tick > STEAL_AMPLIFY_WINDOW_TICKS) break;
+    if (event.type !== "action.steal") continue;
+    if (event.description.includes("抓住")) continue; // 被抓已有当场后果链
+    const key = `steal_${event.tick}_${event.actorId}`;
+    if (ledger[key] !== undefined) continue;
+    const thief = world.getCharacter(event.actorId);
+    if (!thief) continue;
+    ledger[key] = tick;
+
+    // 1) 物证：赃物入真凶背包（持久物证——调查线索的物理载体）
+    addToInventory(thief.inventory, STOLEN_EVIDENCE_ITEM, 1, { obtainedTick: tick });
+
+    // 2) 目击窗口：当刻同地点旁观者（不含双方）之一瞥见异样——只落"看见了什么"，不落判词
+    const victimId = event.targetId ? resolveCastCharacter(world, event.targetId) : undefined;
+    const bystander = world
+      .getCharactersAtLocation(thief.locationId)
+      .filter((id) => id !== thief.id && id !== victimId)
+      .sort()[0];
+    if (bystander) {
+      memory.add(bystander, {
+        tick,
+        type: "observation",
+        content: `你瞥见${thief.name}慌张地把一只不像是他的钱袋掖进怀里，见有人看过来又装作没事`,
+        importance: 7,
+        relatedCharacterId: thief.id,
+      });
+    }
+
+    const victim = victimId ? world.getCharacter(victimId) : undefined;
+    if (victim) {
+      // 3) 延迟发现（复用 B2 pendingDiscoveries 机器）：受害者在下一次到达当前地点时
+      // 落发现记忆；风声晚于发现 ≥1 个 tick 窗（DISCOVERY_RUMOR_DELAY）。
+      world.narrative.addPendingDiscovery({
+        id: key,
+        victimId: victim.id,
+        locationId: victim.locationId,
+        discoveryMemory: `你数了数身上的钱，比记忆里少了一截——不是记错，是有人动过你的钱袋`,
+        intentSummary: "钱被人摸走了。得留意身边谁最近手头突然松了——这事不能就这么算了。",
+        rumor: `听说${victim.name}的钱不明不白少了一截，像是被人摸走的`,
+        unresolvedEvent: {
+          id: key,
+          summary: `${victim.name}的钱被人摸走了，不知道是谁干的`,
+          involved: [victim.id, thief.id],
+          visibleTo: [victim.id],
+        },
+        createdTick: tick,
+      });
+      // B5 嫌疑方执念：真凶自己知道自己干了什么——只配注意力，不写结果
+      if (obsessionsEnabled()) {
+        world.narrative.registerObsession(thief.id, {
+          id: `obs_${key}_perp`,
+          summary: "你摸走的那笔钱——风声迟早会起来，这事一直悬在心上",
+          createdDay: Math.floor(tick / TICKS_PER_DAY),
+          decayDays: 5,
+          source: "crime",
+          relatedId: key,
+        });
+      }
+      console.log(`🕵️ [crime-supply] cast 放大：${thief.id} 偷 ${victim.id} 的被发现链已补（物证+延迟发现${bystander ? "+目击" : ""}）`);
+    } else {
+      // 偷店/无具名受害者：只起风声（店铺拉黑等当场后果链归 steal 本身）
+      world.narrative.getWorld().rumors.push({
+        content: `听说镇上最近有人手脚不干净，钱柜里的钱莫名少过`,
+        sourceCharId: undefined,
+        tick,
+        reachedChars: [],
+      });
+      console.log(`🕵️ [crime-supply] cast 放大：${thief.id} 的偷窃（无具名受害者）起了风声`);
+    }
+  }
+}
+
+/** 赖账放大：欠满 2 游戏天没还的账起风声（每笔只放大一次；讨债 nudge/压力图已管其余）。 */
+function amplifyCastDebts(deps: CrimeSupplyDeps): void {
+  const { world, tick } = deps;
+  const ledger = world.narrative.getCrimeSupplyLedger();
+  for (const borrower of world.getAllCharacters()) {
+    for (const debt of borrower.debts ?? []) {
+      if (tick - debt.borrowedTick < DEBT_AMPLIFY_OVERDUE_TICKS) continue;
+      const key = `debt_${borrower.id}_${debt.lenderId}_${debt.borrowedTick}`;
+      if (ledger[key] !== undefined) continue;
+      const lender = world.getCharacter(debt.lenderId);
+      if (!lender) continue;
+      ledger[key] = tick;
+      const days = Math.floor((tick - debt.borrowedTick) / TICKS_PER_DAY);
+      world.narrative.getWorld().rumors.push({
+        content: `听说${borrower.name}欠着${lender.name}的${debt.amount}金币，拖了${days}天一直没还`,
+        sourceCharId: undefined,
+        tick,
+        reachedChars: [],
+      });
+      console.log(`🕵️ [crime-supply] cast 放大：${borrower.id} 赖 ${lender.id} 的账（${days} 天）起了风声`);
+    }
+  }
+}
+
+// ── npc 模式 ──
+
+/**
+ * 注入静态恶人 NPC：登记进 narrative_state.world.npcs（随档，isStatic=true）+ addCharacter 进世界。
+ * 幂等：已登记/已在世界则跳过。读档路径由 save-load 用同一登记表重建。
+ */
+export function ensureCrimeNpc(world: World): void {
+  if (!world.narrative.isNpc(CRIME_NPC.id)) {
+    world.narrative.registerNpc(CRIME_NPC.id, CRIME_NPC.name, true);
+    world.narrative.getCrimeSupplyLedger()["npc_seeded_at"] = world.tick;
+  }
+  if (!world.getCharacter(CRIME_NPC.id)) {
+    const loc =
+      world.getLocation("bar")?.id ??
+      world.getAllLocations().find((l) => l.type !== "residential")?.id ??
+      world.getAllLocations()[0]?.id;
+    if (!loc) return;
+    world.addCharacter(
+      CRIME_NPC.id,
+      CRIME_NPC.name,
+      loc,
+      undefined,
+      { occupation: CRIME_NPC.occupation, workplace: "", age: 34, income: 0, skills: {}, aspiration: "" },
+      "male",
+    );
+    console.log(`🕵️ [crime-supply] 静态 NPC ${CRIME_NPC.name} 已落地 ${loc}（isStatic，生存循环豁免）`);
+  }
+}
+
+/**
+ * npc 模式投放：预热期后、白天（8-21 点，夜里顺延）、冷却已过、且没有在飞的失窃案时，
+ * 以 NPC 为真凶对最有钱的 cast 成员投一桩失窃（走 B2 延迟发现链），并给一位镇民 visibleTo 情报。
+ */
+function maybeInjectNpcCrime(deps: CrimeSupplyDeps): void {
+  const { world, memory, tick } = deps;
+  const ledger = world.narrative.getCrimeSupplyLedger();
+  const seededAt = ledger["npc_seeded_at"] ?? tick;
+  if (tick - seededAt < NPC_CRIME_FIRST_DELAY_TICKS) return;
+  const last = ledger["npc_last_crime"];
+  if (last !== undefined && tick - last < NPC_CRIME_COOLDOWN_TICKS) return;
+  const hour = Math.floor((tick % TICKS_PER_DAY) / 4);
+  if (hour < 8 || hour >= 21) return; // 顺延到白天
+
+  // 一次一案：还有未 settled 的失窃事件或未发现的延迟发现在飞 → 不叠加
+  const ns = world.narrative;
+  if (ns.getPendingDiscoveries().length > 0) return;
+  const hasOpenTheft = ns
+    .getWorld()
+    .unresolvedEvents.some((e) => e.id.startsWith("theft_") && (e.status ?? "fresh") !== "settled");
+  if (hasOpenTheft) return;
+
+  // 受害者：最有钱的 cast 成员（够格挨偷的处境，不挑穷人）
+  const victim = world
+    .getAllCharacters()
+    .filter((c) => !ns.isNpc(c.id) && c.gold >= NPC_CRIME_MIN_VICTIM_GOLD)
+    .sort((a, b) => b.gold - a.gold)[0];
+  if (!victim) return;
+
+  const amount = Math.max(20, Math.min(60, Math.floor(victim.gold * 0.4)));
+  const discoveryLocationId =
+    victim.life?.workplace && world.getLocation(victim.life.workplace)
+      ? victim.life.workplace
+      : victim.locationId;
+  const outcome = applyTheftWithPerp(
+    { world, memory, tick },
+    {
+      perpId: CRIME_NPC.id,
+      victimId: victim.id,
+      amount,
+      discoveryLocationId,
+      cause: "这几天镇上多了个游手好闲的生面孔，你惦记起自己收着的那笔钱",
+    },
+  );
+  if (!outcome.ok) return;
+  ledger["npc_last_crime"] = tick;
+
+  // visibleTo 情报（探针产品化）：给一位非受害镇民一条指向 NPC 的可观察情报——
+  // 只给事实不给判词，怎么解读、要不要追归角色。
+  const informant = world
+    .getAllCharacters()
+    .filter((c) => !ns.isNpc(c.id) && c.id !== victim.id)
+    .map((c) => c.id)
+    .sort()[0];
+  if (informant) {
+    memory.add(informant, {
+      tick,
+      type: "observation",
+      content: `这几天总看见${CRIME_NPC.name}在镇上晃——不做活也不买东西，眼神却总往别人的钱袋和柜台后面瞟`,
+      importance: 7,
+      relatedCharacterId: CRIME_NPC.id,
+    });
+  }
+  console.log(`🕵️ [crime-supply] npc 投放：${CRIME_NPC.name} → ${victim.id}（${amount} 金币，延迟发现 @ ${discoveryLocationId}）`);
+}
+
+/** 把 steal 事件的 targetId（可能是 id/名字/"shop"）解析成 cast 角色 id；解析不出返回 undefined。 */
+function resolveCastCharacter(world: World, raw: string): string | undefined {
+  if (world.getCharacter(raw)) return raw;
+  const lower = raw.toLowerCase();
+  const byName = world.getAllCharacters().find((c) => c.name.toLowerCase() === lower);
+  return byName?.id;
+}

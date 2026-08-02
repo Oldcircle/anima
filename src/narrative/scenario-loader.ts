@@ -61,10 +61,10 @@ export interface ScenarioManifest {
    */
   worldEvents?: string[];
   /**
-   * B3 罪行供给器配置（DESIGN-revival §2 B3；实现模块在 S7）。
+   * B3 罪行供给器配置（DESIGN-revival §2 B3，实现在 narrative/crime-supply.ts）。
    * manifest 写法：`crime_supply: cast` 或 `crime_supply: { mode: cast }`。
    * mode: cast=放大器（只监听 cast 真实灰行为，补被发现链）/ npc=够格之罪（静态 NPC 供罪）/ off=关闭。
-   * 本阶段只解析存好，S7 的 crime-supply.ts 读取此字段门控。
+   * cli / scenario-sim 经 Simulation.configureCrimeSupply 消费。
    */
   crimeSupply?: { mode: "cast" | "npc" | "off" };
 }

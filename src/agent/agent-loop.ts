@@ -25,7 +25,7 @@ import { applySocialModifier } from "./social-modifier.js";
 import { addMoodlet, type MoodletEmotion } from "../world/moodlets.js";
 import { textSimilarity } from "../memory/mmr.js";
 import { applyNarrativeTags, extractTagsFromArgs, hasAnyTags } from "../narrative/tag-applier.js";
-import { getDecisionPov } from "./break-config.js";
+import { getDecisionPov, obsessionsEnabled } from "./break-config.js";
 import { parseMotiveChannel, type MotiveChannel } from "./motive-channel.js";
 import { v4 as uuid } from "uuid";
 
@@ -234,6 +234,10 @@ export async function runAgentTick(params: {
     wantToDiscuss: world.getWantToDiscuss(card.id, gameTime.tick),
     upcomingAppointments,
     todayPlan: state.todayPlan?.day === gameTime.day ? state.todayPlan.items : undefined,
+    // B5 多日执念消费：此刻区 ≤2 条（off 档不注入——红线②治愈系基线）
+    obsessions: obsessionsEnabled()
+      ? world.narrative.getActiveObsessions(card.id, gameTime.day, 2).map((o) => o.summary)
+      : undefined,
     environmentInfo,
   });
 
