@@ -102,7 +102,7 @@ export interface CharacterNarrativeState {
   pressure: number;                                 // 0-100，叙事压力
   /** 角色卡定义的秘密池快照（只读，由角色 yml 加载时填入） */
   secretsPool: string[];
-  /** B5 多日执念（随档；本阶段只登记不消费，见 ObsessionEntry TODO） */
+  /** B5 多日执念（随档；登记/消费两端见 ObsessionEntry 文档注释） */
   obsessions: ObsessionEntry[];
 }
 
