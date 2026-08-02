@@ -74,6 +74,23 @@ export function setBreakLevel(level: BreakLevel | undefined): void {
   }
 }
 
+// ───────────────────────── 导演硬事件的剧本门控（B2）─────────────────────────
+//
+// letter_arrival 与真实边界块"镇外之人不会出现也联系不上"打架——只有剧本 manifest 显式
+// 声明 world_events: [letter_arrival] 时才①解锁该硬事件②给真实边界块加豁免行。
+// 静态 per-run（scenario 加载时设一次），不破坏 prompt 前缀缓存。
+
+let _enabledWorldEvents = new Set<string>();
+
+/** 由 cli / sim 测试在 scenario 加载时设置。传 undefined 视为空（不解锁任何门控事件）。 */
+export function setEnabledWorldEvents(types: string[] | undefined): void {
+  _enabledWorldEvents = new Set(types ?? []);
+}
+
+export function isWorldEventEnabled(type: string): boolean {
+  return _enabledWorldEvents.has(type);
+}
+
 const on = (): boolean => _level !== "off";
 const strong = (): boolean => _level === "strong";
 

@@ -41,8 +41,14 @@ import { PressureGraph, countMissedAppointmentsByPair } from "../narrative/press
 import { BeatEngine, getBeatCooldownTicks, type BeatDefinition, type BeatReadyEvent } from "../narrative/beat-engine.js";
 import { buildBeatContext, type BeatContextExtras } from "../narrative/expression.js";
 import type { FateEvent } from "../world/fate-events.js";
-import { Director, type DirectorConfig } from "../narrative/director.js";
+import { Director, type DirectorConfig, type RecentMotiveEntry } from "../narrative/director.js";
 import { observePulses } from "../narrative/pulse-store.js";
+import {
+  applyAccidentDamage,
+  applyLetterArrival,
+  applyTheftWithPerp,
+  processPendingDiscoveries,
+} from "../narrative/world-events.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -319,6 +325,9 @@ export class Simulation {
     // 1.0d 约定结算：到点检查赴约/爽约，产生记忆/情绪/关系变化（在角色决策前，
     // 让"被放鸽子"的记忆和情绪能进入本 tick 的 prompt）
     this.resolveAppointments(gameTime);
+    // 1.0d2 硬事件延迟发现（B2）：受害者到场才落"铁盒空了"发现记忆；风声晚于发现。
+    // 决策前跑——发现记忆进本 tick prompt。off 档在函数内部被闸（治愈系基线）。
+    processPendingDiscoveries(this.world, this.memory, gameTime.tick);
     // 1.0e 晨间打算：每天 06:00 各角色给自己定今天想做的 1-3 件事（fire-and-forget）
     if (gameTime.hour === 6 && gameTime.minute === 0) {
       this.runMorningPlans(gameTime);
@@ -356,6 +365,9 @@ export class Simulation {
 
     // 3.5 反应轮：信箱有新消息的角色获得额外决策机会
     await this._runReactionRounds(results, gameTime);
+
+    // 3.52 recent-motive 环形缓冲（B2）：真心层只喂导演（third 档才有数据，空集安全）
+    this.ingestMotives(results, gameTime.tick);
 
     // 3.55 冲突当刻晋升长期记忆：吵架/偷窃被抓不该 48 小时后蒸发
     this._promoteConflictsToLongTerm(results, gameTime);
@@ -1662,14 +1674,48 @@ export class Simulation {
     this.beatEngine.setLastTriggerTick(triggerTicks.length > 0 ? Math.max(...triggerTicks) : undefined);
   }
 
+  /**
+   * recent-motive 环形缓冲（B2 §4.5）：内存态短窗信号，只喂导演 worldSnapshot——
+   * 角色互不可见、不回流任何角色记忆。third 档才有数据（motive 只在 third 解析），
+   * first 档/无分层时天然空集。重启归零可容忍（声明为内存态）。
+   */
+  private _motiveBuffer: RecentMotiveEntry[] = [];
+  private static MOTIVE_BUFFER_CAP = 32;
+
+  /** 把本 tick 决策结果里的真心层（twoLayer 才算真分层）收进环形缓冲。 */
+  ingestMotives(results: AgentTickResult[], tick: number): void {
+    for (const r of results) {
+      if (!r.motive?.twoLayer) continue;
+      this._motiveBuffer.push({
+        charId: r.characterId,
+        name: this.world.getCharacter(r.characterId)?.name ?? r.characterId,
+        surface: r.motive.surface,
+        hidden: r.motive.hidden,
+        tick,
+      });
+    }
+    if (this._motiveBuffer.length > Simulation.MOTIVE_BUFFER_CAP) {
+      this._motiveBuffer.splice(0, this._motiveBuffer.length - Simulation.MOTIVE_BUFFER_CAP);
+    }
+  }
+
+  /** 导演 worldSnapshot 的真心层读取口（只给导演） */
+  getRecentMotives(): ReadonlyArray<RecentMotiveEntry> {
+    return this._motiveBuffer;
+  }
+
   /** 启用 LLM 导演（N4）。可选 — 不调即不启用。
    * D1: 自动注入 simulation 的 memory + impressions 给 director 的 read 工具。
-   * D2/D4: pulse store / agenda store 由 Director 内部默认创建。 */
+   * D2/D4: pulse store / agenda store 由 Director 内部默认创建。
+   * B2: 注入 enqueueMutation 安全通路（硬事件只入队）+ 压力图 + recent-motive 读取口。 */
   enableDirector(config: DirectorConfig): void {
     this.director = new Director({
       ...config,
       memory: config.memory ?? this.memory,
       impressions: config.impressions ?? this.impressions,
+      enqueueMutation: config.enqueueMutation ?? ((fn) => this.enqueueMutation(fn)),
+      pressureGraph: config.pressureGraph ?? this.pressureGraph,
+      getRecentMotives: config.getRecentMotives ?? (() => this.getRecentMotives()),
     });
   }
 
@@ -1796,6 +1842,45 @@ export class Simulation {
         witnesses: [],
       });
       console.log(`🎬 [auto_event] fate → ${target.name}（beat=${ctx.beatId}${goldChange !== 0 ? `, 金币 ${goldChange > 0 ? "+" : ""}${goldChange}` : ""}）`);
+    },
+    // ── B2 硬事件原语（与导演 inject_world_event 共用世界侧结算；红线校验在 apply 函数内，
+    // beat 路径同样不许从 cast 挑真凶/off 档同样被闸。beat 是剧本预定投放，不占导演周配额）──
+    theft_with_perp: (payload, ctx) => {
+      const r = applyTheftWithPerp(
+        { world: this.world, memory: this.memory, tick: ctx.tick },
+        {
+          perpId: typeof payload.perp_id === "string" ? payload.perp_id : String(payload.perp ?? ""),
+          victimId: typeof payload.victim_id === "string" ? payload.victim_id : String(payload.victim ?? ""),
+          amount: typeof payload.amount === "number" ? payload.amount : 0,
+          discoveryLocationId: typeof payload.discovery_location_id === "string" ? payload.discovery_location_id : undefined,
+          cause: typeof payload.cause === "string" ? payload.cause : "",
+        },
+      );
+      console[r.ok ? "log" : "warn"](`🎬 [auto_event] theft_with_perp（beat=${ctx.beatId}）: ${r.description}`);
+    },
+    accident_damage: (payload, ctx) => {
+      const r = applyAccidentDamage(
+        { world: this.world, memory: this.memory, tick: ctx.tick },
+        {
+          targetId: typeof payload.target_id === "string" ? payload.target_id : String(payload.target ?? ""),
+          item: typeof payload.item === "string" ? payload.item : undefined,
+          goldCost: typeof payload.gold_cost === "number" ? payload.gold_cost : undefined,
+          cause: typeof payload.cause === "string" ? payload.cause : "",
+        },
+      );
+      console[r.ok ? "log" : "warn"](`🎬 [auto_event] accident_damage（beat=${ctx.beatId}）: ${r.description}`);
+    },
+    letter_arrival: (payload, ctx) => {
+      const r = applyLetterArrival(
+        { world: this.world, memory: this.memory, tick: ctx.tick },
+        {
+          recipientId: typeof payload.recipient_id === "string" ? payload.recipient_id : String(payload.recipient ?? ""),
+          fromWhom: typeof payload.from_whom === "string" ? payload.from_whom : "",
+          contentSummary: typeof payload.content_summary === "string" ? payload.content_summary : "",
+          cause: typeof payload.cause === "string" ? payload.cause : "",
+        },
+      );
+      console[r.ok ? "log" : "warn"](`🎬 [auto_event] letter_arrival（beat=${ctx.beatId}）: ${r.description}`);
     },
   };
 

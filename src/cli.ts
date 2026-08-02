@@ -15,7 +15,7 @@ import { ALL_KIRA_ACTIONS } from "./actions/kira-actions.js";
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { createApiServer } from "./api/server.js";
 import { loadScenario, applyInitialItems, applyKiraProtections } from "./narrative/scenario-loader.js";
-import { setBreakLevel, getBreakLevel, setDecisionPov, getDecisionPov } from "./agent/break-config.js";
+import { setBreakLevel, getBreakLevel, setDecisionPov, getDecisionPov, setEnabledWorldEvents } from "./agent/break-config.js";
 import { saveGame, loadGame } from "./persistence/save-load.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -67,6 +67,12 @@ console.log(`🔥 破线强度 (breakLevel): ${getBreakLevel()} [${breakSource}]
 setDecisionPov(scenario.manifest.decisionPov);
 const povSource = scenario.manifest.decisionPov ? "scenario" : process.env.ANIMA_DECISION_POV ? "env" : "默认";
 console.log(`🎭 决策视角 (decisionPov): ${getDecisionPov()} [${povSource}]`);
+
+// --- B2 剧本门控的导演硬事件（manifest world_events）：letter_arrival 靠它解锁+豁免真实边界 ---
+setEnabledWorldEvents(scenario.manifest.worldEvents);
+if (scenario.manifest.worldEvents?.length) {
+  console.log(`🎬 剧本门控硬事件 (world_events): ${scenario.manifest.worldEvents.join(", ")}`);
+}
 
 // --- LLM Provider ---
 // settings.json（前端 Settings 写入）优先于 .env

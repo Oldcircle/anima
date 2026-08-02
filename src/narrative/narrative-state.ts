@@ -55,6 +55,31 @@ export interface LocationNarrativeState {
   rumorSeeds: string[];
 }
 
+/**
+ * B2 theft 延迟发现制的待发现记录（随档）：
+ * 注入时真金已转移、赃物已入包，但受害者要**到场**才落"铁盒空了"发现记忆；
+ * 风声（rumor）必须晚于 ≥1 个发现记忆（discoveredTick + 延迟后才释放）。
+ */
+export interface PendingDiscovery {
+  id: string;
+  victimId: string;
+  /** 发现地点：受害者走到这里才触发发现 */
+  locationId: string;
+  /** 发现记忆（受害者视角，一段白描） */
+  discoveryMemory: string;
+  /** 发现当刻的现场短时氛围（observableState，短时过期） */
+  observable?: string;
+  /** 发现当刻注入的 recover intent */
+  intentSummary?: string;
+  /** 发现后延迟释放的风声（无则发现即完结） */
+  rumor?: string;
+  /** 发现时落账的未解决事件 */
+  unresolvedEvent?: { id: string; summary: string; involved: string[]; visibleTo: string[] | "*" };
+  createdTick: number;
+  /** 发现发生的 tick（未发现时缺省） */
+  discoveredTick?: number;
+}
+
 export interface WorldNarrativeState {
   unresolvedEvents: UnresolvedEvent[];
   triggeredBeats: string[];
@@ -66,6 +91,19 @@ export interface WorldNarrativeState {
    * cooldown 型 beat（B4）也读它）。新结构用 Record 不用 Map——JSON 序列化往返安全。
    */
   beatLastTrigger: Record<string, number>;
+  /**
+   * B2 导演硬事件配额（随档——导演内存态重启即失控）：
+   * usedByWeek key = String(周索引 floor(tick/672))，周池 2 次；
+   * lastByType = 冷却水位（inject_world_event 每类 / surface_grudge 每对）。
+   */
+  worldEventQuota: { usedByWeek: Record<string, number>; lastByType: Record<string, number> };
+  /** B2 延迟发现队列（随档，跨日状态） */
+  pendingDiscoveries: PendingDiscovery[];
+  /**
+   * 世界注入的静态 NPC 登记表（B3 crime-supply 的随档载体，B2 先立字段：
+   * theft_with_perp 的 npc 真凶资格以此为准）。读档时由 B3 重建 addCharacter。
+   */
+  npcs: Record<string, { name: string; isStatic?: boolean }>;
 }
 
 export interface NarrativeStateSnapshot {
@@ -83,6 +121,9 @@ export function emptyNarrativeState(): NarrativeStateSnapshot {
       tensionIndex: 0,
       rumors: [],
       beatLastTrigger: {},
+      worldEventQuota: { usedByWeek: {}, lastByType: {} },
+      pendingDiscoveries: [],
+      npcs: {},
     },
     characters: {},
     locations: {},
@@ -123,6 +164,50 @@ export function normalizeNarrativeSnapshot(
   } else {
     for (const [k, v] of Object.entries(w.beatLastTrigger)) {
       if (typeof v !== "number" || !Number.isFinite(v)) delete w.beatLastTrigger[k];
+    }
+  }
+
+  // B2：硬事件配额（旧档缺失回填空计数；脏值清掉——NaN 会让配额判定永假/永真）
+  const quota = w.worldEventQuota;
+  if (!quota || typeof quota !== "object" || Array.isArray(quota)) {
+    w.worldEventQuota = { usedByWeek: {}, lastByType: {} };
+  } else {
+    for (const field of ["usedByWeek", "lastByType"] as const) {
+      const rec = quota[field];
+      if (!rec || typeof rec !== "object" || Array.isArray(rec)) {
+        quota[field] = {};
+      } else {
+        for (const [k, v] of Object.entries(rec)) {
+          if (typeof v !== "number" || !Number.isFinite(v)) delete rec[k];
+        }
+      }
+    }
+  }
+
+  // B2：延迟发现队列（结构残缺的条目直接丢——宁可少一条发现也别让 sweep 崩）
+  if (!Array.isArray(w.pendingDiscoveries)) {
+    w.pendingDiscoveries = [];
+  } else {
+    w.pendingDiscoveries = w.pendingDiscoveries.filter(
+      (d) =>
+        d && typeof d === "object" &&
+        typeof d.id === "string" &&
+        typeof d.victimId === "string" &&
+        typeof d.locationId === "string" &&
+        typeof d.discoveryMemory === "string" &&
+        typeof d.createdTick === "number" && Number.isFinite(d.createdTick),
+    );
+    for (const d of w.pendingDiscoveries) {
+      if (typeof d.discoveredTick !== "number" || !Number.isFinite(d.discoveredTick)) delete d.discoveredTick;
+    }
+  }
+
+  // B2/B3：NPC 登记表
+  if (!w.npcs || typeof w.npcs !== "object" || Array.isArray(w.npcs)) {
+    w.npcs = {};
+  } else {
+    for (const [id, npc] of Object.entries(w.npcs)) {
+      if (!npc || typeof npc !== "object" || typeof npc.name !== "string") delete w.npcs[id];
     }
   }
 
@@ -318,6 +403,40 @@ export class NarrativeState {
 
   setActivePhase(phase: string | undefined): void {
     this.snapshot.world.activePhase = phase;
+  }
+
+  /** B2：硬事件配额计数（随档）。缺失时就地补默认（构造器传入的旧快照没走 normalize）。 */
+  getWorldEventQuota(): { usedByWeek: Record<string, number>; lastByType: Record<string, number> } {
+    const w = this.snapshot.world;
+    if (!w.worldEventQuota || typeof w.worldEventQuota !== "object") {
+      w.worldEventQuota = { usedByWeek: {}, lastByType: {} };
+    }
+    w.worldEventQuota.usedByWeek = w.worldEventQuota.usedByWeek ?? {};
+    w.worldEventQuota.lastByType = w.worldEventQuota.lastByType ?? {};
+    return w.worldEventQuota;
+  }
+
+  /** B2：延迟发现队列（随档，返回可变引用——sweep 就地增删）。 */
+  getPendingDiscoveries(): PendingDiscovery[] {
+    const w = this.snapshot.world;
+    if (!Array.isArray(w.pendingDiscoveries)) w.pendingDiscoveries = [];
+    return w.pendingDiscoveries;
+  }
+
+  addPendingDiscovery(d: PendingDiscovery): void {
+    this.getPendingDiscoveries().push(d);
+  }
+
+  // ── NPC 登记（B2 立字段，B3 crime-supply 填充+读档重建）──
+
+  registerNpc(id: string, name: string, isStatic = true): void {
+    const w = this.snapshot.world;
+    if (!w.npcs || typeof w.npcs !== "object") w.npcs = {};
+    w.npcs[id] = { name, isStatic };
+  }
+
+  isNpc(id: string): boolean {
+    return Boolean(this.snapshot.world.npcs?.[id]);
   }
 
   setTensionIndex(value: number): void {

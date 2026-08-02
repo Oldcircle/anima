@@ -148,7 +148,7 @@ function truncate(s: string, max: number): string {
  * 不同工具字段名不一致，按优先级查找。
  */
 export function extractTargetChar(args: Record<string, unknown>): string | undefined {
-  const keys = ["character_id", "observer_id", "target_character_id", "char_id"];
+  const keys = ["character_id", "observer_id", "target_character_id", "char_id", "victim_id", "target_id", "recipient_id"];
   for (const k of keys) {
     const v = args[k];
     if (typeof v === "string" && v.length > 0) return v;

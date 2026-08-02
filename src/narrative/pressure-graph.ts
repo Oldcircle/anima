@@ -247,6 +247,12 @@ export class PressureGraph {
     return this._lastPairs.slice(0, n);
   }
 
+  /** 某一对的最新压力（B2 surface_grudge 门槛判定用）。无边 = undefined。 */
+  getPairPressure(charA: string, charB: string): PairPressure | undefined {
+    const key = pairKeyOf(charA, charB);
+    return this._lastPairs.find((p) => pairKeyOf(p.a, p.b) === key);
+  }
+
   /**
    * 压力对热点摘要（三路输出之三）：给导演 worldSnapshot / BeatContext.extras 的
    * 一段人可读白描。无热点时返回空串。

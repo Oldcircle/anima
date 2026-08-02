@@ -53,6 +53,12 @@ export interface ScenarioManifest {
    * （正典核心张力：L 的匿名护甲）。由 applyKiraProtections 写进 world.kira.aliasProtected。
    */
   kiraAliasProtected?: string[];
+  /**
+   * B2 剧本门控的导演硬事件（manifest `world_events`）：目前只有 letter_arrival 受此门控
+   * （声明后①解锁该硬事件②真实边界块加"镇外来信真实存在"豁免行——否则信与物理法则打架）。
+   * 由 cli / sim 测试经 setEnabledWorldEvents 应用。
+   */
+  worldEvents?: string[];
 }
 
 export interface LoadedScenario {
@@ -127,7 +133,14 @@ export function loadScenarioManifest(
     decisionPov: normalizeDecisionPov(data.decision_pov ?? data.decisionPov),
     initialItems: normalizeInitialItems(data.initial_items ?? data.initialItems),
     kiraAliasProtected: normalizeAliasProtected(data.kira),
+    worldEvents: normalizeWorldEvents(data.world_events ?? data.worldEvents),
   };
+}
+
+/** 解析 manifest 的 world_events：字符串数组；结构不对/空返回 undefined。 */
+function normalizeWorldEvents(v: unknown): string[] | undefined {
+  if (!Array.isArray(v) || v.some((i) => typeof i !== "string")) return undefined;
+  return v.length > 0 ? (v as string[]) : undefined;
 }
 
 /** 解析 manifest 的 kira.alias_protected：字符串数组；结构不对返回 undefined。 */

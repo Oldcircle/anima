@@ -27,6 +27,16 @@ import {
 import { ALL_DIRECTOR_READ_TOOLS, READ_TOOL_NAMES } from "./director-read-tools.js";
 import { InMemoryPulseStore, extractTargetChar, type PulseRecord } from "./pulse-store.js";
 import { InMemoryAgendaStore } from "./agenda-store.js";
+import type { PressureGraph } from "./pressure-graph.js";
+
+/** B2: recent-motive 环形缓冲条目（simulation 侧内存 buffer，third 档才有数据） */
+export interface RecentMotiveEntry {
+  charId: string;
+  name: string;
+  surface: string;
+  hidden: string;
+  tick: number;
+}
 
 const FORBIDDEN_TOOL_PREFIXES = ["talk", "say", "speak", "message"]; // 兜底防越权
 
@@ -88,6 +98,15 @@ export interface DirectorConfig {
   agendaStore?: InMemoryAgendaStore;
   /** D4: 是否启用 agenda 持久化（默认 true） */
   useAgenda?: boolean;
+  /**
+   * B2: 硬事件安全通路。simulation 注入 enqueueMutation——硬事件工具只入队，
+   * 下一 tick 开头统一落账（导演 fire-and-forget 与 tick 循环并发，同步直写必竞态）。
+   */
+  enqueueMutation?: (fn: () => void) => void;
+  /** B2: 压力图（worldSnapshot 热点摘要 + surface_grudge 门槛判定） */
+  pressureGraph?: PressureGraph;
+  /** B2: recent-motive 环形缓冲读取口（只给导演；空集安全——没有就不注入） */
+  getRecentMotives?: () => ReadonlyArray<RecentMotiveEntry>;
 }
 
 export interface DirectorCallLog {
@@ -111,6 +130,9 @@ export class Director {
   private usePulseFeedback: boolean;
   private agendaStore?: InMemoryAgendaStore;
   private useAgenda: boolean;
+  private enqueueMutation?: (fn: () => void) => void;
+  private pressureGraph?: PressureGraph;
+  private getRecentMotives?: () => ReadonlyArray<RecentMotiveEntry>;
 
   /** 每天的剩余调用预算（key = game day） */
   private budgetByDay = new Map<number, number>();
@@ -134,6 +156,9 @@ export class Director {
     this.agendaStore = this.useAgenda
       ? config.agendaStore ?? new InMemoryAgendaStore()
       : undefined;
+    this.enqueueMutation = config.enqueueMutation;
+    this.pressureGraph = config.pressureGraph;
+    this.getRecentMotives = config.getRecentMotives;
   }
 
   /** D2: 暴露 pulse store 供外部 reducer 调用 + 测试访问 */
@@ -221,6 +246,9 @@ export class Director {
       pulseStore: this.pulseStore,
       agendaStore: this.agendaStore,
       currentDay: params.day,
+      // B2: 硬事件安全通路 + 压力图（surface_grudge 门槛判定）
+      enqueueMutation: this.enqueueMutation,
+      pressureGraph: this.pressureGraph,
     };
 
     const useLoop = this.useReadTools;
@@ -445,13 +473,30 @@ export class Director {
       ? `\n\n你的当前 agenda（活跃 arc，跨 invoke 持续）:\n${this.agendaStore.renderForPrompt()}`
       : "";
 
+    // B2: 压力图热点摘要——已攒起来的旧账（催化优先于新开线）。无热点不注入。
+    const hotspots = this.pressureGraph?.formatHotspotSummary(world) ?? "";
+    const pressureBlock = hotspots
+      ? `\n\n压力图热点（这些对之间已经攒了真实旧账——催化它们优先于凭空开新线）:\n${hotspots}`
+      : "";
+
+    // B2: recent-motive 环形缓冲（third 档才有数据；空集安全——没有就整块不出现）
+    const motives = this.getRecentMotives?.() ?? [];
+    const motiveBlock =
+      motives.length > 0
+        ? `\n\n最近真心层（角色不肯承认的真实动机，只有你看得见，别让角色"知道"）:\n` +
+          motives
+            .slice(-6)
+            .map((m) => `  - [tick ${m.tick}] ${m.name}: 表面「${truncate(m.surface, 60)}」｜真心「${truncate(m.hidden, 60)}」`)
+            .join("\n")
+        : "";
+
     return `角色（合法 id 列表，禁止编造其他 id）:
 ${charLines}
 
 未解决事件 id（详情请用 read_character/read_scene 调查具体情况）:
   ${eventIds}
 
-世界张力: ${ns.world.tensionIndex}/100  天气: ${world.weather}  已触发 beats: ${ns.world.triggeredBeats.length}${agendaBlock}`;
+世界张力: ${ns.world.tensionIndex}/100  天气: ${world.weather}  已触发 beats: ${ns.world.triggeredBeats.length}${pressureBlock}${motiveBlock}${agendaBlock}`;
   }
 
   private buildBeatReadyPrompt(
@@ -467,20 +512,17 @@ ${charLines}
 2. 所有角色 id 必须来自下面列出的"角色"列表，**绝不允许**编造或使用动漫角色名。
 3. **先看后写**：在调用任何写工具之前，**至少先调用一次 read_character 或 read_scene** 调查相关角色/场景的真实状态。世界快照里只有 id 列表，详情必须自己 read。
 4. **beat_ready 先判断再介入**：beat 触发 = 值得看一眼，不 = 必须制造。read 之后：世界里已有苗头 → 轻推放大它；毫无因果基础 → do_nothing 并说明（无中生有的剧情比没有剧情更伤真实感）。你是涌现的放大器，不是剧情制造机。
-5. 写工具（每次调用最多用 3 个）：
-   - **inject_intent**（最有效，首选）: 给角色注入念头，直接影响下一 tick 行为
-   - **inject_observation**: 让角色注意到某事
-   - set_observable_state: 改可观察痕迹
-   - add_unresolved_event / add_rumor: 添加事件/流言
-   - nudge_weather / mark_beat_resolved
-6. **推剧情的最佳组合**：
-   - **seed_topic**（最精准）: 指定角色"和谁聊天时必须聊什么话题"，直接影响对话内容
-   - **inject_intent**: 给角色动力"去找某人"
-   - **add_unresolved_event**: 只是背景信息，角色不会主动反应，效果最弱
-   - 推荐组合：seed_topic(角色, 话题) + inject_intent(角色, 动力) → 角色会主动去找人，对话围绕指定话题展开。
-6. 工作流：先 read 1-2 次 → 思考 → 写 1-2 个工具 → 不再调用工具来结束。最多 5 步。
-7. **每次写工具都建议带 expected 字段**（一句话："我期望 alice 下一 tick 主动 talk bob"）。这会被记成 pulse，下次 invoke 时你可以用 read_pulse_outcome 查回看实际发生了什么。
-8. **Agenda（你的工作记忆）**：prompt 顶部会列出你当前的活跃 arc。如果当前 beat 该开一条新 arc 来跟进，用 create_arc(beat_id, goal, target_day, watch_chars)。需要标记 arc 进度时用 update_agenda(arc_id, status=...)。状态值: setup → brewing → climax_ready → resolved/abandoned。活跃 arc 上限 3 条。`;
+5. 写工具优先级（每次调用最多用 3 个）——**世界侧事实优先，心灵直写是最后手段**：
+   - **inject_world_event**（最硬）: 失窃/意外/来信——动真钱真物、留持久物证。有周配额，好钢用在刀刃上
+   - **surface_grudge**: 把一对角色**已经攒起来**的旧账推到台面（只对压力够高的对生效，催化不无中生有）
+   - **set_active_phase**: 切换剧本阶段（阶段专属工具随之上/下架）
+   - **add_unresolved_event / add_rumor / set_observable_state**: 往世界里放事实、风声、痕迹——角色靠感知自己拼出因果
+   - **seed_topic**: 给知情者一个"想说出口"的话题——让事情从人嘴里说出来，而不是凭空知道
+   - **inject_intent / inject_observation**（心灵直写，最后手段）: 直接改角色脑内。没有因果铺垫的念头是无源之水，用多了世界会显假——动手前先问：这个念头能不能改用上面的世界侧通道让角色自己长出来？
+6. 组合建议：先用世界侧事实造处境（inject_world_event / add_rumor / surface_grudge），再视需要用 seed_topic 给知情者递话头。角色的行为永远由角色自己产出。
+7. 工作流：先 read 1-2 次 → 思考 → 写 1-2 个工具 → 不再调用工具来结束。最多 5 步。
+8. **每次写工具都建议带 expected 字段**（一句话："我期望 alice 下一 tick 主动 talk bob"）。这会被记成 pulse，下次 invoke 时你可以用 read_pulse_outcome 查回看实际发生了什么。
+9. **Agenda（你的工作记忆）**：prompt 顶部会列出你当前的活跃 arc。如果当前 beat 该开一条新 arc 来跟进，用 create_arc(beat_id, goal, target_day, watch_chars)。需要标记 arc 进度时用 update_agenda(arc_id, status=...)。状态值: setup → brewing → climax_ready → resolved/abandoned。活跃 arc 上限 3 条。`;
 
     const beatHint = beatDef?.on_trigger as { hint?: string; director_hint?: string } | undefined;
     const hintText = beatHint?.director_hint ?? beatHint?.hint ?? event.description ?? "";
@@ -503,11 +545,21 @@ ${hintText ? `Beat 提示:\n${hintText}\n` : ""}
     return { system, user };
   }
 
+  /** B2 pacing 分档：<25 播种 / 25-60 催化热点 / >60 收手看戏 */
+  static pacingBand(tension: number): "seed" | "catalyze" | "hands_off" {
+    if (tension < 25) return "seed";
+    if (tension <= 60) return "catalyze";
+    return "hands_off";
+  }
+
   private buildPacingPrompt(world: World, day: number): { system: string; user: string } {
     const ns = world.narrative.getWorld();
     const tension = ns.tensionIndex;
     const unresolvedCount = ns.unresolvedEvents.length;
     const triggeredCount = ns.triggeredBeats.length;
+    const band = Director.pacingBand(tension);
+    const bandLabel =
+      band === "seed" ? "播种（沉寂）" : band === "catalyze" ? "催化热点（发酵）" : "收手看戏（沸腾）";
 
     const system = `你是一名"世界导演"，每天早上 06:00 对世界做一次节奏检查。
 你的目标：让世界既不失控也不陷入死水。
@@ -515,18 +567,21 @@ ${hintText ? `Beat 提示:\n${hintText}\n` : ""}
 铁律：
 1. 你**不能**让角色直接说话。所有角色 id 必须来自下面列表，**禁止编造**。
 2. **先看后写**：调用任何写工具前，至少先调用一次 read_character 或 read_scene 看看现在角色在干什么。
-3. 如果 tension > 40 或最近有 beat 触发，通常 do_nothing 即可。
-4. 如果世界太平淡（tension < 15），优先用 inject_intent / inject_observation 给某个真实角色一个微小念头，呼应已有未解决事件。
-5. 多数节奏检查应该以 do_nothing 结束。最多 5 步循环，写工具最多 1 个。`;
+3. 按张力分档行事（当前档位见下方）：
+   - **tension < 25 → 播种**：世界太沉。优先用世界侧事实播下新处境——add_rumor / inject_world_event / surface_grudge / add_unresolved_event，呼应已有未解决事件；心灵直写（inject_intent/inject_observation）是最后手段。
+   - **25 ≤ tension ≤ 60 → 催化热点**：火种已有。看压力图热点里最热的一两对，用 surface_grudge / seed_topic 把**已经攒起来**的旧账推向台面；不要另开新线稀释压强。
+   - **tension > 60 → 收手看戏**：世界已经够紧，角色们自己在燃。几乎总是 do_nothing——此刻任何注入都是画蛇添足。
+4. 多数节奏检查应该以 do_nothing 结束。最多 5 步循环，写工具最多 1 个。`;
 
     const user = `${this.buildWorldSnapshot(world)}
 
 ────────────────
 日节奏检查 - day ${day}
+当前分档: ${bandLabel}（tension=${tension}）
 未解决事件数: ${unresolvedCount}
 已触发 beats 总数: ${triggeredCount}
 
-请判断现在是否需要轻推世界。先一句话说你的判断，然后调用 1 个工具。`;
+请按上面的分档行事。先一句话说你的判断，然后调用 1 个工具（或 do_nothing）。`;
 
     return { system, user };
   }
