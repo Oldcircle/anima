@@ -37,7 +37,7 @@ import { getItemDef, resolveItem, hasItem, removeFromInventory, addToInventory }
 import { generateMorningPlan } from "./morning-plan.js";
 import { checkPromotion, applyPromotion, type PromotionResult } from "../world/career.js";
 import { detectBehaviorPatterns } from "../world/behavior-chains.js";
-import { updateWorldTension } from "../narrative/tension.js";
+import { PressureGraph } from "../narrative/pressure-graph.js";
 import { BeatEngine, type BeatDefinition, type BeatReadyEvent } from "../narrative/beat-engine.js";
 import { buildBeatContext } from "../narrative/expression.js";
 import { Director, type DirectorConfig } from "../narrative/director.js";
@@ -81,6 +81,8 @@ export class Simulation {
   impressions: ImpressionStore;
   /** N3：规则导演 */
   beatEngine: BeatEngine;
+  /** A 件：戏剧压力图谱（确定性零 LLM 每 tick 重算；valence 环形缓冲为内存态，重启归零可容忍） */
+  pressureGraph: PressureGraph = new PressureGraph();
   /** N4: LLM 导演（可选，未配置时为 undefined） */
   director?: Director;
   /** N6.4: phase-specific 工具映射 (active_phase → ActionDefinition[]) */
@@ -297,8 +299,13 @@ export class Simulation {
     // 1. 衰减需求 + Moodlet 管理
     this.world.decayNeeds();
     this.world.setTick(gameTime.tick);
-    // 1.0a 叙事张力（N2）：每 tick 末更新 tension_index
-    updateWorldTension(this.world);
+    // 1.0a 压力图谱（A 件）：每 tick 重算——收边 → pair/char 压力回写 setPressure → tension 真数据
+    this.pressureGraph.update({
+      world: this.world,
+      relationships: this.relationships,
+      impressions: this.impressions,
+      tick: gameTime.tick,
+    });
     // 1.0b BeatEngine 扫描（N3）：每 4 tick（每游戏小时）扫一次
     // 原设计只在 22:00 扫，但有时间条件的 beat（如 hour >= 11）会被错过
     if (gameTime.tick % 4 === 0) {
@@ -1254,6 +1261,8 @@ export class Simulation {
                 tick: gameTime.tick,
                 relationships: this.relationships,
                 valenceOnLastN: Math.max(1, newSince),
+                // A 件 §4.5：valence 落地即记入压力图内存环形缓冲（近窗波动/B1 预过滤数据源）
+                onValence: (a, b, valence, tick) => this.pressureGraph.recordValence(a, b, valence, tick),
               }).finally(() => this._impressionPending.delete(pairKey)),
             );
           }
@@ -1624,6 +1633,9 @@ export class Simulation {
   loadBeats(beats: BeatDefinition[]): void {
     this.beatEngine.setBeats(beats);
     this.beatEngine.setTriggered(this.world.narrative.getWorld().triggeredBeats);
+    // 读档后同步最近触发 tick（随档权威副本在 narrative_state.world.beatLastTrigger）
+    const triggerTicks = Object.values(this.world.narrative.getWorld().beatLastTrigger);
+    this.beatEngine.setLastTriggerTick(triggerTicks.length > 0 ? Math.max(...triggerTicks) : undefined);
   }
 
   /** 启用 LLM 导演（N4）。可选 — 不调即不启用。
@@ -1773,6 +1785,8 @@ export class Simulation {
     for (const ev of ready) {
       console.log(`   → ${ev.beatId} (${ev.reason}) ${ev.description ?? ""}`);
       this.world.narrative.markBeatTriggered(ev.beatId);
+      // 触发 tick 随档（A 件干旱项 + B4 cooldown 型 beat 的数据源）
+      this.world.narrative.recordBeatTrigger(ev.beatId, gameTime.tick);
       // 同步 emit 到 event bus，N4 director 会订阅
       this.eventBus.emit({
         id: `beat_${ev.beatId}_${gameTime.tick}`,
@@ -1997,9 +2011,10 @@ export class Simulation {
       if (gameTime.tick <= a.atTick + APPOINTMENT_GRACE_TICKS) continue;
 
       // 窗口过了 → 爽约结算
-      this.world.markAppointment(a.id, "missed");
       const waiter = pHere ? proposer : tHere ? target : undefined;
       const absentee = pHere ? target : tHere ? proposer : undefined;
+      // 单方爽约记缺席者（压力图爽约计数的派生依据）；双爽约不记（不计入压力）
+      this.world.markAppointment(a.id, "missed", absentee?.id);
       if (waiter && absentee) {
         this.relationships.modify(waiter.id, absentee.id, -5, gameTime.tick, "被放了鸽子");
         this.memory.add(waiter.id, {

@@ -341,9 +341,13 @@ export class World {
     );
   }
 
-  markAppointment(id: string, status: "kept" | "missed"): void {
+  markAppointment(id: string, status: "kept" | "missed", missedBy?: string): void {
     const a = this._appointments.find((x) => x.id === id);
-    if (a) a.status = status;
+    if (a) {
+      a.status = status;
+      // 只在单方爽约时记缺席者（双爽约/角色缺失不填——压力图爽约计数据此排除）
+      a.missedBy = status === "missed" ? missedBy : undefined;
+    }
   }
 
   /** 全部约定（测试/面板用） */

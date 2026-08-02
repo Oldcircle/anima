@@ -43,6 +43,11 @@ export interface WorldNarrativeState {
   activePhase?: string;
   tensionIndex: number;     // 0-100，每 tick 末由引擎算
   rumors: Array<{ content: string; sourceCharId?: string; tick: number; reachedChars: string[] }>;
+  /**
+   * 每条 beat 最近一次触发的 tick（随档计数器，A 件 tension 干旱项数据源；
+   * cooldown 型 beat（B4）也读它）。新结构用 Record 不用 Map——JSON 序列化往返安全。
+   */
+  beatLastTrigger: Record<string, number>;
 }
 
 export interface NarrativeStateSnapshot {
@@ -59,10 +64,78 @@ export function emptyNarrativeState(): NarrativeStateSnapshot {
       activePhase: undefined,
       tensionIndex: 0,
       rumors: [],
+      beatLastTrigger: {},
     },
     characters: {},
     locations: {},
   };
+}
+
+/**
+ * 读档 normalize（DESIGN-revival A 前置）：旧档缺新字段时逐层回填默认值。
+ * 旧档直灌会让下游公式吃到 undefined → NaN（前科：_nextFateAt/_starvingSince）。
+ * 采用"填缺不重建"策略：未知的未来字段原样保留，只补/修已知字段。
+ */
+export function normalizeNarrativeSnapshot(
+  raw: Partial<NarrativeStateSnapshot> | null | undefined,
+): NarrativeStateSnapshot {
+  const snap = (raw ?? {}) as NarrativeStateSnapshot;
+
+  if (!snap.world || typeof snap.world !== "object") {
+    snap.world = emptyNarrativeState().world;
+  }
+  const w = snap.world;
+  if (!Array.isArray(w.unresolvedEvents)) w.unresolvedEvents = [];
+  if (!Array.isArray(w.triggeredBeats)) w.triggeredBeats = [];
+  if (typeof w.activePhase !== "string") w.activePhase = undefined;
+  if (typeof w.tensionIndex !== "number" || !Number.isFinite(w.tensionIndex)) {
+    w.tensionIndex = 0;
+  } else {
+    w.tensionIndex = Math.max(0, Math.min(100, w.tensionIndex));
+  }
+  if (!Array.isArray(w.rumors)) w.rumors = [];
+  if (!w.beatLastTrigger || typeof w.beatLastTrigger !== "object" || Array.isArray(w.beatLastTrigger)) {
+    w.beatLastTrigger = {};
+  } else {
+    for (const [k, v] of Object.entries(w.beatLastTrigger)) {
+      if (typeof v !== "number" || !Number.isFinite(v)) delete w.beatLastTrigger[k];
+    }
+  }
+
+  if (!snap.characters || typeof snap.characters !== "object" || Array.isArray(snap.characters)) {
+    snap.characters = {};
+  }
+  for (const [id, c] of Object.entries(snap.characters)) {
+    if (!c || typeof c !== "object") {
+      delete snap.characters[id];
+      continue;
+    }
+    if (!Array.isArray(c.disclosedSecrets)) c.disclosedSecrets = [];
+    if (!Array.isArray(c.knownFacts)) c.knownFacts = [];
+    if (!c.unresolvedWith || typeof c.unresolvedWith !== "object" || Array.isArray(c.unresolvedWith)) {
+      c.unresolvedWith = {};
+    }
+    if (typeof c.pressure !== "number" || !Number.isFinite(c.pressure)) {
+      c.pressure = 0;
+    } else {
+      c.pressure = Math.max(0, Math.min(100, c.pressure));
+    }
+    if (!Array.isArray(c.secretsPool)) c.secretsPool = [];
+  }
+
+  if (!snap.locations || typeof snap.locations !== "object" || Array.isArray(snap.locations)) {
+    snap.locations = {};
+  }
+  for (const [id, l] of Object.entries(snap.locations)) {
+    if (!l || typeof l !== "object") {
+      delete snap.locations[id];
+      continue;
+    }
+    if (!Array.isArray(l.eventsWitnessed)) l.eventsWitnessed = [];
+    if (!Array.isArray(l.rumorSeeds)) l.rumorSeeds = [];
+  }
+
+  return snap;
 }
 
 function ensureCharacter(state: NarrativeStateSnapshot, charId: string): CharacterNarrativeState {
@@ -100,9 +173,9 @@ export class NarrativeState {
     return this.snapshot;
   }
 
-  /** 整体替换（用于读档） */
+  /** 整体替换（用于读档）。旧档缺新字段时自动 normalize 回填默认值。 */
   replaceSnapshot(snapshot: NarrativeStateSnapshot): void {
-    this.snapshot = snapshot;
+    this.snapshot = normalizeNarrativeSnapshot(snapshot);
   }
 
   // ── 角色 ──
@@ -173,6 +246,18 @@ export class NarrativeState {
     if (this.snapshot.world.triggeredBeats.includes(beatId)) return false;
     this.snapshot.world.triggeredBeats.push(beatId);
     return true;
+  }
+
+  /** 记录某条 beat 的触发 tick（随档；tension 干旱项与 cooldown 型 beat 的数据源） */
+  recordBeatTrigger(beatId: string, tick: number): void {
+    this.snapshot.world.beatLastTrigger[beatId] = tick;
+  }
+
+  /** 距上一次任意 beat 触发过去了多少 tick（无触发史按世界起点 0 算——世界一开始就在"干旱"） */
+  getTicksSinceLastBeat(currentTick: number): number {
+    const ticks = Object.values(this.snapshot.world.beatLastTrigger);
+    const last = ticks.length > 0 ? Math.max(...ticks) : 0;
+    return Math.max(0, currentTick - last);
   }
 
   setActivePhase(phase: string | undefined): void {

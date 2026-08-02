@@ -142,6 +142,11 @@ export interface Appointment {
   /** 约好做什么（可选） */
   activity?: string;
   status: "pending" | "kept" | "missed";
+  /**
+   * 单方爽约时的缺席者 id。双方都没到（双爽约）或角色缺失时不填——
+   * 压力图谱的爽约计数只认有 missedBy 的记录（派生查询，不加新计数器）。
+   */
+  missedBy?: string;
   createdTick: number;
 }
 

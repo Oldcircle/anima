@@ -83,6 +83,7 @@ export class AnimaDB {
         observations TEXT DEFAULT '[]',
         mental_label TEXT DEFAULT '',
         unresolved TEXT DEFAULT '[]',
+        frictions TEXT,
         last_updated INTEGER DEFAULT 0,
         PRIMARY KEY (observer_id, target_id)
       );
@@ -108,6 +109,7 @@ export class AnimaDB {
         at_tick INTEGER NOT NULL,
         activity TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
+        missed_by TEXT,
         created_tick INTEGER NOT NULL
       );
     `);
@@ -138,6 +140,23 @@ export class AnimaDB {
     );
     if (!relCols.has("grudge_json")) {
       this.db.exec("ALTER TABLE relationships ADD COLUMN grudge_json TEXT");
+    }
+
+    // 疙瘩持久化（DESIGN-revival A 前置）：老档 impressions 表补 frictions 列——
+    // 不修则读档后压力图的 friction 边全部塌 0
+    const impCols = new Set(
+      (this.db.prepare("PRAGMA table_info(impressions)").all() as Array<{ name: string }>).map((r) => r.name),
+    );
+    if (!impCols.has("frictions")) {
+      this.db.exec("ALTER TABLE impressions ADD COLUMN frictions TEXT");
+    }
+
+    // 爽约派生计数：老档 appointments 表补 missed_by 列（单方爽约的缺席者）
+    const apptCols = new Set(
+      (this.db.prepare("PRAGMA table_info(appointments)").all() as Array<{ name: string }>).map((r) => r.name),
+    );
+    if (!apptCols.has("missed_by")) {
+      this.db.exec("ALTER TABLE appointments ADD COLUMN missed_by TEXT");
     }
   }
 
@@ -296,15 +315,20 @@ export class AnimaDB {
 
   saveImpression(observerId: string, imp: {
     characterId: string; summary: string; observations: string[];
-    mentalLabel: string; unresolved: string[]; lastUpdated: number;
+    mentalLabel: string; unresolved: string[]; frictions?: string[]; lastUpdated: number;
   }) {
     this.db.prepare(`
-      INSERT OR REPLACE INTO impressions (observer_id, target_id, summary, observations, mental_label, unresolved, last_updated)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(observerId, imp.characterId, imp.summary, JSON.stringify(imp.observations), imp.mentalLabel, JSON.stringify(imp.unresolved), imp.lastUpdated);
+      INSERT OR REPLACE INTO impressions (observer_id, target_id, summary, observations, mental_label, unresolved, frictions, last_updated)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      observerId, imp.characterId, imp.summary, JSON.stringify(imp.observations), imp.mentalLabel,
+      JSON.stringify(imp.unresolved),
+      imp.frictions && imp.frictions.length > 0 ? JSON.stringify(imp.frictions) : null,
+      imp.lastUpdated,
+    );
   }
 
-  loadImpressions(): Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; lastUpdated: number } }> {
+  loadImpressions(): Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; frictions?: string[]; lastUpdated: number } }> {
     const rows = this.db.prepare("SELECT * FROM impressions").all() as any[];
     return rows.map((r) => ({
       observerId: r.observer_id,
@@ -314,6 +338,7 @@ export class AnimaDB {
         observations: JSON.parse(r.observations),
         mentalLabel: r.mental_label,
         unresolved: JSON.parse(r.unresolved),
+        frictions: r.frictions ? JSON.parse(r.frictions) : undefined,
         lastUpdated: r.last_updated,
       },
     }));
@@ -352,9 +377,9 @@ export class AnimaDB {
 
   saveAppointment(a: import("../world/types.js").Appointment) {
     this.db.prepare(`
-      INSERT OR REPLACE INTO appointments (id, proposer_id, target_id, location_id, at_tick, activity, status, created_tick)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(a.id, a.proposerId, a.targetId, a.locationId, a.atTick, a.activity ?? null, a.status, a.createdTick);
+      INSERT OR REPLACE INTO appointments (id, proposer_id, target_id, location_id, at_tick, activity, status, missed_by, created_tick)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(a.id, a.proposerId, a.targetId, a.locationId, a.atTick, a.activity ?? null, a.status, a.missedBy ?? null, a.createdTick);
   }
 
   loadAppointments(): import("../world/types.js").Appointment[] {
@@ -367,6 +392,7 @@ export class AnimaDB {
       atTick: r.at_tick,
       activity: r.activity ?? undefined,
       status: r.status,
+      missedBy: r.missed_by ?? undefined,
       createdTick: r.created_tick,
     }));
   }
@@ -380,7 +406,7 @@ export class AnimaDB {
     relationships: any[];
     memories: Array<{ characterId: string; tick: number; type: string; content: string; importance: number }>;
     events: any[];
-    impressions?: Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; lastUpdated: number } }>;
+    impressions?: Array<{ observerId: string; impression: { characterId: string; summary: string; observations: string[]; mentalLabel: string; unresolved: string[]; frictions?: string[]; lastUpdated: number } }>;
     longTermMemories?: Array<{ characterId: string; tick: number; type: string; content: string; importance: number; relatedCharacterId?: string }>;
     appointments?: import("../world/types.js").Appointment[];
     narrativeJson?: string;

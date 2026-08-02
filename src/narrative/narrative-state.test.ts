@@ -3,7 +3,8 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { NarrativeState, emptyNarrativeState } from "./narrative-state.js";
+import { NarrativeState, emptyNarrativeState, normalizeNarrativeSnapshot } from "./narrative-state.js";
+import type { NarrativeStateSnapshot } from "./narrative-state.js";
 import { World } from "../world/world.js";
 import { applyNarrativeTags, extractTagsFromArgs, hasAnyTags } from "./tag-applier.js";
 import { computeTensionIndex, updateWorldTension } from "./tension.js";
@@ -145,23 +146,101 @@ describe("tag-applier", () => {
   });
 });
 
-describe("tension index", () => {
-  it("computeTensionIndex weights unresolved 0.4", () => {
-    expect(computeTensionIndex({ unresolvedCount: 0, relationshipVolatility: 0, ticksSinceLastBeat: 0 })).toBe(0);
-    // 5 unresolved → a=100, b=0, c=0 → 100*0.4 = 40
-    expect(computeTensionIndex({ unresolvedCount: 5, relationshipVolatility: 0, ticksSinceLastBeat: 0 })).toBe(40);
-    // 全部最大 → 100
-    expect(computeTensionIndex({ unresolvedCount: 10, relationshipVolatility: 1, ticksSinceLastBeat: 100 })).toBe(100);
+describe("tension index (公式 v1：锁形状不锁数值)", () => {
+  it("零输入 → 0；单项注入 → 单调上升", () => {
+    expect(computeTensionIndex({ unresolvedCount: 0, pairPressureTop3Avg: 0, ticksSinceLastBeat: 0 })).toBe(0);
+    const onlyUnresolved = computeTensionIndex({ unresolvedCount: 5, pairPressureTop3Avg: 0, ticksSinceLastBeat: 0 });
+    expect(onlyUnresolved).toBeGreaterThan(0);
+    const withPairs = computeTensionIndex({ unresolvedCount: 5, pairPressureTop3Avg: 60, ticksSinceLastBeat: 0 });
+    expect(withPairs).toBeGreaterThan(onlyUnresolved);
+    const withDrought = computeTensionIndex({ unresolvedCount: 5, pairPressureTop3Avg: 60, ticksSinceLastBeat: 96 });
+    expect(withDrought).toBeGreaterThan(withPairs);
   });
 
-  it("updateWorldTension reads unresolved from world.narrative", () => {
+  it("全项拉满 → 100（上限回 100，杀 tension>40 永假）", () => {
+    expect(computeTensionIndex({ unresolvedCount: 10, pairPressureTop3Avg: 100, ticksSinceLastBeat: 96 })).toBe(100);
+  });
+
+  it("压力对插座接了真数据后 tension 可达 >40", () => {
+    // 旧公式两插座恒 0 → 封顶 40（director pacing 'tension > 40' 判据永假）
+    const t = computeTensionIndex({ unresolvedCount: 3, pairPressureTop3Avg: 70, ticksSinceLastBeat: 48 });
+    expect(t).toBeGreaterThan(40);
+  });
+
+  it("updateWorldTension reads unresolved + 干旱项 from world.narrative", () => {
     const world = new World(fakeLocations);
     world.narrative.addUnresolvedEvent({ id: "e1", summary: "", involved: [], visibleTo: "*", createdTick: 0 });
     world.narrative.addUnresolvedEvent({ id: "e2", summary: "", involved: [], visibleTo: "*", createdTick: 0 });
     const t = updateWorldTension(world);
-    // 2 unresolved → a=40, b=0, c=0 → round(40*0.4)=16
-    expect(t).toBe(16);
-    expect(world.narrative.getWorld().tensionIndex).toBe(16);
+    expect(t).toBeGreaterThan(0);
+    expect(world.narrative.getWorld().tensionIndex).toBe(t);
+    // 压力对均值传入后 tension 上升
+    const t2 = updateWorldTension(world, { pairPressureTop3Avg: 80 });
+    expect(t2).toBeGreaterThan(t);
+  });
+
+  it("beat 触发会压低干旱项", () => {
+    const world = new World(fakeLocations, 96 * 3); // day 4
+    const droughtHigh = updateWorldTension(world);
+    world.narrative.recordBeatTrigger("b1", 96 * 3 - 4); // 1 小时前刚触发过 beat
+    const droughtLow = updateWorldTension(world);
+    expect(droughtLow).toBeLessThan(droughtHigh);
+  });
+});
+
+describe("normalizeNarrativeSnapshot（旧档读档回填）", () => {
+  it("旧档缺 beatLastTrigger/pressure 等新字段 → 补默认值，无 NaN", () => {
+    // 模拟 N2 时代的旧档：world 缺 beatLastTrigger，角色缺 pressure/secretsPool
+    const legacy = {
+      world: {
+        unresolvedEvents: [{ id: "e1", summary: "x", involved: ["alice"], visibleTo: "*", createdTick: 0 }],
+        triggeredBeats: ["b1"],
+        tensionIndex: 30,
+        rumors: [],
+      },
+      characters: {
+        alice: { disclosedSecrets: ["s1"], knownFacts: [], unresolvedWith: {} },
+      },
+      locations: {
+        cafe: { eventsWitnessed: [] },
+      },
+    } as unknown as NarrativeStateSnapshot;
+
+    const ns = new NarrativeState();
+    ns.replaceSnapshot(legacy);
+
+    const w = ns.getWorld();
+    expect(w.beatLastTrigger).toEqual({});
+    expect(ns.getTicksSinceLastBeat(100)).toBe(100); // 不是 NaN
+    const alice = ns.getCharacter("alice");
+    expect(alice.pressure).toBe(0);
+    expect(Number.isFinite(alice.pressure)).toBe(true);
+    expect(alice.secretsPool).toEqual([]);
+    expect(alice.disclosedSecrets).toEqual(["s1"]); // 已有数据不动
+    expect(ns.getSnapshot().locations.cafe!.rumorSeeds).toEqual([]);
+  });
+
+  it("完全空对象/坏 tensionIndex 也能 normalize", () => {
+    const snap = normalizeNarrativeSnapshot({} as NarrativeStateSnapshot);
+    expect(snap.world.unresolvedEvents).toEqual([]);
+    expect(snap.world.tensionIndex).toBe(0);
+    expect(snap.world.beatLastTrigger).toEqual({});
+    const bad = normalizeNarrativeSnapshot({
+      world: { tensionIndex: Number.NaN, beatLastTrigger: { b1: Number.NaN, b2: 42 } },
+    } as unknown as NarrativeStateSnapshot);
+    expect(bad.world.tensionIndex).toBe(0);
+    expect(bad.world.beatLastTrigger).toEqual({ b2: 42 });
+  });
+
+  it("beatLastTrigger JSON 序列化 round-trip 存活（随档计数器）", () => {
+    const ns = new NarrativeState();
+    ns.recordBeatTrigger("beat_x", 120);
+    ns.recordBeatTrigger("beat_y", 200);
+    const json = JSON.stringify(ns.getSnapshot());
+    const ns2 = new NarrativeState();
+    ns2.replaceSnapshot(JSON.parse(json));
+    expect(ns2.getWorld().beatLastTrigger).toEqual({ beat_x: 120, beat_y: 200 });
+    expect(ns2.getTicksSinceLastBeat(230)).toBe(30);
   });
 });
 

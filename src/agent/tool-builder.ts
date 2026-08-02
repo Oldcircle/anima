@@ -459,6 +459,20 @@ function buildTalkTool(ctx: ToolBuildContext): ActionDefinition {
             type: "string",
             description: "说话时的动作/表情（简短白描，如'低头搓着围裙'）",
           },
+          // C1 叙事标签（全部可选；静态 schema，缓存纪律安全）——由 tag-applier 翻译成叙事状态
+          intent: {
+            type: "string",
+            description: "这句话的用意（可选）：用一个词，如 share/ask/invite/tease/confront/apologize/deflect",
+          },
+          topic_tags: {
+            type: "array",
+            items: { type: "string" },
+            description: "这句话聊到的话题标签（可选，1-3 个短词，如「家人」「欠的钱」「昨晚的事」）",
+          },
+          references_event: {
+            type: "string",
+            description: "这句话在旧事重提哪件未解决的事（可选，填事件 id；只在确实提起你所知的那件事时填）",
+          },
         },
         required: ["target", "message"],
       },

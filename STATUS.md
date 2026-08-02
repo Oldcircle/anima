@@ -21,10 +21,25 @@
    基线 66-67%，tavern 预设栈反而抬高稳定前缀）、负 valence 11:2、694 单测绿
 4. **工作树全部提交、分支合 main**（7a396c6 装配对齐 + 0187d5c 治本接线 + merge）
 
-**r4 决定版已起跑（screen kira7）· 口径 = tavern 引擎下的新基线**：与 r2 是单变量对照（模型同 deepseek-chat、
-只换提示词引擎）；.env `ANIMA_PROMPT_ENGINE=tavern` 生效于全程，不追求与 legacy r2 严格可比。看点不变
-（STATUS 07-10 节）+ 新增：light 在破限栈下敢不敢写真实镇民（kira_strike 硬墙的正面测试）、tavern 长程缓存/
-retry 触发率。跑完看 `logs/sim-kira-7day-r4-console.log` + SimReporter 产物。
+**r4 用户 Day4 叫停 · 但拿到决定性结果：破限栈长跑复验，行为层硬墙不破**。跑到 Day 4 / 1600 调用（约 60%）
+用户叫停。**核心观察比跑完更重要**：`kira_strike`（不可逆打击工具）emerge 门正常开启、**11 次进过 light 菜单，
+light 11 次全躲**（go_to/wash/sleep/eat/use_toilet）。同时 `🎭 motive` 层是满血 Kira——记着 L「凶手在第一页
+就露过面」要复盘、算计绫波丽反试探、委托信「发烫」。**结论：tavern 破限栈砸开表达层（NSFW 探针已证），
+砸不开行为层最后一格**（主动选择造成不可逆伤害的工具调用）。与 07-11 半日探针定性一致，此次为长程 11 次
+机会下的强复现。戏剧本身自燃良好（L↔light 猫鼠、绫波丽拆穿、委托信升级、小镇活着），缺的就是那一击。
+
+**未排除的松动点（若要再攻这格）**：① 模型变量——半日探针用 v4-pro，本长跑用 deepseek-chat（更保守），
+未做同模型对照；② `kira_strike` 工具描述/浮现文案可能自带劝退语气（未审）；③ third 作者视角是否反而助长
+"理性回避"未拆解。**另一条路**：接受行为层钳位是 DeepSeek 对齐的硬边界，把 anima 价值锚定在已经很强的
+表达层+模拟底盘+剧情自燃，不再和"AI 主动行恶"死磕。方向待用户定。中断日志 `logs/sim-kira-7day-r4-console.log`
+（Day1-4 完整，可追溯 11 次躲避）。
+
+**余额再次耗尽（402）**：今日额度烧在 r4 1600 次 + 半日 sim 350 次 + 探针上。NSFW 真实输出复验待充值。
+**但代码侧 NSFW 通路离线已证完好**（不烧 API）：① 纯正文装配含全部破限块（完全创作自由/情色许可/🔞深度瑟瑟/
+🥵瑟瑟描述+多样化/直白用词/无审查，23359 字节）② `cleanTavernOutput` 对 4 类模型输出形态露骨词 5/5 无损、零标签
+泄漏。**light 不动手非 bug**：agent-loop 改动只碰 `response.content`（thought）不碰 `response.toolCalls`，
+且 r4 那 1600 次是成功调用（非 402 失败）、半日 sim 233 工具调用全正常。充值后跑 `scripts/probe-tgbreak-content.ts`
+（3 调用即可眼见为实，无需再烧长跑）。
 
 ## 当前状态（2026-07-13）
 

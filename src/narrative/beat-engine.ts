@@ -55,6 +55,12 @@ export class BeatEngine {
   private beats: BeatDefinition[];
   /** 已触发集合（由调用方从 narrative_state 同步进来） */
   private triggered: Set<string>;
+  /**
+   * 最近一次任意 beat 触发的 tick（A 件 tension 干旱项数据源）。
+   * 随档的权威副本在 narrative_state.world.beatLastTrigger；
+   * 这里是引擎内存态镜像，读档后由调用方 setLastTriggerTick 同步。
+   */
+  private lastTriggerTick?: number;
 
   constructor(beats: BeatDefinition[] = []) {
     this.beats = beats;
@@ -76,6 +82,15 @@ export class BeatEngine {
 
   getTriggered(): readonly string[] {
     return Array.from(this.triggered);
+  }
+
+  getLastTriggerTick(): number | undefined {
+    return this.lastTriggerTick;
+  }
+
+  /** 读档后从 narrative_state.world.beatLastTrigger 同步（取 max） */
+  setLastTriggerTick(tick: number | undefined): void {
+    this.lastTriggerTick = tick;
   }
 
   /**
@@ -107,9 +122,12 @@ export class BeatEngine {
       return pb - pa;
     });
 
-    // 标记为 triggered（防止下次扫描重复）
+    // 标记为 triggered（防止下次扫描重复）+ 记录触发 tick（干旱项数据源）
     for (const ev of ready) {
       this.triggered.add(ev.beatId);
+    }
+    if (ready.length > 0) {
+      this.lastTriggerTick = context.world.tick;
     }
 
     return ready;

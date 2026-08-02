@@ -231,6 +231,11 @@ export async function updateImpressionsBidirectional(params: {
   relationships?: import("../world/relationships.js").RelationshipManager;
   /** 态度只评最近 N 句（simulation 维护的水位线传入） */
   valenceOnLastN?: number;
+  /**
+   * 关系落地处回调（DESIGN-revival §4.5）：把 (pair, valence, tick) 记入
+   * 压力图内存环形缓冲。valence 是瞬态值，应用后即丢——不加回调就没有近窗信号。
+   */
+  onValence?: (charA: string, charB: string, valence: number, tick: number) => void;
 }): Promise<void> {
   const { cardA, cardB, exchanges, impressions, provider, modelId, tick } = params;
 
@@ -259,9 +264,11 @@ export async function updateImpressionsBidirectional(params: {
 
   // 态度落地：双方 valence 求和作用于（对称的）关系值。
   // 辱骂性的"聊天"从此是净负资产：flat +1 压不过 -3 的态度。
-  if (params.relationships && (impAtoB || impBtoA)) {
+  if (impAtoB || impBtoA) {
     const total = (impAtoB?.valence ?? 0) + (impBtoA?.valence ?? 0);
-    if (total !== 0) {
+    // 落地处回调：近窗 valence 信号进压力图环形缓冲（内存态，重启归零可容忍）
+    params.onValence?.(cardA.id, cardB.id, total, tick);
+    if (params.relationships && total !== 0) {
       const summary = total <= -2
         ? `${cardA.name}和${cardB.name}这次谈话不欢而散`
         : total >= 2

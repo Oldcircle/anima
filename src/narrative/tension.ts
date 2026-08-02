@@ -2,39 +2,51 @@
  * Tension Index — 叙事张力指标
  *
  * 给 LLM 导演（N4）提供"现在世界够不够紧"的判断。
- * 公式（DESIGN-narrative O3）：
- *   tension = unresolved_events_count × 0.4
- *           + recent_relationship_volatility × 0.3
- *           + tick_since_last_beat × 0.3
+ * 公式 v1（DESIGN-revival A 件；单测锁形状不锁数值）：
+ *   tension = 0.35 × unresolved 项
+ *           + 0.45 × top3 压力对均值（pressure-graph pair 公式）
+ *           + 0.20 × beat 干旱项（距上次 beat 触发的 tick 数）
  *   归一化到 0..100
  *
- * N2 阶段只接入 unresolved 项；relationship_volatility 和 last_beat 等
- * N3/N4 引入对应数据后再补，先用 0 占位以保证公式可跑。
+ * 历史：N2 版只有 unresolved 项接了真数据，另两个插座恒 0——
+ * tension 封顶 40，导演 pacing 的 "tension > 40" 判据永假。
+ * A 件把两个插座接上真数据（压力对 → 原 volatility 插座；beatLastTrigger → 干旱插座），
+ * 上限回到 100。
  */
 
 import type { World } from "../world/world.js";
 
 export interface TensionInputs {
   unresolvedCount: number;
-  relationshipVolatility: number;  // 0..1，N3+ 接入
-  ticksSinceLastBeat: number;       // N3+ 接入
+  /** top-3 压力对均值 0..100（pressure-graph 每 tick 重算后传入） */
+  pairPressureTop3Avg: number;
+  /** 距上一次 beat 触发的 tick 数（beat 干旱项） */
+  ticksSinceLastBeat: number;
 }
 
 export function computeTensionIndex(inputs: TensionInputs): number {
   // 各项归一化到 0..100，再加权
-  const a = Math.min(100, inputs.unresolvedCount * 20);          // 5 个 unresolved = 100
-  const b = Math.min(100, inputs.relationshipVolatility * 100);
-  const c = Math.min(100, inputs.ticksSinceLastBeat * 2);        // 50 tick 无 beat = 100
-  return Math.round(a * 0.4 + b * 0.3 + c * 0.3);
+  const a = Math.min(100, inputs.unresolvedCount * 20);                        // 5 个 unresolved = 100
+  const b = Math.max(0, Math.min(100, inputs.pairPressureTop3Avg));
+  const c = Math.min(100, (Math.max(0, inputs.ticksSinceLastBeat) / 96) * 100); // 1 游戏天无 beat = 100
+  return Math.round(a * 0.35 + b * 0.45 + c * 0.2);
 }
 
-export function updateWorldTension(world: World): number {
+/**
+ * 每 tick 末更新世界 tension。
+ * unresolved 与干旱项直接从 narrative_state 读；压力对均值由 pressure-graph 传入
+ * （不传时按 0 处理——独立调用仍可跑，只是少了压力项）。
+ */
+export function updateWorldTension(
+  world: World,
+  extras?: { pairPressureTop3Avg?: number },
+): number {
   const ns = world.narrative;
   const w = ns.getWorld();
   const tension = computeTensionIndex({
     unresolvedCount: w.unresolvedEvents.length,
-    relationshipVolatility: 0, // TODO N3
-    ticksSinceLastBeat: 0,      // TODO N3
+    pairPressureTop3Avg: extras?.pairPressureTop3Avg ?? 0,
+    ticksSinceLastBeat: ns.getTicksSinceLastBeat(world.tick),
   });
   ns.setTensionIndex(tension);
   return tension;
