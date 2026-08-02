@@ -16,7 +16,7 @@
  */
 
 import jexl from "jexl";
-import type { NarrativeStateSnapshot } from "./narrative-state.js";
+import type { NarrativeStateSnapshot, UnresolvedEventStatus } from "./narrative-state.js";
 
 /**
  * Context 是表达式可见的整个根对象。
@@ -30,13 +30,49 @@ export interface BeatContext {
     tick: number;
     activePhase?: string;
     tensionIndex: number;
-    unresolvedEvents: Array<{ id: string; involved: string[] }>;
+    unresolvedEvents: Array<{ id: string; involved: string[]; status: UnresolvedEventStatus }>;
     triggeredBeats: string[];
   };
   /** 角色级状态。键是角色 id。访问不存在的角色会返回 undefined（jexl 容错） */
   characters: Record<string, BeatCharacterContext>;
-  /** 自由形式扩展（N4+ Director 可能注入更多） */
-  extras?: Record<string, unknown>;
+  /** 结构化扩展（B4）：压力图摘要 / kira 计数 / 金币 / 约定 / 事件状态 / beat 触发史 */
+  extras?: BeatContextExtras;
+}
+
+/**
+ * BeatContext.extras 形状（B4）。全部用 Record 不用 Map（JSON 序列化安全）。
+ * 所有字段由 simulation.runBeatScan 每次扫描时现算注入；单测锁形状不锁数值。
+ */
+export interface BeatContextExtras {
+  /** 压力图三路输出之三：热点摘要 + top 压力对（pressure-graph 上次 update 的结果） */
+  pressure: {
+    /** 人可读白描（导演 worldSnapshot 同源），无热点为空串 */
+    summary: string;
+    topPairs: Array<{ a: string; b: string; pressure: number }>;
+  };
+  /**
+   * kira 计数器快照。⚠️ 声明：world.kira 是瞬态不入档（DESIGN-revival §4.5），
+   * 这些计数**仅在单次连续 sim 内有效**——读档后归零，跨档表达式别依赖它。
+   */
+  kira: {
+    total: number;
+    victimCount: number;
+    pendingCount: number;
+    lastStrikeDay: number;
+  };
+  /** 各角色叙事压力快照（与 characters.<id>.pressure 同源，extras 里给一份平铺 Record 便于聚合表达式） */
+  charPressures: Record<string, number>;
+  /** 各角色金币快照 */
+  gold: Record<string, number>;
+  /** 约定账目：pending 数 + 按 pair（id 排序 "a:b"）的单方爽约累计（派生自 _appointments） */
+  appointments: {
+    pendingCount: number;
+    missedByPair: Record<string, number>;
+  };
+  /** 事件状态速查：eventId → status（与 world.unresolvedEvents[].status 同源） */
+  events: Record<string, UnresolvedEventStatus>;
+  /** 每条 beat 最近触发 tick（随档 Record；cooldown 型 beat 的触发史也在这里） */
+  beatLastTrigger: Record<string, number>;
 }
 
 export interface BeatCharacterContext {
@@ -140,6 +176,8 @@ export function buildBeatContext(params: {
   characterRelationships: Record<string, BeatCharacterContext["relationships"]>;
   characterNeeds: Record<string, Record<string, number>>;
   characterLocations: Record<string, string>;
+  /** B4：simulation.runBeatScan 现算注入（压力/kira/金币/约定/事件状态/beat 触发史） */
+  extras?: BeatContextExtras;
 }): BeatContext {
   const { narrative, tick } = params;
   const day = Math.floor(tick / 96) + 1; // 1 game day = 96 ticks (15 min/tick)
@@ -174,9 +212,77 @@ export function buildBeatContext(params: {
       unresolvedEvents: narrative.world.unresolvedEvents.map((e) => ({
         id: e.id,
         involved: e.involved,
+        status: e.status ?? "fresh",
       })),
       triggeredBeats: narrative.world.triggeredBeats,
     },
     characters,
+    extras: params.extras,
   };
+}
+
+/**
+ * 合成 dry-run 上下文（B4 beat 表达式 lint 用）：
+ * 用真实字段形状 + 占位数值搭一个"世界的样子"，让表达式在加载期跑一遍求值。
+ * 目的只有一个：把写错的表达式在启动时炸出来，而不是 live 跑到那天才静默 false。
+ */
+export function buildSyntheticBeatContext(characterIds: string[] = []): BeatContext {
+  const ids = characterIds.length > 0 ? characterIds : ["__probe__"];
+  const characters: Record<string, BeatCharacterContext> = {};
+  for (const id of ids) {
+    const otherId = ids.find((x) => x !== id) ?? "__other__";
+    characters[id] = {
+      disclosedSecrets: ["__secret__"],
+      knownFacts: ["__fact__"],
+      unresolvedWith: { [otherId]: ["__topic__"] },
+      pressure: 42,
+      relationships: {
+        [otherId]: { level: 10, type: "acquaintance", bond: "friend", trust: 0.5 },
+      },
+      needs: { hunger: 60, energy: 60, social: 60, fun: 60, hygiene: 60, bladder: 60 },
+      locationId: "plaza",
+    };
+  }
+  const pairKey = ids.length >= 2 ? [...ids].sort().slice(0, 2).join(":") : "__a__:__b__";
+  return {
+    world: {
+      day: 2,
+      hour: 12,
+      tick: 96 + 48,
+      activePhase: "peaceful",
+      tensionIndex: 30,
+      unresolvedEvents: [{ id: "__event__", involved: ids.slice(0, 2), status: "fresh" }],
+      triggeredBeats: ["__beat_done__"],
+    },
+    characters,
+    extras: {
+      pressure: { summary: "", topPairs: [{ a: ids[0]!, b: ids[1] ?? "__other__", pressure: 40 }] },
+      kira: { total: 0, victimCount: 0, pendingCount: 0, lastStrikeDay: -1 },
+      charPressures: Object.fromEntries(ids.map((id) => [id, 42])),
+      gold: Object.fromEntries(ids.map((id) => [id, 100])),
+      appointments: { pendingCount: 0, missedByPair: { [pairKey]: 1 } },
+      events: { __event__: "fresh" },
+      beatLastTrigger: { __beat_done__: 96 },
+    },
+  };
+}
+
+/**
+ * 表达式 lint（fail loud 路径）：compile + 对合成 context dry-run。
+ * 与 evaluateCompiled 不同——这里**不吞错**，任何 compile/eval 异常都返回错误消息。
+ * 返回 null = 通过。
+ */
+export function lintExpression(expression: string, context: BeatContext): string | null {
+  let compiled: ReturnType<typeof jexl.compile>;
+  try {
+    compiled = jexl.compile(expression);
+  } catch (err) {
+    return `compile 失败: ${(err as Error).message}`;
+  }
+  try {
+    compiled.evalSync(context as unknown as Record<string, unknown>);
+  } catch (err) {
+    return `dry-run 求值失败: ${(err as Error).message}`;
+  }
+  return null;
 }

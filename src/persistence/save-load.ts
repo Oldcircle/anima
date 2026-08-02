@@ -154,6 +154,13 @@ export function loadGame(sim: Simulation, dbPath: string, scenarioId?: string): 
       }
     }
 
+    // B4：narrative 恢复后重新同步 beat 引擎（triggered 集合 + 逐 beat 触发史 beatLastTrigger）。
+    // cli 的装配顺序是先 loadBeats 再 loadGame——不重同步的话读档后一次性 beat 会重复点火、
+    // cooldown 型 beat 丢触发史。loadBeats 幂等，直接用引擎里已装载的 beats 重灌一遍。
+    if (sim.beatEngine.getBeats().length > 0) {
+      sim.loadBeats([...sim.beatEngine.getBeats()]);
+    }
+
     // 恢复角色状态
     const savedChars = db.loadCharacters();
     for (const sc of savedChars) {

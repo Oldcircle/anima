@@ -13,7 +13,7 @@
  */
 
 import type { BeatContext } from "./expression.js";
-import { evaluateCompiled } from "./expression.js";
+import { buildSyntheticBeatContext, evaluateCompiled, lintExpression } from "./expression.js";
 
 /** beats.yml 中每条 beat 的原始结构 */
 export interface BeatDefinition {
@@ -40,6 +40,19 @@ export interface BeatDefinition {
   }>;
 }
 
+/**
+ * cooldown 型判定（B4）：cooldown_after_trigger 为数字或 "realtime" 的 beat 可重复触发，
+ * **不进 triggeredBeats 一次性集合**（DESIGN-revival §4.5），触发史记在
+ * narrative_state.world.beatLastTrigger（随档 Record）。
+ * 返回冷却 tick 数；一次性 beat（"never"/缺省）返回 null。
+ */
+export function getBeatCooldownTicks(beat: BeatDefinition): number | null {
+  const c = beat.cooldown_after_trigger;
+  if (c === "realtime") return 0;
+  if (typeof c === "number" && Number.isFinite(c) && c >= 0) return c;
+  return null;
+}
+
 export interface BeatReadyEvent {
   beatId: string;
   description?: string;
@@ -61,6 +74,12 @@ export class BeatEngine {
    * 这里是引擎内存态镜像，读档后由调用方 setLastTriggerTick 同步。
    */
   private lastTriggerTick?: number;
+  /**
+   * 每条 beat 最近触发 tick 的内存镜像（cooldown 型判定用）。
+   * 随档权威副本在 narrative_state.world.beatLastTrigger，读档后由
+   * setBeatLastTrigger 同步；scan 内触发时同步更新。
+   */
+  private beatLastTrigger: Record<string, number> = {};
 
   constructor(beats: BeatDefinition[] = []) {
     this.beats = beats;
@@ -93,6 +112,15 @@ export class BeatEngine {
     this.lastTriggerTick = tick;
   }
 
+  /** 读档后从 narrative_state.world.beatLastTrigger 同步逐 beat 触发史（cooldown 型判定用） */
+  setBeatLastTrigger(record: Record<string, number>): void {
+    this.beatLastTrigger = { ...record };
+  }
+
+  getBeatLastTrigger(): Readonly<Record<string, number>> {
+    return this.beatLastTrigger;
+  }
+
   /**
    * 扫一遍所有 beats，返回这次需要 emit 的事件列表。
    * 不直接修改世界 — 由调用方拿到结果后写入 narrative_state.markBeatTriggered + emit event bus。
@@ -100,7 +128,15 @@ export class BeatEngine {
   scan(context: BeatContext): BeatReadyEvent[] {
     const ready: BeatReadyEvent[] = [];
     for (const beat of this.beats) {
-      if (this.triggered.has(beat.id)) continue;
+      const cooldown = getBeatCooldownTicks(beat);
+      if (cooldown === null) {
+        // 一次性 beat：triggered 集合把关
+        if (this.triggered.has(beat.id)) continue;
+      } else {
+        // cooldown 型（B4）：距上次触发不足冷却期则跳过（触发史随档在 beatLastTrigger）
+        const last = this.beatLastTrigger[beat.id];
+        if (last !== undefined && context.world.tick - last < cooldown) continue;
+      }
 
       const reason = this.evaluateBeat(beat, context);
       if (reason) {
@@ -122,9 +158,13 @@ export class BeatEngine {
       return pb - pa;
     });
 
-    // 标记为 triggered（防止下次扫描重复）+ 记录触发 tick（干旱项数据源）
+    // 一次性 beat 标记 triggered；所有 beat 记触发 tick（干旱项 + cooldown 判定数据源）
     for (const ev of ready) {
-      this.triggered.add(ev.beatId);
+      const def = this.beats.find((b) => b.id === ev.beatId);
+      if (!def || getBeatCooldownTicks(def) === null) {
+        this.triggered.add(ev.beatId);
+      }
+      this.beatLastTrigger[ev.beatId] = context.world.tick;
     }
     if (ready.length > 0) {
       this.lastTriggerTick = context.world.tick;
@@ -215,4 +255,62 @@ export function parseBeatsConfig(parsed: unknown): BeatDefinition[] {
     out.push(def);
   }
   return out;
+}
+
+/**
+ * Beat 加载期 lint（B4，fail loud）：
+ * 1. 每条 precondition 表达式 compile + 对合成 context dry-run（写错的表达式在启动时炸出来，
+ *    而不是 live 求值时静默 false 烧掉预算）
+ * 2. cooldown_after_trigger 取值合法（"never" | "realtime" | 非负数）
+ * 3. on_trigger 机械载荷形状：new_phase 必须是字符串；auto_events 必须是带 type 字符串的对象数组
+ *    （未知 type 不在这里拦——事件类型注册表是运行期的，S3 注册后自动可用）
+ * 发现问题抛出聚合 Error；干净返回 void。
+ */
+export function lintBeats(beats: BeatDefinition[], options?: { characterIds?: string[] }): void {
+  const ctx = buildSyntheticBeatContext(options?.characterIds ?? []);
+  const problems: string[] = [];
+
+  for (const beat of beats) {
+    const exprs: string[] = [];
+    if (Array.isArray(beat.preconditions)) {
+      exprs.push(...beat.preconditions);
+    } else if (beat.preconditions) {
+      exprs.push(...(beat.preconditions.all ?? []), ...(beat.preconditions.any ?? []));
+    }
+    for (const expr of exprs) {
+      if (typeof expr !== "string" || expr.trim() === "") {
+        problems.push(`[${beat.id}] precondition 不是非空字符串: ${JSON.stringify(expr)}`);
+        continue;
+      }
+      const err = lintExpression(expr, ctx);
+      if (err) problems.push(`[${beat.id}] 表达式 "${expr}" ${err}`);
+    }
+
+    const c = beat.cooldown_after_trigger;
+    if (c !== undefined && c !== "never" && c !== "realtime" && !(typeof c === "number" && Number.isFinite(c) && c >= 0)) {
+      problems.push(`[${beat.id}] cooldown_after_trigger 非法值: ${JSON.stringify(c)}（允许 "never" | "realtime" | 非负数）`);
+    }
+
+    const payload = beat.on_trigger;
+    if (payload) {
+      if (payload.new_phase !== undefined && typeof payload.new_phase !== "string") {
+        problems.push(`[${beat.id}] on_trigger.new_phase 必须是字符串`);
+      }
+      if (payload.auto_events !== undefined) {
+        if (!Array.isArray(payload.auto_events)) {
+          problems.push(`[${beat.id}] on_trigger.auto_events 必须是数组`);
+        } else {
+          for (const [i, ev] of (payload.auto_events as unknown[]).entries()) {
+            if (!ev || typeof ev !== "object" || typeof (ev as Record<string, unknown>).type !== "string") {
+              problems.push(`[${beat.id}] on_trigger.auto_events[${i}] 必须是带 type 字符串的对象`);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error(`beats lint 未通过（${problems.length} 处）:\n  - ${problems.join("\n  - ")}`);
+  }
 }

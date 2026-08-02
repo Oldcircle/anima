@@ -7,6 +7,20 @@
  * 设计原则：只存事实字段，不存自然语言剧情。LLM 看自然语言摘要，引擎只读字段。
  */
 
+/**
+ * 未解决事件生命周期（B4）：fresh → investigating → confronted → settled，只前向流转。
+ * 由 B1 立场落账 / B3 罪行供给 / 工具标签驱动推进；settled 后 suspicion 边随之过期
+ * （钩子见 NarrativeState.onEventSettled）。
+ */
+export type UnresolvedEventStatus = "fresh" | "investigating" | "confronted" | "settled";
+
+export const EVENT_STATUS_ORDER: readonly UnresolvedEventStatus[] = [
+  "fresh",
+  "investigating",
+  "confronted",
+  "settled",
+];
+
 export interface UnresolvedEvent {
   id: string;
   summary: string;            // 给 LLM 看的一行白描
@@ -14,6 +28,10 @@ export interface UnresolvedEvent {
   visibleTo: string[] | "*";   // 谁知道这事存在
   createdTick: number;
   resolvesWhen?: string;       // 表达式（N3 接入）
+  /** 生命周期状态（B4）。缺省视为 fresh（旧档 normalize 回填） */
+  status?: UnresolvedEventStatus;
+  /** 进入 settled 的 tick（suspicion 过期钩子的数据源） */
+  settledTick?: number;
 }
 
 export interface WitnessedEvent {
@@ -86,6 +104,12 @@ export function normalizeNarrativeSnapshot(
   }
   const w = snap.world;
   if (!Array.isArray(w.unresolvedEvents)) w.unresolvedEvents = [];
+  for (const e of w.unresolvedEvents) {
+    if (!e || typeof e !== "object") continue;
+    // 旧档无 status → fresh；非法值也回 fresh（不猜半途状态）
+    if (!EVENT_STATUS_ORDER.includes(e.status as UnresolvedEventStatus)) e.status = "fresh";
+    if (typeof e.settledTick !== "number" || !Number.isFinite(e.settledTick)) delete e.settledTick;
+  }
   if (!Array.isArray(w.triggeredBeats)) w.triggeredBeats = [];
   if (typeof w.activePhase !== "string") w.activePhase = undefined;
   if (typeof w.tensionIndex !== "number" || !Number.isFinite(w.tensionIndex)) {
@@ -224,7 +248,39 @@ export class NarrativeState {
 
   addUnresolvedEvent(event: UnresolvedEvent): void {
     if (this.snapshot.world.unresolvedEvents.some((e) => e.id === event.id)) return;
-    this.snapshot.world.unresolvedEvents.push(event);
+    this.snapshot.world.unresolvedEvents.push({ status: "fresh", ...event });
+  }
+
+  /**
+   * 推进事件生命周期（B4）：只允许前向流转（fresh→investigating→confronted→settled）。
+   * 后退/原地/未知事件返回 false 不生效。进入 settled 时记 settledTick 并触发
+   * onEventSettled 钩子（suspicion 边随 settled 过期的挂点，B1/B3 接线）。
+   */
+  advanceEventStatus(id: string, next: UnresolvedEventStatus, tick: number): boolean {
+    const event = this.snapshot.world.unresolvedEvents.find((e) => e.id === id);
+    if (!event) return false;
+    const cur = EVENT_STATUS_ORDER.indexOf(event.status ?? "fresh");
+    const to = EVENT_STATUS_ORDER.indexOf(next);
+    if (to < 0 || to <= cur) return false;
+    event.status = next;
+    if (next === "settled") {
+      event.settledTick = tick;
+      for (const hook of this._eventSettledHooks) {
+        try { hook(event); } catch (e) { console.warn("[narrative] onEventSettled 钩子失败:", e); }
+      }
+    }
+    return true;
+  }
+
+  /** settled 钩子位：事件了结时回调（suspicion 过期等下游账目在此挂载）。运行期接线，不随档。 */
+  private _eventSettledHooks: Array<(event: UnresolvedEvent) => void> = [];
+
+  onEventSettled(hook: (event: UnresolvedEvent) => void): () => void {
+    this._eventSettledHooks.push(hook);
+    return () => {
+      const i = this._eventSettledHooks.indexOf(hook);
+      if (i >= 0) this._eventSettledHooks.splice(i, 1);
+    };
   }
 
   removeUnresolvedEvent(id: string): boolean {

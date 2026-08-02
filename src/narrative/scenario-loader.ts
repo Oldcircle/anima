@@ -22,7 +22,7 @@ import { loadLocationsFromDir } from "../world/location-loader.js";
 import { addToInventory } from "../world/item-registry.js";
 import type { CharacterCard } from "../character/types.js";
 import type { Location } from "../world/types.js";
-import { parseBeatsConfig, type BeatDefinition } from "./beat-engine.js";
+import { lintBeats, parseBeatsConfig, type BeatDefinition } from "./beat-engine.js";
 
 export interface ScenarioManifest {
   id: string;
@@ -219,6 +219,14 @@ export function loadScenario(
   const locations = loadLocationsBySelector(locationDirAbs, manifest.locations);
   const beats = loadBeats(scenariosRoot, scenarioId);
   const seeds = loadSeeds(scenariosRoot, scenarioId);
+
+  // B4：beat 表达式加载期 lint（fail loud）——写错的表达式在启动时炸出来，
+  // 而不是求值时静默 false（live 跑到那天才发现 = 烧掉预算）。
+  try {
+    lintBeats(beats, { characterIds: characters.map((c) => c.id) });
+  } catch (err) {
+    throw new Error(`Scenario ${scenarioId}: ${(err as Error).message}`);
+  }
 
   // P5: 校验角色 workplace 是否在当前 scenario 的 locations 列表中
   const locationIds = new Set(locations.map((l) => l.id));

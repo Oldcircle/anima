@@ -37,9 +37,10 @@ import { getItemDef, resolveItem, hasItem, removeFromInventory, addToInventory }
 import { generateMorningPlan } from "./morning-plan.js";
 import { checkPromotion, applyPromotion, type PromotionResult } from "../world/career.js";
 import { detectBehaviorPatterns } from "../world/behavior-chains.js";
-import { PressureGraph } from "../narrative/pressure-graph.js";
-import { BeatEngine, type BeatDefinition, type BeatReadyEvent } from "../narrative/beat-engine.js";
-import { buildBeatContext } from "../narrative/expression.js";
+import { PressureGraph, countMissedAppointmentsByPair } from "../narrative/pressure-graph.js";
+import { BeatEngine, getBeatCooldownTicks, type BeatDefinition, type BeatReadyEvent } from "../narrative/beat-engine.js";
+import { buildBeatContext, type BeatContextExtras } from "../narrative/expression.js";
+import type { FateEvent } from "../world/fate-events.js";
 import { Director, type DirectorConfig } from "../narrative/director.js";
 import { observePulses } from "../narrative/pulse-store.js";
 
@@ -581,40 +582,8 @@ export class Simulation {
     this._nextFateAt = gameTime.tick + FATE_INTERVAL_MIN_TICKS +
       Math.floor(Math.random() * (FATE_INTERVAL_MAX_TICKS - FATE_INTERVAL_MIN_TICKS));
 
-    // ── 结算真实状态后果 ──
-    let goldChange = 0;
-    if (event.goldDelta) goldChange = applyFateGold(target, event.goldDelta);
-    for (const eff of event.needEffects ?? []) {
-      this.world.modifyNeed(target.id, eff.field, eff.delta);
-    }
-    if (event.moodlet) {
-      addMoodlet(target, event.moodlet.emotion, event.moodlet.intensity,
-        event.moodlet.reason, event.moodlet.durationTicks, "event", gameTime.tick);
-    }
-    if (event.intentSummary) {
-      this.world.setIntent(target.id, {
-        kind: "recover", source: "action",
-        summary: event.intentSummary,
-        createdTick: gameTime.tick, expiresAt: gameTime.tick + 12,
-      });
-    }
-    const desc = event.template.replace("{character}", target.name) +
-      (goldChange !== 0 ? `（${goldChange > 0 ? "+" : ""}${goldChange} 金币）` : "");
-    this.memory.add(target.id, { tick: gameTime.tick, type: "event", content: desc, importance: event.importance });
-    this.longTerm.add(target.id, { tick: gameTime.tick, type: "event", importance: event.importance, content: desc });
-
-    const affected = [target.id];
-    if (event.witnessTemplate) {
-      const witnessDesc = event.witnessTemplate.replace("{character}", target.name);
-      for (const otherId of this.world.getCharactersAtLocation(target.locationId)) {
-        if (otherId === target.id) continue;
-        this.memory.add(otherId, {
-          tick: gameTime.tick, type: "observation", content: witnessDesc,
-          importance: 6, relatedCharacterId: target.id,
-        });
-        affected.push(otherId);
-      }
-    }
+    // ── 结算真实状态后果（与 beat auto_events 共用的 fate 包装应用路径）──
+    const { goldChange, affected } = this._applyFateOutcome(target, event, gameTime.tick);
     console.log(`🎲 [命运] ${event.name} → ${target.name}${goldChange !== 0 ? ` (金币 ${goldChange > 0 ? "+" : ""}${goldChange})` : ""}`);
 
     // 走 randomEvents 通道下发前端（effects 已在上面结算，这里只带展示字段）
@@ -625,6 +594,52 @@ export class Simulation {
       },
       affectedCharacters: affected,
     };
+  }
+
+  /**
+   * fate 包装的统一结算路径：金币/需求/moodlet/intent/记忆+LTM/目击。
+   * 被两条通路共用：随机命运层 _maybeRollFateEvent + beat auto_events（B4）。
+   * 红线：只造处境不写结果——落的是状态与注意力，怎么应对归角色。
+   */
+  private _applyFateOutcome(
+    target: CharacterState,
+    event: FateEvent,
+    tick: number,
+  ): { goldChange: number; affected: string[]; description: string } {
+    let goldChange = 0;
+    if (event.goldDelta) goldChange = applyFateGold(target, event.goldDelta);
+    for (const eff of event.needEffects ?? []) {
+      this.world.modifyNeed(target.id, eff.field, eff.delta);
+    }
+    if (event.moodlet) {
+      addMoodlet(target, event.moodlet.emotion, event.moodlet.intensity,
+        event.moodlet.reason, event.moodlet.durationTicks, "event", tick);
+    }
+    if (event.intentSummary) {
+      this.world.setIntent(target.id, {
+        kind: "recover", source: "action",
+        summary: event.intentSummary,
+        createdTick: tick, expiresAt: tick + 12,
+      });
+    }
+    const desc = event.template.replace("{character}", target.name) +
+      (goldChange !== 0 ? `（${goldChange > 0 ? "+" : ""}${goldChange} 金币）` : "");
+    this.memory.add(target.id, { tick, type: "event", content: desc, importance: event.importance });
+    this.longTerm.add(target.id, { tick, type: "event", importance: event.importance, content: desc });
+
+    const affected = [target.id];
+    if (event.witnessTemplate) {
+      const witnessDesc = event.witnessTemplate.replace("{character}", target.name);
+      for (const otherId of this.world.getCharactersAtLocation(target.locationId)) {
+        if (otherId === target.id) continue;
+        this.memory.add(otherId, {
+          tick, type: "observation", content: witnessDesc,
+          importance: 6, relatedCharacterId: target.id,
+        });
+        affected.push(otherId);
+      }
+    }
+    return { goldChange, affected, description: desc };
   }
 
   /** 2. 并行决策所有未忙碌角色（活跃对话中的角色走 conversation 模式请求） */
@@ -1632,9 +1647,18 @@ export class Simulation {
   /** 将 scenario 加载的 beats 灌入 engine（CLI / 测试 setup 用）。 */
   loadBeats(beats: BeatDefinition[]): void {
     this.beatEngine.setBeats(beats);
-    this.beatEngine.setTriggered(this.world.narrative.getWorld().triggeredBeats);
-    // 读档后同步最近触发 tick（随档权威副本在 narrative_state.world.beatLastTrigger）
-    const triggerTicks = Object.values(this.world.narrative.getWorld().beatLastTrigger);
+    // 旧档 migrate（B4/§4.5）：cooldown 型不进 triggeredBeats 一次性集合——
+    // 旧语义下被 markBeatTriggered 过的 cooldown beat 要从集合里放出来，否则永不再触发。
+    const cooldownIds = new Set(
+      beats.filter((b) => getBeatCooldownTicks(b) !== null).map((b) => b.id),
+    );
+    this.beatEngine.setTriggered(
+      this.world.narrative.getWorld().triggeredBeats.filter((id) => !cooldownIds.has(id)),
+    );
+    // 读档后同步逐 beat 触发史 + 最近触发 tick（随档权威副本在 narrative_state.world.beatLastTrigger）
+    const beatLastTrigger = this.world.narrative.getWorld().beatLastTrigger;
+    this.beatEngine.setBeatLastTrigger(beatLastTrigger);
+    const triggerTicks = Object.values(beatLastTrigger);
     this.beatEngine.setLastTriggerTick(triggerTicks.length > 0 ? Math.max(...triggerTicks) : undefined);
   }
 
@@ -1734,11 +1758,94 @@ export class Simulation {
   }
 
   /**
+   * B4 扩展点：beat on_trigger.auto_events 的事件类型注册表。
+   * 本阶段内置 "fate"（走 _applyFateOutcome 的 fate 包装）；
+   * S3 的硬事件原语（theft_with_perp / accident_damage / letter_arrival）注册进来后自动可用。
+   */
+  private _autoEventHandlers: Record<string, (payload: Record<string, unknown>, ctx: { tick: number; beatId: string }) => void> = {
+    fate: (payload, ctx) => {
+      const targetId = typeof payload.target === "string" ? payload.target : undefined;
+      const target = targetId ? this.world.getCharacter(targetId) : undefined;
+      const fate = payload.fate as Partial<FateEvent> | undefined;
+      if (!target || !fate || typeof fate.template !== "string") {
+        console.warn(`🎬 [auto_event] fate 载荷不合法（beat=${ctx.beatId}, target=${targetId}）——跳过`);
+        return;
+      }
+      const event: FateEvent = {
+        id: typeof fate.id === "string" ? fate.id : `beat_${ctx.beatId}`,
+        name: typeof fate.name === "string" ? fate.name : `beat:${ctx.beatId}`,
+        template: fate.template,
+        importance: fate.importance === 9 ? 9 : 8,
+        weight: 0, // 机械注入不参与抽取
+        goldDelta: fate.goldDelta,
+        needEffects: fate.needEffects,
+        moodlet: fate.moodlet,
+        intentSummary: fate.intentSummary,
+        witnessTemplate: fate.witnessTemplate,
+      };
+      const { goldChange } = this._applyFateOutcome(target, event, ctx.tick);
+      this.eventBus.emit({
+        id: `auto_event_${ctx.beatId}_${event.id}_${ctx.tick}`,
+        tick: ctx.tick,
+        type: "narrative.auto_event",
+        actorId: "__beat_engine__",
+        targetId: target.id,
+        locationId: target.locationId,
+        description: event.template.replace("{character}", target.name),
+        effects: [],
+        witnesses: [],
+      });
+      console.log(`🎬 [auto_event] fate → ${target.name}（beat=${ctx.beatId}${goldChange !== 0 ? `, 金币 ${goldChange > 0 ? "+" : ""}${goldChange}` : ""}）`);
+    },
+  };
+
+  /** 注册 auto_events 事件类型（S3 硬事件原语接入点）。重复注册以后到者为准。 */
+  registerAutoEventHandler(
+    type: string,
+    handler: (payload: Record<string, unknown>, ctx: { tick: number; beatId: string }) => void,
+  ): void {
+    this._autoEventHandlers[type] = handler;
+  }
+
+  /** B4：组装 BeatContext.extras（每次扫描现算；kira 计数仅单次连续 sim 有效——瞬态不入档） */
+  private _buildBeatExtras(): BeatContextExtras {
+    const w = this.world.narrative.getWorld();
+    const gold: Record<string, number> = {};
+    const charPressures: Record<string, number> = {};
+    for (const c of this.world.getAllCharacters()) {
+      gold[c.id] = c.gold;
+      charPressures[c.id] = this.world.narrative.getCharacter(c.id).pressure;
+    }
+    const events: BeatContextExtras["events"] = {};
+    for (const e of w.unresolvedEvents) events[e.id] = e.status ?? "fresh";
+    return {
+      pressure: {
+        summary: this.pressureGraph.formatHotspotSummary(this.world),
+        topPairs: this.pressureGraph.getTopPairs(3).map((p) => ({ a: p.a, b: p.b, pressure: p.pressure })),
+      },
+      kira: {
+        total: this.world.kira.total,
+        victimCount: this.world.kira.victims.length,
+        pendingCount: this.world.kira.pending.length,
+        lastStrikeDay: this.world.kira.lastStrikeDay,
+      },
+      charPressures,
+      gold,
+      appointments: {
+        pendingCount: this.world.getAllAppointments().filter((a) => a.status === "pending").length,
+        missedByPair: countMissedAppointmentsByPair(this.world.getAllAppointments()),
+      },
+      events,
+      beatLastTrigger: { ...w.beatLastTrigger },
+    };
+  }
+
+  /**
    * 跑一次 BeatEngine.scan。
-   * 1) 构建 BeatContext（从 narrative_state + relationships + needs 拼）
+   * 1) 构建 BeatContext（从 narrative_state + relationships + needs 拼 + extras）
    * 2) scan
-   * 3) 把触发的 beats 写回 narrative_state
-   * 4) emit 事件到 event bus（N4 director 订阅）
+   * 3) 把触发的 beats 写回 narrative_state（一次性 beat 进 triggeredBeats；cooldown 型只记触发 tick）
+   * 4) emit 事件到 event bus（N4 director 订阅）+ 机械载荷（auto_seeds / new_phase / auto_events）
    */
   runBeatScan(gameTime: GameTime): BeatReadyEvent[] {
     if (this.beatEngine.getBeats().length === 0) return [];
@@ -1774,17 +1881,24 @@ export class Simulation {
       characterRelationships: charRelationships,
       characterNeeds: charNeeds,
       characterLocations: charLocations,
+      extras: this._buildBeatExtras(),
     });
 
     const ready = this.beatEngine.scan(ctx);
 
     if (ready.length === 0) return [];
 
+    const beats = this.beatEngine.getBeats();
     const scanDay = Math.floor(gameTime.tick / 96) + 1;
     console.log(`🎬 [beat] scan @ day ${scanDay} tick ${gameTime.tick}: ${ready.length} beat(s) ready`);
     for (const ev of ready) {
-      console.log(`   → ${ev.beatId} (${ev.reason}) ${ev.description ?? ""}`);
-      this.world.narrative.markBeatTriggered(ev.beatId);
+      const def = beats.find((b) => b.id === ev.beatId);
+      const cooldown = def ? getBeatCooldownTicks(def) : null;
+      console.log(`   → ${ev.beatId} (${ev.reason}${cooldown !== null ? `, cooldown=${cooldown}` : ""}) ${ev.description ?? ""}`);
+      // cooldown 型不进 triggeredBeats 一次性集合（B4/§4.5）——触发史只在 beatLastTrigger
+      if (cooldown === null) {
+        this.world.narrative.markBeatTriggered(ev.beatId);
+      }
       // 触发 tick 随档（A 件干旱项 + B4 cooldown 型 beat 的数据源）
       this.world.narrative.recordBeatTrigger(ev.beatId, gameTime.tick);
       // 同步 emit 到 event bus，N4 director 会订阅
@@ -1800,8 +1914,39 @@ export class Simulation {
       });
     }
 
+    // B4 机械载荷：new_phase 直接应用（scan 在 tick 开头同步执行，与 markBeatTriggered 同一写入窗）
+    for (const ev of ready) {
+      const newPhase = ev.payload?.new_phase;
+      if (typeof newPhase === "string" && newPhase.length > 0) {
+        this.world.narrative.setActivePhase(newPhase);
+        console.log(`🎬 [beat] new_phase 应用: ${ev.beatId} → active_phase=${newPhase}`);
+      }
+    }
+
+    // B4 机械载荷：auto_events 走 enqueueMutation（下一 tick 开头统一落账，不在 scan 中途改角色状态）
+    for (const ev of ready) {
+      const autoEvents = ev.payload?.auto_events;
+      if (!Array.isArray(autoEvents)) continue;
+      for (const raw of autoEvents) {
+        if (!raw || typeof raw !== "object" || typeof (raw as Record<string, unknown>).type !== "string") {
+          console.warn(`🎬 [auto_event] 载荷不是带 type 的对象（beat=${ev.beatId}）——跳过`);
+          continue;
+        }
+        const payload = raw as Record<string, unknown>;
+        const type = payload.type as string;
+        const beatId = ev.beatId;
+        this.enqueueMutation(() => {
+          const handler = this._autoEventHandlers[type];
+          if (!handler) {
+            console.warn(`🎬 [auto_event] 未注册的事件类型 "${type}"（beat=${beatId}）——跳过（S3 注册后自动可用）`);
+            return;
+          }
+          handler(payload, { tick: this.world.tick, beatId });
+        });
+      }
+    }
+
     // D3: beat 触发时自动应用 auto_seeds（机械保证核心话题进入角色 prompt）
-    const beats = this.beatEngine.getBeats();
     for (const ev of ready) {
       const def = beats.find((b) => b.id === ev.beatId);
       if (def?.auto_seeds) {

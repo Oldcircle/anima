@@ -1,204 +1,26 @@
 /**
- * Stress Simulation Tests — 1 日 / 7 日模拟
+ * Stress Simulation Tests — 1 日 / 7 日模拟 + 剧本 harness 彩排
  *
- * 使用 SmartMockLLM 模拟 5 角色的合理行为模式，
- * 收集统计数据，检测需要优化的问题。
+ * 使用 SmartMockLLM（test/helpers/smart-mock-llm.ts，按 request.kind 分支）
+ * 模拟 5 角色的合理行为模式，收集统计数据，检测需要优化的问题。
+ * 另含：scenario-aware harness 加载真实剧本 + 中途 save/load 往返断言（B4 验收）。
  *
  * 运行方式: pnpm test -- --run src/agent/stress-sim.test.ts
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { existsSync, rmSync } from "node:fs";
 import { Simulation, type TickSummary } from "./simulation.js";
-import { tickToGameTime, formatGameTime } from "../core/tick-engine.js";
+import { tickToGameTime } from "../core/tick-engine.js";
 import { EventBus } from "../core/event-bus.js";
 import { World } from "../world/world.js";
 import { ALL_BASIC_ACTIONS } from "../actions/basic-actions.js";
-import type { LLMProvider, LLMRequest, LLMResponse, ToolCall } from "../providers/types.js";
 import type { CharacterCard } from "../character/types.js";
-
-// ────────── Smart Mock LLM ──────────
-
-/**
- * 智能 Mock LLM：根据 prompt 中的状态信息做出合理决策，
- * 不依赖真实 API，但模拟真实的行为分布。
- */
-class SmartMockLLM implements LLMProvider {
-  readonly id = "smart-mock";
-  callCount = 0;
-  totalInputTokens = 0;
-  totalOutputTokens = 0;
-
-  async chat(request: LLMRequest, _modelId: string): Promise<LLMResponse> {
-    this.callCount++;
-    const prompt = request.messages[request.messages.length - 1]?.content ?? "";
-    const inputTokens = Math.ceil(prompt.length / 4);
-    this.totalInputTokens += inputTokens;
-    this.totalOutputTokens += 30;
-
-    const available = (request.tools ?? []).map((t) => t.name);
-    const toolCall = this._decide(prompt, available, request);
-    return {
-      content: toolCall ? `决定${toolCall.name}` : "无事可做",
-      toolCalls: toolCall ? [toolCall] : [],
-      usage: { inputTokens, outputTokens: 30 },
-    };
-  }
-
-  /** 检查工具是否可用 */
-  private _has(available: string[], name: string): boolean {
-    return available.includes(name);
-  }
-
-  private _decide(prompt: string, available: string[], request: LLMRequest): ToolCall | null {
-    if (available.length === 0) return null;
-
-    // 解析需求感受（新系统使用自然语言描述，不再输出数值）
-    const isHungry = prompt.includes("胃在抽痛") || prompt.includes("饿得") || prompt.includes("发晕");
-    const isMildHungry = isHungry || (prompt.includes("肚子") && prompt.includes("饿"));
-    const isTired = prompt.includes("站不稳") || prompt.includes("睁不开") || prompt.includes("眼皮很重");
-    const isMildTired = isTired || prompt.includes("有点累") || prompt.includes("哈欠");
-    const isLonely = prompt.includes("空荡荡") || prompt.includes("很想找人说说话") || prompt.includes("寂寞");
-    const isBored = prompt.includes("闷得发慌") || prompt.includes("无聊");
-    const isNight = prompt.includes("深夜") || prompt.includes("正常人都已经睡了");
-    const needsBathroom = prompt.includes("憋不住") || prompt.includes("憋得");
-
-    // 解析时间
-    const timeMatch = prompt.match(/(\d{2}):(\d{2})/);
-    const hour = timeMatch ? Number(timeMatch[1]) : 12;
-
-    // 解析附近的人
-    const hasNearby = prompt.includes("你现在看见了谁");
-    const hasInbox = prompt.includes("## 有人对你说");
-
-    // 可用地点
-    const allLocations = ["cafe", "plaza", "shop", "bar", "beach", "dock", "forest", "farm", "library", "flower_shop", "bakery"];
-
-    // 从 eat 描述中提取第一个食物名称
-    const eatItem = this._parseEatItem(request);
-    // 从 prompt 中提取角色的 home
-    const homeMatch = prompt.match(/家——/);
-    const homeLocMatch = prompt.match(/(\w+_\w+):\s*家/);
-    const homeLoc = homeLocMatch?.[1] ?? "home_tomori";
-
-    // 决策优先级（只选可用的工具）
-
-    // 从 buy 描述中也提取物品
-    const buyItem = this._parseBuyItem(request);
-
-    // 1. 极度饥饿 → 吃饭（或去能吃的地方）
-    if (isHungry) {
-      if (this._has(available, "eat") && eatItem) return { name: "eat", arguments: { item: eatItem } };
-      if (this._has(available, "cook")) return { name: "cook", arguments: {} };
-      if (this._has(available, "buy") && buyItem) return { name: "buy", arguments: { item: buyItem } };
-      if (this._has(available, "go_to")) return { name: "go_to", arguments: { location: "shop" } };
-    }
-
-    // 2. 上厕所
-    if (needsBathroom) {
-      if (this._has(available, "use_toilet")) return { name: "use_toilet", arguments: {} };
-      if (this._has(available, "go_to")) return { name: "go_to", arguments: { location: homeLoc } };
-    }
-
-    // 3. 极度疲惫或深夜 → 睡觉
-    if (isTired || isNight) {
-      if (this._has(available, "sleep")) return { name: "sleep", arguments: {} };
-      if (this._has(available, "rest")) return { name: "rest", arguments: {} };
-      if (this._has(available, "nap")) return { name: "nap", arguments: {} };
-      if (this._has(available, "go_to")) return { name: "go_to", arguments: { location: homeLoc } };
-    }
-
-    // 4. 有信箱消息 → 回复
-    if (hasInbox && this._has(available, "talk")) {
-      const idMatch = prompt.match(/ID:(\w+)/);
-      return { name: "talk", arguments: { target: idMatch?.[1] ?? "someone", message: "嗯嗯，说的有道理。" } };
-    }
-
-    // 5. 社交需求低 + 有附近的人 → 聊天
-    if (isLonely && hasNearby && this._has(available, "talk")) {
-      const idMatch = prompt.match(/ID:(\w+)/);
-      return { name: "talk", arguments: { target: idMatch?.[1] ?? "someone", message: "今天天气不错啊！" } };
-    }
-
-    // 6. 上午工作时间 → 员工工具
-    const workerTools = ["serve_customer", "make_coffee", "bake", "knead_dough", "shelve_books", "help_reader", "arrange_flowers", "clean_table"];
-    if (hour >= 8 && hour < 12 && !isMildTired) {
-      const wt = available.filter(t => workerTools.includes(t));
-      if (wt.length > 0) return { name: wt[Math.floor(Math.random() * wt.length)]!, arguments: {} };
-    }
-
-    // 7. 轻微饥饿 → 吃饭
-    if (isMildHungry) {
-      if (this._has(available, "eat") && eatItem) return { name: "eat", arguments: { item: eatItem } };
-      if (this._has(available, "cook")) return { name: "cook", arguments: {} };
-      if (this._has(available, "buy") && buyItem) return { name: "buy", arguments: { item: buyItem } };
-      if (this._has(available, "go_to")) return { name: "go_to", arguments: { location: "shop" } };
-    }
-
-    // 8. 下午工作
-    if (hour >= 13 && hour < 17 && !isMildTired && Math.random() < 0.6) {
-      const wt = available.filter(t => workerTools.includes(t));
-      if (wt.length > 0) return { name: wt[Math.floor(Math.random() * wt.length)]!, arguments: {} };
-    }
-
-    // 9. 社交需求低 → 去公共场所
-    if (isLonely && this._has(available, "go_to")) {
-      const socialSpots = ["cafe", "plaza", "bar"];
-      return { name: "go_to", arguments: { location: socialSpots[Math.floor(Math.random() * socialSpots.length)]! } };
-    }
-
-    // 10. 晚上 → 休闲
-    if (hour >= 18 && hour < 22) {
-      if (this._has(available, "explore") && Math.random() < 0.4) return { name: "explore", arguments: {} };
-      if (this._has(available, "read") && Math.random() < 0.4) return { name: "read", arguments: {} };
-      if (hasNearby && this._has(available, "talk")) {
-        const idMatch = prompt.match(/ID:(\w+)/);
-        return { name: "talk", arguments: { target: idMatch?.[1] ?? "someone", message: "晚上好！" } };
-      }
-    }
-
-    // 11. 无聊 → 休闲
-    if (isBored) {
-      if (this._has(available, "read")) return { name: "read", arguments: {} };
-      if (this._has(available, "explore")) return { name: "explore", arguments: {} };
-      if (this._has(available, "rest")) return { name: "rest", arguments: {} };
-    }
-
-    // 12. 默认：从可用工具中选择合理的（排除需要参数的）
-    const needsArgs = new Set(["eat", "buy", "give", "talk", "comfort", "argue", "prepare"]);
-    const localTools = available.filter((t) => t !== "go_to" && !needsArgs.has(t));
-    if (localTools.length > 0 && Math.random() < 0.6) {
-      const tool = localTools[Math.floor(Math.random() * localTools.length)]!;
-      return { name: tool, arguments: {} };
-    }
-
-    // 13. 去别的地方
-    if (this._has(available, "go_to")) {
-      return { name: "go_to", arguments: { location: allLocations[Math.floor(Math.random() * allLocations.length)]! } };
-    }
-
-    // 14. 兜底：idle
-    if (this._has(available, "idle")) return { name: "idle", arguments: {} };
-    return { name: available[0]!, arguments: {} };
-  }
-
-  /** 从 eat 工具的描述中提取第一个食物名称 */
-  private _parseEatItem(request: LLMRequest): string | undefined {
-    const eatTool = request.tools?.find(t => t.name === "eat");
-    if (!eatTool) return undefined;
-    // 描述格式："吃点东西。你身上有：红豆面包（免费）。店里有：三明治（12金币）"
-    // 或者 "吃点东西。店里有：白面包（5金币）、红豆面包（8金币）"
-    const match = eatTool.description.match(/(?:你身上有|店里有)：([^（(，、]+)/);
-    return match?.[1]?.trim();
-  }
-
-  /** 从 buy 工具的描述中提取第一个物品名称 */
-  private _parseBuyItem(request: LLMRequest): string | undefined {
-    const buyTool = request.tools?.find(t => t.name === "buy");
-    if (!buyTool) return undefined;
-    const match = buyTool.description.match(/店里有：([^（(，、]+)/);
-    return match?.[1]?.trim();
-  }
-}
+import { SmartMockLLM } from "../../test/helpers/smart-mock-llm.js";
+import { createScenarioSim } from "../../test/helpers/scenario-sim.js";
+import { saveGame, loadGame } from "../persistence/save-load.js";
 
 // ────────── 角色卡 ──────────
 
@@ -684,4 +506,147 @@ describe("压力测试：7 日模拟", () => {
     // 性能检查：672 tick mock 应该在 5 秒内完成
     expect(elapsed).toBeLessThan(10_000);
   }, 60_000);
+});
+
+// ────────── 剧本 harness：真实剧本装配 + 中途 save/load 往返（B4 验收） ──────────
+
+describe("剧本 harness (scenario-sim) + save/load 往返", () => {
+  const SAVE_PATH = join(tmpdir(), `anima-harness-${Date.now()}.db`);
+
+  it("last-ferry 剧本走完整装配链路，beat/seeds/director 全接通，中途存读档状态存活", async () => {
+    const llm = new SmartMockLLM();
+    const h1 = createScenarioSim({
+      scenarioId: "last-ferry",
+      provider: llm,
+      modelId: "smart-mock",
+      director: { dailyBudget: 3 },
+    });
+
+    try {
+      // seeds 已应用：7 个未解决事件全带 fresh 状态 + activePhase
+      const ns1 = h1.world.narrative.getWorld();
+      expect(ns1.activePhase).toBe("peaceful");
+      expect(ns1.unresolvedEvents.length).toBeGreaterThanOrEqual(7);
+      for (const e of ns1.unresolvedEvents) expect(e.status).toBe("fresh");
+
+      // 06:00 起跑 13 tick（06:00→09:00）：D1 开场 beat 应在首次扫描点火
+      const r1 = await h1.run(13);
+      expect(r1.summaries.length).toBe(13);
+      expect(r1.stoppedEarly).toBe(false);
+
+      expect(ns1.triggeredBeats).toContain("d1_morning_three_meet_at_bar");
+      expect(ns1.beatLastTrigger["d1_morning_three_meet_at_bar"]).toBeTypeOf("number");
+
+      // director 管线真被调过（handleBeatReady / 06:00 pacing → kind "director" → do_nothing）
+      expect(llm.callsByKind.get("director") ?? 0).toBeGreaterThanOrEqual(1);
+      // 决策管线照常在跑
+      expect(llm.callsByKind.get("decision") ?? 0).toBeGreaterThan(0);
+
+      // 推进一个事件的生命周期（B4 status），断言它能随档存活
+      expect(
+        h1.world.narrative.advanceEventStatus("forced_eviction_announcement", "investigating", h1.world.tick),
+      ).toBe(true);
+
+      // ── 中途存档 ──
+      saveGame(h1.sim, SAVE_PATH, "last-ferry");
+
+      // ── 新进程模拟：重建 harness（不重复 apply seeds），读档 ──
+      const llm2 = new SmartMockLLM();
+      const h2 = createScenarioSim({
+        scenarioId: "last-ferry",
+        provider: llm2,
+        modelId: "smart-mock",
+        applySeeds: false,
+      });
+      try {
+        expect(loadGame(h2.sim, SAVE_PATH, "last-ferry")).toBe(true);
+
+        const ns2 = h2.world.narrative.getWorld();
+        // 新随档结构往返存活
+        expect(ns2.triggeredBeats).toContain("d1_morning_three_meet_at_bar");
+        expect(ns2.beatLastTrigger["d1_morning_three_meet_at_bar"]).toBe(
+          ns1.beatLastTrigger["d1_morning_three_meet_at_bar"],
+        );
+        const evicted = ns2.unresolvedEvents.find((e) => e.id === "forced_eviction_announcement");
+        expect(evicted?.status).toBe("investigating");
+        expect(ns2.activePhase).toBe("peaceful");
+
+        // 读档后 beat 引擎已重新同步：已触发的一次性 beat 不会再次点火
+        expect(h2.sim.beatEngine.getTriggered()).toContain("d1_morning_three_meet_at_bar");
+
+        h2.setNextTick(h1.nextTick());
+        const beatEventsBefore = h2.eventBus.history.filter(
+          (e) => e.type === "beat.ready" && e.description.includes("d1_morning_three_meet_at_bar"),
+        ).length;
+        const r2 = await h2.run(8);
+        expect(r2.summaries.length).toBe(8);
+        const beatEventsAfter = h2.eventBus.history.filter(
+          (e) => e.type === "beat.ready" && e.description.includes("d1_morning_three_meet_at_bar"),
+        ).length;
+        expect(beatEventsAfter).toBe(beatEventsBefore); // 不重复点火
+      } finally {
+        h2.dispose();
+      }
+    } finally {
+      h1.dispose();
+      if (existsSync(SAVE_PATH)) rmSync(SAVE_PATH);
+    }
+  }, 30_000);
+
+  it("SmartMock 按 kind 返回各管线可解析的响应 + 剧本化台词脚本可消费", async () => {
+    const llm = new SmartMockLLM();
+
+    // 各 kind 的默认响应形状（解析器能吃下）
+    const imp = await llm.chat({ system: "", messages: [{ role: "user", content: "印象" }], kind: "impression" }, "m");
+    expect(imp.content).toMatch(/总结[:：]/);
+    expect(imp.content).toMatch(/态度[:：]\s*[+-]?\d/);
+
+    const tx = await llm.chat({ system: "", messages: [{ role: "user", content: "对话" }], kind: "transaction-extract" }, "m");
+    expect(tx.content).toMatch(/交割[:：]\s*没有/);
+
+    const pr = await llm.chat({ system: "", messages: [{ role: "user", content: "对话" }], kind: "promise-extract" }, "m");
+    expect(pr.content).toMatch(/承诺[:：]\s*没有/);
+
+    const refl = await llm.chat({ system: "", messages: [{ role: "user", content: "回顾" }], kind: "reflection" }, "m");
+    expect(refl.content).toMatch(/心情[:：]/);
+
+    const plan = await llm.chat({ system: "", messages: [{ role: "user", content: "打算" }], kind: "morning-plan" }, "m");
+    expect(plan.content).toMatch(/^- /m);
+
+    const dir = await llm.chat(
+      {
+        system: "",
+        messages: [{ role: "user", content: "导演" }],
+        tools: [{ name: "do_nothing", description: "", parameters: {} }],
+        kind: "director",
+      },
+      "m",
+    );
+    expect(dir.toolCalls[0]?.name).toBe("do_nothing");
+
+    // stance kind 留接口（S4 填真 schema），当前返回安全空集
+    const stance = await llm.chat({ system: "", messages: [{ role: "user", content: "立场" }], kind: "stance-extract" }, "m");
+    expect(() => JSON.parse(stance.content)).not.toThrow();
+
+    // 剧本化冲突脚本：tag 命中 + talk 可用 → 按序说出
+    llm.scriptTalk("asuka", [{ target: "shinji", message: "你到底把话说清楚！" }]);
+    const talkTools = [{ name: "talk", description: "", parameters: {} }];
+    const scripted = await llm.chat(
+      { system: "", messages: [{ role: "user", content: "" }], tools: talkTools, kind: "decision", tag: "asuka" },
+      "m",
+    );
+    expect(scripted.toolCalls[0]).toMatchObject({
+      name: "talk",
+      arguments: { target: "shinji", message: "你到底把话说清楚！" },
+    });
+    expect(llm.pendingScriptCount()).toBe(0);
+
+    // kind 覆盖队列优先于默认分支
+    llm.enqueueKindResponse("impression", "总结：这人不对劲\n观察：回避眼神\n标签：可疑\n态度：-2\n疙瘩：当面撒谎");
+    const impOverride = await llm.chat({ system: "", messages: [{ role: "user", content: "印象" }], kind: "impression" }, "m");
+    expect(impOverride.content).toContain("疙瘩");
+
+    // 调用分桶计数在记账
+    expect(llm.callsByKind.get("impression")).toBe(2);
+  });
 });
