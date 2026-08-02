@@ -100,3 +100,78 @@ beats:
       hint: |
         终局不写脚本。director 只需要让天气/环境配合"全员被收拢到室内"这个物理事实，
         剩下的对峙、试探、摊牌（或者什么都不发生）都归角色。
+
+  # ═══════════════════════════════════════════════════════════════
+  # 后续幕（DESIGN-revival §4 D 件）：状态条件驱动，不锁死在某一天。
+  # ⚠️ extras.kira 是瞬态计数（不入档）——这些 beat 仅在单次连续 sim 内有效，
+  # 读档续跑时 victimCount 归零、已触发标记仍随档（不会重复点火，但也不会补火）。
+  # ═══════════════════════════════════════════════════════════════
+
+  # ═══ 应验后：第一个人倒下，全镇第一次见识"怪病" ═══
+  - id: kira_aftermath_first_victim
+    description: "应验后 — 第一例怪病，L 的模式雷达立起来，light 练习'震惊'"
+    preconditions:
+      all:
+        - "extras.kira.victimCount >= 1"
+    priority: 8
+    auto_seeds:
+      - char: l_lawliet
+        topic: "镇上有人一夜之间倒下了——不是流感的倒法：入睡前还好好的，早晨叫不醒。委托信说的'不合常理的模式'，样本一。从今天起每件小事都要记：谁最后见过他，谁的反应比消息来得早，谁刻意绕开这个话题。"
+        urgency: high
+      - char: light
+        topic: "第一个名字应验了。你以为你早就准备好了——直到亲眼看见/听见的这一刻。现在最要紧的只有一件事：你的脸。震惊要和所有人一样多，不多一分，不少一分。"
+        urgency: high
+      - char: senjougahara
+        topic: "有人毫无征兆地倒下了，起不来床。镇上的说法五花八门：着凉、中邪、报应。你只注意到一件事——说'报应'的人，说的时候眼睛在发亮。"
+        urgency: med
+    on_trigger:
+      hint: |
+        引擎已落应验/目击/风声三层记忆。director 不要点名调查者、不要暗示病因，
+        只保证今天镇上有自然的碰面机会（消息需要嘴来传）。
+
+  # ═══ 第二例应验后：模式成形，"这不是病"开始被说出口 ═══
+  - id: kira_aftermath_pattern_talk
+    description: "第二例应验后 — 两个样本足够画一条线，镇上开始说'这不是病'"
+    preconditions:
+      all:
+        - "extras.kira.victimCount >= 2"
+    priority: 8
+    auto_seeds:
+      - char: l_lawliet
+        topic: "第二例。同样的倒法，同样的清晨。一个样本是意外，两个样本是模式——委托人预付一年酬金等的就是它。现在的问题只剩一个：模式的选择标准是什么？倒下的两个人有什么共同点——以及，在谁的眼里他们有共同点？"
+        urgency: high
+      - char: light
+        topic: "第二次了。风声里第一次出现'规律'这个词——有人在数。你比谁都清楚这意味着什么：从现在起，每一次选择都会让那条看不见的线更清晰一分。要么停，要么让线指向别处。你听见自己心里已经有了答案。"
+        urgency: high
+      - char: asuka
+        topic: "又倒了一个。两个了。镇上开始有人晚上不敢一个人走。你嘴上说'蠢死了，病而已'——但你昨晚锁了两次门。"
+        urgency: med
+    on_trigger:
+      hint: |
+        风声机制已自带模式描述（第 2 例起）。director 不要替任何人得出结论，
+        不要把"怪病"两个字升级成"有人在做这件事"——那句话必须从角色嘴里说出来。
+
+  # ═══ 拆穿后：指控摆上台面，全镇被迫选边 ═══
+  - id: kira_after_expose_showdown
+    description: "拆穿后 — L 与 light 之间的账当面翻开，小镇再也装不回'一切如常'"
+    preconditions:
+      all:
+        - "extras.kira.victimCount >= 1"
+      any:
+        - "characters.light.unresolvedWith.l_lawliet | length >= 1"
+        - "characters.l_lawliet.unresolvedWith.light | length >= 1"
+    priority: 9
+    auto_seeds:
+      - char: light
+        topic: "话已经当面说开了。复盘每一步：破绽露在哪里？对方手里是推理还是证据？这两者天差地别——推理可以被更好的推理压过去，证据必须被处理。以及最要命的问题：接下来的每一天，你的'如常'本身就是表演。"
+        urgency: high
+      - char: l_lawliet
+        topic: "指控说出口就收不回了。现在是两个人的倒计时：你要在对方消化完震惊之前钉死链条上缺的那一环；对方要在你钉死之前让你变成'那个污蔑好学生的怪人'。镇上的每一双眼睛都是筹码。"
+        urgency: high
+      - char: lelouch
+        topic: "棋盘上两个玩家当面摊牌了。你在旁观席上看得清楚：无论哪边赢，赢家接下来都会需要盟友，输家会需要替罪羊。站哪边、什么时候站、要不要让他们知道你早就看出来了——这三道题的答案决定你在这个镇上的下半场。"
+        urgency: med
+    on_trigger:
+      hint: |
+        对峙之后的走向全归角色。director 不制造"审判大会"，不安排任何人表态，
+        只维持物理条件：让镇上的人今天有机会在同一屋檐下碰见彼此。

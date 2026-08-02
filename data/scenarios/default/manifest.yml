@@ -3,5 +3,15 @@ name: 默认（当前活跃角色）
 description: |
   保留 Phase N1 之前的行为：加载 data/characters 和 data/locations
   下所有未标 disabled: true 的 yml。pnpm dev 不带参数即等于此剧本。
+  DESIGN-revival D 件起带本体剧本包（seeds 信息图 + 状态反应型/deadline beats）。
 characters: "*"
 locations: "*"
+
+# DESIGN-revival §4 D 件：default 本体配置
+# break_level mild = 允许摩擦（下行通道解锁；想要治愈系改 off 或换剧本）
+break_level: mild
+# 决策第三人称作者预测（两层动机/私有通道；表达仍第一人称）——不声明则导演 motive 缓冲为空集
+decision_pov: third
+# B3 罪行供给器（S7 实现模块；本阶段字段先解析存好）。
+# cast = 放大器不是供罪器：只监听 cast 真实选过的灰行为，世界只补被发现链
+crime_supply: cast

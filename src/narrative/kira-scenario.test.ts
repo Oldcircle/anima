@@ -24,7 +24,7 @@ describe("kira-incident 剧本包", () => {
     expect(byId.kira_client_letter!.visibleTo).toEqual(["l_lawliet"]);
   });
 
-  it("beats：5 个节拍，D1 夜 / D2 无主之罪 / D2 委托问安 / D4 催函 / D6 台风", () => {
+  it("beats：5 个到期日节拍 + 3 个后续幕状态节拍（应验后/第二例后/拆穿后）", () => {
     const ids = scenario.beats.map((b) => b.id);
     expect(ids).toEqual([
       "kira_d1_night_book_calls",
@@ -32,6 +32,9 @@ describe("kira-incident 剧本包", () => {
       "kira_d2_client_checkin",
       "kira_d4_client_pressure",
       "kira_d6_typhoon_closes_in",
+      "kira_aftermath_first_victim",
+      "kira_aftermath_pattern_talk",
+      "kira_after_expose_showdown",
     ]);
   });
 

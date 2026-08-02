@@ -1,0 +1,84 @@
+# default-verify — beats（DESIGN-revival §4 修订版）
+#
+# 三条各管一个验收信号：
+#   verify_d1_crime      — 罪案机械投放（auto_events 走 fate 包装，不赌导演 LLM 选工具）→ 信号③
+#   verify_d1_showdown   — auto_seeds high-urgency 定向摊牌（保证 B1 立场抽取有账可记）→ 信号①
+#   verify_pressure_spike — 状态 beat 涌现点火（阈值 45 > 种子 40/42，增量须来自 run 内事件）→ 信号②
+# 同对爽约类 beat 不入（36 tick halfday 死配置，下沉离线多日断言）。
+
+beats:
+  # ═══ Day 1 晨：杂货店货款失窃（机械投放的无主之罪）═══
+  - id: verify_d1_crime
+    description: "Day 1 晨 — 杂货店柜台钱盒被撬，昨夜收着的货款不翼而飞"
+    preconditions:
+      all:
+        - "world.day == 1"
+        - "world.hour >= 9"
+    fallback_deadline_day: 1
+    priority: 9
+    on_trigger:
+      hint: |
+        这件失窃案没有真凶（fate 注入，谁都没做过）。director 永远不要指认或暗示
+        任何在场角色是凶手，也不要安排"破案"。功能只有一个：给镇上一件真正的"罪"，
+        看调查/指控/流言的跟进链自己长出来。收手看戏。
+      auto_events:
+        - type: fate
+          target: senjougahara
+          fate:
+            id: verify_shop_till_theft
+            name: 杂货店货款失窃
+            template: "{character}开店清点柜台钱盒，昨夜收着的一叠货款不翼而飞——锁扣上有新鲜的撬痕。不是记错账，是有人的手伸进来过"
+            importance: 8
+            goldDelta:
+              kind: flat
+              amount: -25
+            moodlet:
+              emotion: angry
+              intensity: 3
+              reason: 收着的货款被人偷了
+              durationTicks: 24
+            intentSummary: "钱盒里的货款被人拿走了。这个镇上有贼。今天见到的每一张脸都要重新打量一遍——这事不能就这么算了。"
+            witnessTemplate: "{character}脸色铁青地翻着一只空钱盒，柜台抽屉全拉开了"
+    auto_seeds:
+      - char: senjougahara
+        topic: "货款被偷了。月底的债一分没少，能凑的钱反而少了一叠。愤怒排在恐慌前面：查出是谁。"
+        urgency: high
+      - char: light
+        topic: "杂货店失窃的风声传开了。镇上第一次出了一件真正的'罪'——不是翻垃圾不是赖账，是把手伸进别人活命钱里的贼。是谁？"
+        urgency: med
+      - char: l_lawliet
+        topic: "杂货店被偷了。小镇的第一件真案子。谁最先知道消息、谁的反应比消息快、谁刻意不谈——从今天起都值得记下来。"
+        urgency: med
+
+  # ═══ Day 1 午前：定向摊牌（机械保证 B1 有账可记）═══
+  - id: verify_d1_showdown
+    description: "Day 1 午前 — 明日香决定当面跟真嗣把欠账算清楚"
+    preconditions:
+      all:
+        - "world.day == 1"
+        - "world.hour >= 10"
+    fallback_deadline_day: 1
+    priority: 8
+    auto_seeds:
+      - char: asuka
+        target: shinji
+        topic: "那15金已经拖到第四天了。今天必须当面把话说清楚——不是为了钱，是他那副'拖着拖着你就会忘'的样子让人火大。债、还有上回当客人面前那笔账，一次算干净。"
+        urgency: high
+    on_trigger:
+      hint: |
+        摊牌只配注意力：吵成什么样、还不还钱、道不道歉——全归两人。
+        director 不要插手这场对话，也不要替任何一方递台阶。
+
+  # ═══ 状态反应型：压力对烧过阈值（必须由 run 内事件把 40/42 顶上 45）═══
+  - id: verify_pressure_spike
+    description: "某一对的压力烧过 45——种子只有 40/42，增量来自 run 内新账"
+    preconditions:
+      all:
+        - "extras.pressure.topPairs | length >= 1"
+        - "extras.pressure.topPairs[0].pressure >= 45"
+    cooldown_after_trigger: 96
+    priority: 7
+    on_trigger:
+      hint: |
+        点火即证明：压力增量来自 run 内事件（新疙瘩/新立场/爽约/欠账加深），
+        不是种子吃老本。director 可用 surface_grudge 催化这一对，或收手看戏。

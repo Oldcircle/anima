@@ -2038,6 +2038,9 @@ export class Simulation {
     unresolvedEvents?: Array<{ id: string; summary: string; involved?: string[]; visibleTo?: string[] | "*" }>;
     characterRelationships?: Array<{ a: string; b: string; level?: number; type?: string; bond?: string }>;
     initialRumors?: Array<{ content: string; sourceCharId?: string | null; spreadTo?: string[] }>;
+    frictions?: Array<{ observer: string; target: string; entries: string[]; summary?: string; mentalLabel?: string }>;
+    debts?: Array<{ debtor: string; lender: string; amount: number; borrowedDaysAgo?: number }>;
+    openStances?: Array<{ id?: string; kind: OpenStanceKind; holder: string; target: string; summary: string; evidence?: string; daysAgo?: number; witnesses?: string[] }>;
   }): void {
     const ns = this.world.narrative;
     if (seeds.activePhase) {
@@ -2066,10 +2069,92 @@ export class Simulation {
         reachedChars: r.spreadTo ?? [],
       });
     }
+
+    // ── seeds 扩展（DESIGN-revival §4 / §6 步骤 5）：frictions 预热 / 逾期债 / openStance 预热 ──
+    // 红线 2：敌对预热（疙瘩/未了结立场）off 档不注入——治愈系基线不带火药；
+    // 债是中性经济状态（borrow_money 本就在基线里），照常应用。
+    const hostileAllowed = getBreakLevel() !== "off";
+    let frictionCount = 0;
+    if (seeds.frictions?.length && !hostileAllowed) {
+      console.log("🌱 [seeds] off 档：跳过 frictions 预热（治愈系基线）");
+    } else {
+      for (const f of seeds.frictions ?? []) {
+        if (!this.world.getCharacter(f.observer) || !this.world.getCharacter(f.target)) {
+          console.warn(`🌱 [seeds] frictions 预热跳过未知角色 ${f.observer}→${f.target}`);
+          continue;
+        }
+        const entries = f.entries.filter((e) => e.trim().length > 0);
+        if (entries.length === 0) continue;
+        const existing = this.impressions.get(f.observer, f.target);
+        if (existing) {
+          this.impressions.merge(f.observer, { ...existing, frictions: entries, lastUpdated: this.world.tick });
+        } else {
+          this.impressions.set(f.observer, {
+            characterId: f.target,
+            summary: f.summary ?? "还没深聊过，但之间已经攒了几桩不痛快",
+            observations: [],
+            mentalLabel: f.mentalLabel ?? "",
+            unresolved: [],
+            frictions: entries,
+            lastUpdated: this.world.tick,
+          });
+        }
+        frictionCount++;
+      }
+    }
+
+    let debtCount = 0;
+    for (const d of seeds.debts ?? []) {
+      const debtor = this.world.getCharacter(d.debtor);
+      if (!debtor || !this.world.getCharacter(d.lender)) {
+        console.warn(`🌱 [seeds] debts 预热跳过未知角色 ${d.debtor}→${d.lender}`);
+        continue;
+      }
+      const amount = Math.floor(d.amount);
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+      // borrowedTick 可设过去（>宽限 2 天即制造逾期压力）；允许为负——所有消费方都只算差值
+      const borrowedTick = this.world.tick - Math.max(0, Math.floor(d.borrowedDaysAgo ?? 0)) * 96;
+      if (!debtor.debts) debtor.debts = [];
+      const existingDebt = debtor.debts.find((x) => x.lenderId === d.lender);
+      if (existingDebt) {
+        existingDebt.amount += amount;
+        existingDebt.borrowedTick = Math.min(existingDebt.borrowedTick, borrowedTick);
+      } else {
+        debtor.debts.push({ lenderId: d.lender, amount, borrowedTick });
+      }
+      debtCount++;
+    }
+
+    let stanceCount = 0;
+    if (seeds.openStances?.length && !hostileAllowed) {
+      console.log("🌱 [seeds] off 档：跳过 openStance 预热（治愈系基线）");
+    } else {
+      for (const s of seeds.openStances ?? []) {
+        if (!this.world.getCharacter(s.holder) || !this.world.getCharacter(s.target)) {
+          console.warn(`🌱 [seeds] openStance 预热跳过未知角色 ${s.holder}→${s.target}`);
+          continue;
+        }
+        const createdTick = this.world.tick - Math.max(0, Math.floor(s.daysAgo ?? 0)) * 96;
+        ns.addOrRefreshOpenStance({
+          id: s.id ?? `seed_stance_${s.holder}_${s.target}_${s.kind}`,
+          kind: s.kind,
+          holderId: s.holder,
+          targetId: s.target,
+          summary: s.summary,
+          evidence: s.evidence ?? s.summary,
+          createdTick,
+          lastRefreshTick: createdTick,
+          witnesses: [...(s.witnesses ?? [])],
+        });
+        stanceCount++;
+      }
+    }
+
     console.log(
       `🌱 Seeds 已应用: ${seeds.unresolvedEvents?.length ?? 0} 未解决事件, ` +
         `${seeds.characterRelationships?.length ?? 0} 关系, ` +
         `${seeds.initialRumors?.length ?? 0} 流言, ` +
+        `${frictionCount} 疙瘩预热, ${debtCount} 欠账, ${stanceCount} 立场, ` +
         `phase=${seeds.activePhase ?? "(无)"}`,
     );
   }

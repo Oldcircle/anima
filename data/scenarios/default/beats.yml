@@ -1,0 +1,90 @@
+# default 本体 — beats（DESIGN-revival §4 D 件：4 条状态反应型 + 2 条 deadline 保底）
+#
+# 纪律（七反转⑦）：beat 只配时机与注意力，不写结果。
+# 状态反应型 beat 用 extras（压力对/charPressures/gold）做条件 + cooldown 可重复触发；
+# deadline 保底 beat 接 seeds 里的钩子（密文线/父亲信封），到日子机械点火。
+# 表达式在加载期 lint（写错启动即炸，不烧 live 预算）。
+
+beats:
+  # ═══ 状态反应型①：热点压力对烧开（谁都可能是那一对——交给导演催化）═══
+  - id: default_hotspot_boils
+    description: "某一对的账攒到了烧开的程度——该有人把旧账摆上台面了"
+    preconditions:
+      all:
+        - "extras.pressure.topPairs | length >= 1"
+        - "extras.pressure.topPairs[0].pressure >= 60"
+    cooldown_after_trigger: 192
+    priority: 7
+    on_trigger:
+      hint: |
+        压力图 top-1 对已 ≥60（旧账/疙瘩/欠债/立场攒出来的，不是空气）。
+        director 优先用 surface_grudge 催化这一对——只把已有的账翻到心上，
+        不指定谁先开口、不写和解或决裂的结果。若本周硬事件配额吃紧就只用软工具。
+
+  # ═══ 状态反应型②：明日香压力临界（骄傲外壳快包不住了）═══
+  - id: default_asuka_edge
+    description: "明日香的压力临界——火气需要一个出口"
+    preconditions:
+      all:
+        - "extras.charPressures.asuka >= 55"
+    cooldown_after_trigger: 288
+    priority: 6
+    auto_seeds:
+      - char: asuka
+        topic: "最近攒的火气快到头了——被谁亏待的、说好没做到的、看不顺眼的，一桩桩在心里排着队。今天要是再有人碰上来，就别怪话说得难听。"
+        urgency: high
+
+  # ═══ 状态反应型③：真嗣被压到极限（讨好型人格的罕见顶嘴窗口）═══
+  - id: default_shinji_breaking_point
+    description: "真嗣被压到极限——连他也有想顶一句嘴的时刻"
+    preconditions:
+      all:
+        - "extras.charPressures.shinji >= 55"
+    cooldown_after_trigger: 288
+    priority: 6
+    auto_seeds:
+      - char: shinji
+        topic: "道歉说了太多次，事情却一件都没变好。胸口那句一直咽下去的话今天格外顶得慌——也许……也许这次可以不先说对不起。"
+        urgency: high
+
+  # ═══ 状态反应型④：战场原的钱不够（到期日在逼近，柜台工资杯水车薪）═══
+  - id: default_senjougahara_money_dread
+    description: "战场原数了数钱——按这个速度，月底凑不齐"
+    preconditions:
+      all:
+        - "world.day >= 2"
+        - "extras.gold.senjougahara <= 60"
+    cooldown_after_trigger: 192
+    priority: 6
+    auto_seeds:
+      - char: senjougahara
+        topic: "又数了一遍。按现在的速度，月底之前差得远。要么想'别的办法'，要么让某个人知道你缺钱——两条路都令人作呕。但日子不会停下来等你恶心完。"
+        urgency: med
+
+  # ═══ deadline 保底①：鲁鲁修给自己定的最后期限到了 ═══
+  - id: default_lelouch_wire_deadline
+    description: "Day 3 — 第三周仍无密文信，鲁鲁修的自设期限到点"
+    preconditions:
+      all:
+        - "world.day >= 3"
+        - "world.hour >= 8"
+    fallback_deadline_day: 3
+    priority: 7
+    auto_seeds:
+      - char: lelouch
+        topic: "给自己定的期限到了：再无音讯，就必须按最坏情况处理。今天要盘点手上有多少钱、几条退路、镇上谁可用、谁危险——一边微笑着端咖啡，一边把这道题算完。"
+        urgency: high
+
+  # ═══ deadline 保底②：师傅让真嗣清里屋柜子——那只信封躲不开了 ═══
+  - id: default_shinji_envelope_surfaces
+    description: "Day 4 晨 — 师傅让真嗣整理里屋柜子，父亲字迹的信封就在最底层"
+    preconditions:
+      all:
+        - "world.day >= 4"
+        - "world.hour >= 7"
+    fallback_deadline_day: 4
+    priority: 7
+    auto_seeds:
+      - char: shinji
+        topic: "师傅今天让你把里屋柜子清一遍。最底层那只信封就在那里——父亲的字迹。拿起来看一眼算不算'添麻烦'？问师傅一句算不算？手已经伸到一半了。"
+        urgency: high

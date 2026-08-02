@@ -1,0 +1,27 @@
+id: default-verify
+name: 复活调优验收（default 镜像）
+description: |
+  DESIGN-revival §4 的验收剧本（≠ default 本体，别拿它当日常剧本跑）。
+  与 default 同一套七人阵容与地点，但 seeds 做了压力预热标定：
+  两对负向关系种到阈值下方（~40，beat 阈值 45）——点火增量必须来自 run 内事件，
+  否则 beat 首扫即火 = 假绿灯（只验了表达式求值器）。
+  crime day1 由 deadline beat 的 auto_events 机械投放（不赌导演 LLM 选工具）；
+  另配一条 auto_seeds high-urgency 定向摊牌 beat（保证 B1 立场抽取有账可记）。
+  同对爽约类 beat 不入 halfday 验收（36 tick 死配置，下沉离线多日断言）。
+
+characters:
+  - asuka
+  - l_lawliet
+  - lelouch
+  - light
+  - rei
+  - senjougahara
+  - shinji
+
+locations: "*"
+
+# 与 default 本体同档：mild 摩擦 + 作者第三人称（不声明 third 则导演 motive 缓冲为空集）
+break_level: mild
+decision_pov: third
+# B3 字段（S7 实现模块读取；本阶段解析存好）
+crime_supply: cast

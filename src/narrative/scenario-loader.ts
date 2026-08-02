@@ -23,6 +23,7 @@ import { addToInventory } from "../world/item-registry.js";
 import type { CharacterCard } from "../character/types.js";
 import type { Location } from "../world/types.js";
 import { lintBeats, parseBeatsConfig, type BeatDefinition } from "./beat-engine.js";
+import { OPEN_STANCE_KINDS, type OpenStanceKind } from "./narrative-state.js";
 
 export interface ScenarioManifest {
   id: string;
@@ -59,6 +60,13 @@ export interface ScenarioManifest {
    * 由 cli / sim 测试经 setEnabledWorldEvents 应用。
    */
   worldEvents?: string[];
+  /**
+   * B3 罪行供给器配置（DESIGN-revival §2 B3；实现模块在 S7）。
+   * manifest 写法：`crime_supply: cast` 或 `crime_supply: { mode: cast }`。
+   * mode: cast=放大器（只监听 cast 真实灰行为，补被发现链）/ npc=够格之罪（静态 NPC 供罪）/ off=关闭。
+   * 本阶段只解析存好，S7 的 crime-supply.ts 读取此字段门控。
+   */
+  crimeSupply?: { mode: "cast" | "npc" | "off" };
 }
 
 export interface LoadedScenario {
@@ -90,6 +98,37 @@ export interface ScenarioSeeds {
     content: string;
     sourceCharId?: string | null;
     spreadTo?: string[];
+  }>;
+  /**
+   * seeds 扩展（DESIGN-revival §4 / §6 步骤 5）——验收剧本的预热三件套。
+   * YAML 写 snake_case（mental_label / borrowed_days_ago / days_ago / open_stances），
+   * loadSeeds 逐字段显式映射（visible_to 泄漏教训：绝不整体 cast）。
+   */
+  /** 印象疙瘩预热：observer 对 target 攒的 frictions 条目（压力图 friction 边的数据源） */
+  frictions?: Array<{
+    observer: string;
+    target: string;
+    entries: string[];
+    summary?: string;
+    mentalLabel?: string;
+  }>;
+  /** 欠账预热：borrowedDaysAgo 把 borrowedTick 设到过去（>宽限 2 天即制造逾期压力） */
+  debts?: Array<{
+    debtor: string;
+    lender: string;
+    amount: number;
+    borrowedDaysAgo?: number;
+  }>;
+  /** B1 未了结立场预热：daysAgo 设过去（注意压力图只计近 3 天有活动的 active 条目） */
+  openStances?: Array<{
+    id?: string;
+    kind: OpenStanceKind;
+    holder: string;
+    target: string;
+    summary: string;
+    evidence?: string;
+    daysAgo?: number;
+    witnesses?: string[];
   }>;
 }
 
@@ -134,7 +173,23 @@ export function loadScenarioManifest(
     initialItems: normalizeInitialItems(data.initial_items ?? data.initialItems),
     kiraAliasProtected: normalizeAliasProtected(data.kira),
     worldEvents: normalizeWorldEvents(data.world_events ?? data.worldEvents),
+    crimeSupply: normalizeCrimeSupply(data.crime_supply ?? data.crimeSupply),
   };
+}
+
+/**
+ * 解析 manifest 的 crime_supply：支持 `crime_supply: cast` 简写与
+ * `crime_supply: { mode: cast }` 对象两种写法；非法值返回 undefined（= 不启用）。
+ */
+function normalizeCrimeSupply(v: unknown): { mode: "cast" | "npc" | "off" } | undefined {
+  const mode =
+    typeof v === "string"
+      ? v
+      : v && typeof v === "object" && !Array.isArray(v)
+        ? (v as Record<string, unknown>).mode
+        : undefined;
+  if (mode === "cast" || mode === "npc" || mode === "off") return { mode };
+  return undefined;
 }
 
 /** 解析 manifest 的 world_events：字符串数组；结构不对/空返回 undefined。 */
@@ -294,6 +349,69 @@ function loadSeeds(scenariosRoot: string, scenarioId: string): ScenarioSeeds | u
           sourceCharId: typeof r.source_char_id === "string" ? r.source_char_id : (typeof (r as any).sourceCharId === "string" ? (r as any).sourceCharId : undefined),
           spreadTo: Array.isArray(r.spread_to) ? (r.spread_to as string[]) : (Array.isArray((r as any).spreadTo) ? ((r as any).spreadTo as string[]) : undefined),
         }))
+      : undefined,
+    // ── seeds 扩展（§6 步骤 5）：同样逐字段显式映射，非法条目直接丢弃（宁缺毋泄）──
+    frictions: Array.isArray(parsed.frictions)
+      ? (parsed.frictions as Array<Record<string, unknown>>)
+          .filter(
+            (f) =>
+              f && typeof f === "object" &&
+              typeof f.observer === "string" &&
+              typeof f.target === "string" &&
+              Array.isArray(f.entries),
+          )
+          .map((f) => ({
+            observer: f.observer as string,
+            target: f.target as string,
+            entries: (f.entries as unknown[]).filter((e): e is string => typeof e === "string"),
+            summary: typeof f.summary === "string" ? f.summary : undefined,
+            mentalLabel: typeof f.mental_label === "string" ? (f.mental_label as string) : undefined,
+          }))
+      : undefined,
+    debts: Array.isArray(parsed.debts)
+      ? (parsed.debts as Array<Record<string, unknown>>)
+          .filter(
+            (d) =>
+              d && typeof d === "object" &&
+              typeof d.debtor === "string" &&
+              typeof d.lender === "string" &&
+              typeof d.amount === "number" && Number.isFinite(d.amount),
+          )
+          .map((d) => ({
+            debtor: d.debtor as string,
+            lender: d.lender as string,
+            amount: d.amount as number,
+            borrowedDaysAgo:
+              typeof d.borrowed_days_ago === "number" && Number.isFinite(d.borrowed_days_ago)
+                ? (d.borrowed_days_ago as number)
+                : undefined,
+          }))
+      : undefined,
+    openStances: Array.isArray(parsed.open_stances)
+      ? (parsed.open_stances as Array<Record<string, unknown>>)
+          .filter(
+            (s) =>
+              s && typeof s === "object" &&
+              OPEN_STANCE_KINDS.includes(s.kind as OpenStanceKind) &&
+              typeof s.holder === "string" &&
+              typeof s.target === "string" &&
+              typeof s.summary === "string",
+          )
+          .map((s) => ({
+            id: typeof s.id === "string" ? (s.id as string) : undefined,
+            kind: s.kind as OpenStanceKind,
+            holder: s.holder as string,
+            target: s.target as string,
+            summary: s.summary as string,
+            evidence: typeof s.evidence === "string" ? (s.evidence as string) : undefined,
+            daysAgo:
+              typeof s.days_ago === "number" && Number.isFinite(s.days_ago)
+                ? (s.days_ago as number)
+                : undefined,
+            witnesses: Array.isArray(s.witnesses)
+              ? (s.witnesses as unknown[]).filter((w): w is string => typeof w === "string")
+              : undefined,
+          }))
       : undefined,
   };
 }

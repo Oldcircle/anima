@@ -1,0 +1,62 @@
+# default-verify — 压力预热（DESIGN-revival §4 修订版）
+#
+# 标定纪律：预热必须落在 beat 阈值(45)下方（种到 ~40）。
+#   种满 ≥ 阈值 → beat 首扫即火 = 假绿灯（只验了表达式求值器）；
+#   信号②要求点火时压力显著高于种子初值——增量必须来自 run 内事件。
+#
+# 压力公式（pressure-graph v1）：
+#   pair = 8*frictions + 25*grudge + 6*debtOverdueDays + 12*missedAppointments
+#          + 4*max(0,-level) + 18*activeOpenStances
+#
+# 两对预热账目：
+#   asuka:shinji        = 疙瘩2×8 + 逾期2天×6 + level(-3)×4 = 16+12+12 = 40
+#   senjougahara:lelouch = 疙瘩2×8 + 立场1×18 + level(-2)×4 = 16+18+8  = 42
+#
+# ⚠️ 改这里的数字前先跑 shipped-beats 单测——标定断言会当场抓你。
+
+character_relationships:
+  - { a: asuka, b: shinji, level: -3, type: "看不顺眼的欠债邻居", bond: ~ }
+  - { a: senjougahara, b: lelouch, level: -2, type: "互相闻到危险味道的同行", bond: ~ }
+
+frictions:
+  - observer: asuka
+    target: shinji
+    summary: "面包店那个只会道歉的学徒——欠着钱还一副等你先开口的样子"
+    mental_label: "拖债的软骨头"
+    entries:
+      - "借走15金说'两天内一定还'，今天是第四天，他见了我只会低头"
+  - observer: shinji
+    target: asuka
+    summary: "咖啡馆那个声音很大的女生——她一出现你就想找地方躲"
+    mental_label: "会爆炸的人"
+    entries:
+      - "上次她当着客人的面数落我十分钟，我到现在想起来手还会抖"
+  - observer: senjougahara
+    target: lelouch
+    summary: "咖啡馆那位微笑先生——每一句话都经过打磨，打磨得过分了"
+    mental_label: "带血腥味的演员"
+    entries:
+      - "问他从哪里来，他换了三次话题，每次都换得很漂亮——漂亮本身就是答案"
+  - observer: lelouch
+    target: senjougahara
+    summary: "杂货店那位小姐的眼睛是解剖刀——她在收集你，不是在看你"
+    mental_label: "危险的观察者"
+    entries:
+      - "她记住了我说过的每一个细节，还在结账时'随口'复述给我听——那是警告"
+
+debts:
+  # borrowedTick 设过去 4 天：过 2 天宽限 → 逾期 2 天（讨债念头链同步激活）
+  - debtor: shinji
+    lender: asuka
+    amount: 15
+    borrowed_days_ago: 4
+
+open_stances:
+  # days_ago 1：落在压力图 3 天活动窗内（计入 activeOpenStances）
+  - kind: accuse
+    holder: senjougahara
+    target: lelouch
+    summary: "战场原当面点破鲁鲁修的来历有问题，话没说死，但意思到了"
+    evidence: "你不是来端咖啡的。哪天你愿意讲讲真话，我可以假装第一次听。"
+    days_ago: 1
+    witnesses: []
