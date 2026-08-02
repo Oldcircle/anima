@@ -41,6 +41,56 @@ export interface WitnessedEvent {
   visibility: "private" | "overheard" | "public";
 }
 
+// ── B1 立场账（DESIGN-revival §2 B1）──
+
+/** 敌对立场类型（和解类 apologize/reconcile/clarify 不落账——命中即清对应 openStance） */
+export type OpenStanceKind = "expose" | "accuse" | "threaten" | "vow" | "break" | "side_with";
+
+export const OPEN_STANCE_KINDS: readonly OpenStanceKind[] = [
+  "expose", "accuse", "threaten", "vow", "break", "side_with",
+];
+
+/**
+ * 未了结立场（随档）：交锋之后的账。active 期间参与压力图 + B1.5 阻尼豁免；
+ * TTL 7 游戏天无 refresh 自动降档归档（archiveReason=ttl），和解命中即清（reconciled）。
+ */
+export interface OpenStance {
+  id: string;
+  kind: OpenStanceKind;
+  /** 亮立场的一方 */
+  holderId: string;
+  targetId: string;
+  summary: string;
+  /** 逐字命中转录的原话（抽取时已经 substring 校验） */
+  evidence: string;
+  createdTick: number;
+  /** 最近一次活动（同类立场再次落账即 refresh）；压力图只计近 3 天有活动的 */
+  lastRefreshTick: number;
+  /** 交锋当场的在场者（不含双方）——公开性引擎机械判定的依据 */
+  witnesses: string[];
+  locationId?: string;
+  status: "active" | "archived";
+  archiveReason?: "reconciled" | "ttl";
+  archivedTick?: number;
+}
+
+/** pairKey（排序后 "a:b"）——openStances / stanceDayLog / 阻尼豁免共用 */
+export function stancePairKey(a: string, b: string): string {
+  return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+/**
+ * B5 多日执念载体（本阶段只落类型 + 登记接口桩；消费——晨间打算输入/此刻区/反思回顾——
+ * TODO(S7/B5)：在 S7 接上，5 天衰减、settled 即清，只配注意力不写结果）
+ */
+export interface ObsessionEntry {
+  id: string;
+  summary: string;
+  createdDay: number;
+  decayDays: number;
+  source: string;
+}
+
 export interface CharacterNarrativeState {
   disclosedSecrets: string[];                       // 已对他人坦白的秘密 id
   knownFacts: string[];                             // 已知的世界事实 id
@@ -48,6 +98,8 @@ export interface CharacterNarrativeState {
   pressure: number;                                 // 0-100，叙事压力
   /** 角色卡定义的秘密池快照（只读，由角色 yml 加载时填入） */
   secretsPool: string[];
+  /** B5 多日执念（随档；本阶段只登记不消费，见 ObsessionEntry TODO） */
+  obsessions: ObsessionEntry[];
 }
 
 export interface LocationNarrativeState {
@@ -104,6 +156,10 @@ export interface WorldNarrativeState {
    * theft_with_perp 的 npc 真凶资格以此为准）。读档时由 B3 重建 addCharacter。
    */
   npcs: Record<string, { name: string; isStatic?: boolean }>;
+  /** B1 立场账：pairKey(排序 "a:b") → 该对的立场列表（active + 归档，随档） */
+  openStances: Record<string, OpenStance[]>;
+  /** B1 假阳性防线④：每对每天 ≤1 条敌对立场——pairKey → 最近落账的 game day（随档） */
+  stanceDayLog: Record<string, number>;
 }
 
 export interface NarrativeStateSnapshot {
@@ -124,6 +180,8 @@ export function emptyNarrativeState(): NarrativeStateSnapshot {
       worldEventQuota: { usedByWeek: {}, lastByType: {} },
       pendingDiscoveries: [],
       npcs: {},
+      openStances: {},
+      stanceDayLog: {},
     },
     characters: {},
     locations: {},
@@ -211,6 +269,46 @@ export function normalizeNarrativeSnapshot(
     }
   }
 
+  // B1：立场账（结构残缺的条目直接丢；lastRefreshTick 缺失回填 createdTick）
+  if (!w.openStances || typeof w.openStances !== "object" || Array.isArray(w.openStances)) {
+    w.openStances = {};
+  } else {
+    for (const [key, list] of Object.entries(w.openStances)) {
+      if (!Array.isArray(list)) {
+        delete w.openStances[key];
+        continue;
+      }
+      w.openStances[key] = list.filter(
+        (s) =>
+          s && typeof s === "object" &&
+          typeof s.id === "string" &&
+          OPEN_STANCE_KINDS.includes(s.kind as OpenStanceKind) &&
+          typeof s.holderId === "string" &&
+          typeof s.targetId === "string" &&
+          typeof s.summary === "string" &&
+          typeof s.evidence === "string" &&
+          typeof s.createdTick === "number" && Number.isFinite(s.createdTick),
+      );
+      for (const s of w.openStances[key]!) {
+        if (typeof s.lastRefreshTick !== "number" || !Number.isFinite(s.lastRefreshTick)) {
+          s.lastRefreshTick = s.createdTick;
+        }
+        if (!Array.isArray(s.witnesses)) s.witnesses = [];
+        if (s.status !== "active" && s.status !== "archived") s.status = "active";
+        if (typeof s.archivedTick !== "number" || !Number.isFinite(s.archivedTick)) delete s.archivedTick;
+        if (s.archiveReason !== "reconciled" && s.archiveReason !== "ttl") delete s.archiveReason;
+      }
+      if (w.openStances[key]!.length === 0) delete w.openStances[key];
+    }
+  }
+  if (!w.stanceDayLog || typeof w.stanceDayLog !== "object" || Array.isArray(w.stanceDayLog)) {
+    w.stanceDayLog = {};
+  } else {
+    for (const [k, v] of Object.entries(w.stanceDayLog)) {
+      if (typeof v !== "number" || !Number.isFinite(v)) delete w.stanceDayLog[k];
+    }
+  }
+
   if (!snap.characters || typeof snap.characters !== "object" || Array.isArray(snap.characters)) {
     snap.characters = {};
   }
@@ -230,6 +328,19 @@ export function normalizeNarrativeSnapshot(
       c.pressure = Math.max(0, Math.min(100, c.pressure));
     }
     if (!Array.isArray(c.secretsPool)) c.secretsPool = [];
+    // B5：执念（旧档缺失回填空；结构残缺条目丢弃）
+    if (!Array.isArray(c.obsessions)) {
+      c.obsessions = [];
+    } else {
+      c.obsessions = c.obsessions.filter(
+        (o) => o && typeof o === "object" && typeof o.id === "string" && typeof o.summary === "string" &&
+          typeof o.createdDay === "number" && Number.isFinite(o.createdDay),
+      );
+      for (const o of c.obsessions) {
+        if (typeof o.decayDays !== "number" || !Number.isFinite(o.decayDays)) o.decayDays = 5;
+        if (typeof o.source !== "string") o.source = "unknown";
+      }
+    }
   }
 
   if (!snap.locations || typeof snap.locations !== "object" || Array.isArray(snap.locations)) {
@@ -255,9 +366,13 @@ function ensureCharacter(state: NarrativeStateSnapshot, charId: string): Charact
       unresolvedWith: {},
       pressure: 0,
       secretsPool: [],
+      obsessions: [],
     };
   }
-  return state.characters[charId];
+  const c = state.characters[charId];
+  // 构造器直灌的旧快照没走 normalize：就地补新字段
+  if (!Array.isArray(c.obsessions)) c.obsessions = [];
+  return c;
 }
 
 function ensureLocation(state: NarrativeStateSnapshot, locId: string): LocationNarrativeState {
@@ -313,6 +428,30 @@ export class NarrativeState {
     if (!c.unresolvedWith[otherCharId].includes(topicId)) {
       c.unresolvedWith[otherCharId].push(topicId);
     }
+  }
+
+  /** 和解清账用：摘掉某个 topic id（清空后删 key） */
+  removeUnresolvedWith(charId: string, otherCharId: string, topicId: string): boolean {
+    const c = ensureCharacter(this.snapshot, charId);
+    const list = c.unresolvedWith[otherCharId];
+    if (!list) return false;
+    const idx = list.indexOf(topicId);
+    if (idx < 0) return false;
+    list.splice(idx, 1);
+    if (list.length === 0) delete c.unresolvedWith[otherCharId];
+    return true;
+  }
+
+  /**
+   * B5 执念登记接口（桩）：只登记不消费。
+   * TODO(S7/B5)：消费端（晨间打算输入 + 此刻区 ≤2 条 + 反思回顾）与 5 天衰减/settled 即清在 S7 接上。
+   */
+  registerObsession(charId: string, entry: ObsessionEntry): boolean {
+    const c = ensureCharacter(this.snapshot, charId);
+    if (c.obsessions.some((o) => o.id === entry.id)) return false;
+    c.obsessions.push({ ...entry });
+    if (c.obsessions.length > 6) c.obsessions.splice(0, c.obsessions.length - 6);
+    return true;
   }
 
   setPressure(charId: string, pressure: number): void {
@@ -437,6 +576,120 @@ export class NarrativeState {
 
   isNpc(id: string): boolean {
     return Boolean(this.snapshot.world.npcs?.[id]);
+  }
+
+  // ── B1 立场账 ──
+
+  /** 立场账全表（懒初始化——构造器传入的旧快照没走 normalize） */
+  getOpenStanceMap(): Record<string, OpenStance[]> {
+    const w = this.snapshot.world;
+    if (!w.openStances || typeof w.openStances !== "object" || Array.isArray(w.openStances)) {
+      w.openStances = {};
+    }
+    return w.openStances;
+  }
+
+  getOpenStances(a: string, b: string): OpenStance[] {
+    return this.getOpenStanceMap()[stancePairKey(a, b)] ?? [];
+  }
+
+  getActiveOpenStances(a: string, b: string): OpenStance[] {
+    return this.getOpenStances(a, b).filter((s) => s.status === "active");
+  }
+
+  /** B1.5：break/threaten 立场在账时取消疙瘩期负向减半的判定口 */
+  hasActiveStanceOfKind(a: string, b: string, kinds: readonly OpenStanceKind[]): boolean {
+    return this.getActiveOpenStances(a, b).some((s) => kinds.includes(s.kind));
+  }
+
+  /**
+   * 落一条敌对立场：同对同类 active 已存在 → refresh（更新 lastRefreshTick/evidence/summary），
+   * 否则新增。返回 { stance, refreshed }。
+   */
+  addOrRefreshOpenStance(stance: Omit<OpenStance, "status" | "lastRefreshTick"> & { lastRefreshTick?: number }): { stance: OpenStance; refreshed: boolean } {
+    const map = this.getOpenStanceMap();
+    const key = stancePairKey(stance.holderId, stance.targetId);
+    if (!map[key]) map[key] = [];
+    const existing = map[key].find((s) => s.status === "active" && s.kind === stance.kind);
+    const tick = stance.lastRefreshTick ?? stance.createdTick;
+    if (existing) {
+      existing.lastRefreshTick = tick;
+      existing.summary = stance.summary;
+      existing.evidence = stance.evidence;
+      for (const w of stance.witnesses) {
+        if (!existing.witnesses.includes(w)) existing.witnesses.push(w);
+      }
+      return { stance: existing, refreshed: true };
+    }
+    const created: OpenStance = { ...stance, lastRefreshTick: tick, status: "active" };
+    map[key].push(created);
+    return { stance: created, refreshed: false };
+  }
+
+  /** 和解清账：把该对所有 active 立场归档（reconciled），返回被归档的条目 */
+  resolveOpenStances(a: string, b: string, tick: number): OpenStance[] {
+    const archived: OpenStance[] = [];
+    for (const s of this.getOpenStances(a, b)) {
+      if (s.status !== "active") continue;
+      s.status = "archived";
+      s.archiveReason = "reconciled";
+      s.archivedTick = tick;
+      archived.push(s);
+    }
+    return archived;
+  }
+
+  /** TTL 7 游戏天无 refresh 自动降档归档（§2 B1）。返回归档条数。 */
+  sweepStanceTTL(tick: number, ttlTicks = 7 * 96): number {
+    let n = 0;
+    for (const list of Object.values(this.getOpenStanceMap())) {
+      for (const s of list) {
+        if (s.status !== "active") continue;
+        if (tick - s.lastRefreshTick > ttlTicks) {
+          s.status = "archived";
+          s.archiveReason = "ttl";
+          s.archivedTick = tick;
+          n++;
+        }
+      }
+    }
+    return n;
+  }
+
+  /** 有 active 立场的 pairKey 集合（B1.5 阻尼豁免数据源） */
+  pairsWithActiveStances(): string[] {
+    const out: string[] = [];
+    for (const [key, list] of Object.entries(this.getOpenStanceMap())) {
+      if (list.some((s) => s.status === "active")) out.push(key);
+    }
+    return out;
+  }
+
+  /** 未 settled 事件牵涉的 pairKey 集合（involved 两两成对；B1.5 阻尼豁免数据源） */
+  unsettledEventPairKeys(): Set<string> {
+    const out = new Set<string>();
+    for (const e of this.snapshot.world.unresolvedEvents) {
+      if ((e.status ?? "fresh") === "settled") continue;
+      for (let i = 0; i < e.involved.length; i++) {
+        for (let j = i + 1; j < e.involved.length; j++) {
+          out.add(stancePairKey(e.involved[i]!, e.involved[j]!));
+        }
+      }
+    }
+    return out;
+  }
+
+  /** 每对每天 ≤1 的水位表（懒初始化） */
+  getStanceDayLog(): Record<string, number> {
+    const w = this.snapshot.world;
+    if (!w.stanceDayLog || typeof w.stanceDayLog !== "object" || Array.isArray(w.stanceDayLog)) {
+      w.stanceDayLog = {};
+    }
+    return w.stanceDayLog;
+  }
+
+  recordStanceDay(pairKey: string, day: number): void {
+    this.getStanceDayLog()[pairKey] = day;
   }
 
   setTensionIndex(value: number): void {

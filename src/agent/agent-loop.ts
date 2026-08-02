@@ -47,6 +47,15 @@ export interface AgentTickResult {
   motive?: MotiveChannel;
 }
 
+/**
+ * 疙瘩期负向减半（纯函数，B1.5 可测）：
+ * 有疙瘩且无 break/threaten 立场在账 → 负向减半；立场在账则全额入账。
+ */
+export function dampNegativeDelta(delta: number, hasGrudge: boolean, hasBreakStance: boolean): number {
+  if (delta < 0 && hasGrudge && !hasBreakStance) return Math.ceil(delta / 2);
+  return delta;
+}
+
 export async function runAgentTick(params: {
   config: AgentConfig;
   world: World;
@@ -60,6 +69,11 @@ export async function runAgentTick(params: {
   conversationRequest?: LLMRequest;
   /** Phase-specific 工具集 (N6.4) - 当 active_phase 匹配时浮现 */
   phaseTools?: ActionDefinition[];
+  /**
+   * B1.5 摊牌场景闸：对这些目标的 talk 豁免重复拦截（字面/Jaccard）——
+   * 摊牌中的死缠追问是戏，不是复读。由 simulation 按摊牌 beat 点火的对传入，场景结束恢复。
+   */
+  repeatInterceptExemptTargets?: string[];
 }): Promise<AgentTickResult> {
   const { config, world, eventBus, gameTime } = params;
   const { card, actions, provider, modelId } = config;
@@ -363,7 +377,9 @@ export async function runAgentTick(params: {
   if (toolCall.name === "talk" && params.memory) {
     const newMessage = (toolCall.arguments.message as string ?? "").trim();
     const newTarget = (toolCall.arguments.target as string ?? "").trim();
-    if (newMessage && newTarget) {
+    // B1.5 摊牌场景闸：摊牌 beat 点火的对豁免重复拦截（argue 式死缠是戏不是复读），场景结束恢复
+    const confrontExempt = params.repeatInterceptExemptTargets?.includes(newTarget) ?? false;
+    if (newMessage && newTarget && !confrontExempt) {
       const recent = params.memory.getRecent(card.id, 12);
       let isRepeat = false;
 
@@ -687,11 +703,12 @@ async function executeAction(
         if (relationships && effect.delta !== undefined) {
           const otherId = resolveCharacterId(world, effect.targetId);
           // 负向边际递减：疙瘩还没解开时再次冲突，伤害减半——
-          // 上行被冻结 + 下行 -15/次 的棘轮会让一对关系单向滑向 -100
-          let delta = effect.delta;
-          if (delta < 0 && relationships.get(card.id, otherId).grudge) {
-            delta = Math.ceil(delta / 2);
-          }
+          // 上行被冻结 + 下行 -15/次 的棘轮会让一对关系单向滑向 -100。
+          // B1.5 豁免：break/threaten 立场在账时取消减半——摊过牌的伤害要全额入账，
+          // 否则账本顶不住均值回归（DESIGN-revival §2 B1.5）。
+          const hasGrudge = Boolean(relationships.get(card.id, otherId).grudge);
+          const hasBreakStance = world.narrative.hasActiveStanceOfKind(card.id, otherId, ["break", "threaten"]);
+          const delta = dampNegativeDelta(effect.delta, hasGrudge, hasBreakStance);
           relationships.modify(card.id, otherId, delta, gameTime.tick, truncateLine(result.description, 40));
         }
         break;

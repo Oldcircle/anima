@@ -35,6 +35,14 @@ export interface ConversationExchange {
   tick: number;
   /** 说话时的动作/表情/语气（白描） */
   manner?: string;
+  /**
+   * B1 witnesses 机械化（§2/§4.5）：说这句话的当刻，同地点在场者（不含双方）。
+   * talk 结算处由引擎写入；公开性由引擎按 witnesses 机械判定，抽取 LLM 不判公开性
+   * （对话结束后 9+ tick 无法回溯在场者）。
+   */
+  witnesses?: string[];
+  /** 说话时所在地点（§4.5 二轮评审顺手补上） */
+  locationId?: string;
 }
 
 /**
@@ -49,14 +57,17 @@ export class ConversationTracker {
     return a < b ? `${a}:${b}` : `${b}:${a}`;
   }
 
-  /** 记录一次 talk */
-  recordTalk(speakerId: string, speakerName: string, targetId: string, message: string, tick: number, manner?: string): void {
+  /** 记录一次 talk（extras：B1 witnesses 机械化——在场者 + 地点由 talk 结算处传入） */
+  recordTalk(speakerId: string, speakerName: string, targetId: string, message: string, tick: number, manner?: string, extras?: { witnesses?: string[]; locationId?: string }): void {
     const name = speakerName?.trim() || speakerId; // 防御空名字
     const key = this._pairKey(speakerId, targetId);
     if (!this._exchanges.has(key)) {
       this._exchanges.set(key, []);
     }
-    this._exchanges.get(key)!.push({ speakerId, speakerName: name, message, tick, manner });
+    this._exchanges.get(key)!.push({
+      speakerId, speakerName: name, message, tick, manner,
+      witnesses: extras?.witnesses, locationId: extras?.locationId,
+    });
     this._lastTick.set(key, tick);
   }
 

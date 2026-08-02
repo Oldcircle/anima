@@ -26,6 +26,15 @@ import { runAgentTick, describeObservableAction, type AgentConfig, type AgentTic
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest } from "./conversation-mode.js";
 import { extractPromise, mightContainPromise, extractTransaction, mightContainTransaction, type ExtractedTransaction } from "./promise-extractor.js";
+import {
+  applySeverityLadder,
+  computeConversationWitnesses,
+  extractStances,
+  isReconcileKind,
+  mightContainShowdown,
+  type ExtractedStance,
+} from "./stance-extractor.js";
+import { stancePairKey, type OpenStanceKind } from "../narrative/narrative-state.js";
 import { ImpressionStore } from "../memory/impressions.js";
 import { updateImpressionsBidirectional } from "./impression-updater.js";
 import { shouldObserve, generateObservation, type ObservationResult } from "./observation-reasoning.js";
@@ -256,6 +265,42 @@ export class Simulation {
 
   /** 同一对角色连续对话超过此轮数时，强制冷却让他们去做别的事 */
   private static MAX_CONVERSATION_TURNS = 8;
+  /** B1.5 摊牌场景闸：摊牌 beat 点火的对，本场对话闸临时抬升到 16 轮 */
+  private static MAX_CONVERSATION_TURNS_CONFRONT = 16;
+  /** 摊牌场景的硬 TTL（tick）：对话迟迟没发生也会自动恢复 */
+  private static CONFRONT_SCENE_TTL_TICKS = 24;
+
+  /** B1.5 摊牌场景登记：pairKey → 到期 tick。瞬态不入档（场景结束即恢复，不跨日） */
+  private _confrontSceneUntil = new Map<string, number>();
+
+  /** 摊牌 beat 点火时抬闸（off 档不启用——治愈系基线） */
+  raiseConfrontationScene(a: string, b: string, tick: number): void {
+    if (getBreakLevel() === "off") return;
+    this._confrontSceneUntil.set(stancePairKey(a, b), tick + Simulation.CONFRONT_SCENE_TTL_TICKS);
+  }
+
+  isConfrontationSceneActive(a: string, b: string, tick: number): boolean {
+    const key = stancePairKey(a, b);
+    const until = this._confrontSceneUntil.get(key);
+    if (until === undefined) return false;
+    if (tick > until) {
+      this._confrontSceneUntil.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  /** 该角色当前处于摊牌场景的对话对象（agent-loop 重复拦截豁免用） */
+  private _confrontExemptTargets(characterId: string, tick: number): string[] {
+    const out: string[] = [];
+    for (const [key, until] of this._confrontSceneUntil) {
+      if (tick > until) continue;
+      const [a, b] = key.split(":") as [string, string];
+      if (a === characterId) out.push(b);
+      else if (b === characterId) out.push(a);
+    }
+    return out;
+  }
 
   private _getTalkCooldownTargets(characterId: string, tick: number): string[] {
     const state = this.world.getCharacter(characterId);
@@ -267,9 +312,13 @@ export class Simulation {
         const cooldownTick = this._conversationCooldown.get([characterId, otherId].sort().join(":"));
         if (cooldownTick !== undefined && (tick - cooldownTick) < 2) return true;
         // 对话轮数上限：同一对角色连续聊了太久，强制停下
+        // （B1.5：摊牌场景闸临时抬升 8→16，摊牌不该被闸在半途）
         const history = this.conversations.getHistory(characterId, otherId);
         const recentTurns = history.filter((e) => tick - e.tick <= 10).length;
-        if (recentTurns >= Simulation.MAX_CONVERSATION_TURNS) return true;
+        const cap = this.isConfrontationSceneActive(characterId, otherId, tick)
+          ? Simulation.MAX_CONVERSATION_TURNS_CONFRONT
+          : Simulation.MAX_CONVERSATION_TURNS;
+        if (recentTurns >= cap) return true;
         return false;
       });
   }
@@ -435,14 +484,20 @@ export class Simulation {
     if (gameTime.hour === 6 && gameTime.minute === 0) {
       // kira-incident：昨夜写下的名字晨间应验（无剧本时 pending 恒空，零开销）
       this._resolveKiraStrikes(gameTime);
+      // B1：openStance TTL——7 游戏天无 refresh 自动降档归档
+      this.world.narrative.sweepStanceTTL(gameTime.tick);
+      // B1.5 阻尼豁免：有 activeOpenStance / 未 settled 事件的对，
+      // 暂停 grudge 3 天自动清与 idleDecay——账本要顶得住均值回归（off 档豁免集恒空）
+      const damperExempt = this._stanceDamperExemptPairs();
       for (const rel of this.relationships.getAll()) {
         if (rel.grudge && gameTime.tick - rel.grudge.sinceTick > 288) {
+          if (damperExempt.has(stancePairKey(rel.characterA, rel.characterB))) continue;
           this.relationships.clearGrudge(rel.characterA, rel.characterB);
         }
       }
       // 关系空窗衰减：超过 1 游戏天（96 tick）无任何互动的对，每天向 0 回落 1.5。
       // 与 talk 递减收益 + per-tick 去重合起来打破 valence 正向通胀——关系要维护，不是只涨不跌。
-      this.relationships.applyIdleDecay(gameTime.tick, 96, 1.5);
+      this.relationships.applyIdleDecay(gameTime.tick, 96, 1.5, damperExempt);
       // 店铺每日补货：有员工工具的店 + 任何已开始追踪库存的店（prepare 会让无 workerTools 的店
       // 进入追踪——不补货就会毒化成永久缺货）。补足到 2 而非覆盖写 2：员工备到 8 的货不隔夜蒸发。
       for (const loc of this.world.getAllLocations()) {
@@ -712,6 +767,7 @@ export class Simulation {
         impressions: this.impressions,
         phaseTools: this._getActivePhaseTools(),
         conversationRequest,
+        repeatInterceptExemptTargets: this._confrontExemptTargets(id, gameTime.tick),
       }));
     }
 
@@ -727,6 +783,8 @@ export class Simulation {
         // 疙瘩期冻结加分——全部收敛进 registerTalk（尬聊不等于和好，和好走道歉/安慰/送礼）
         this.relationships.registerTalk(r.characterId, targetId, gameTime.tick);
         const charState = this.world.getCharacter(r.characterId);
+        // B1 witnesses 机械化：当刻同地点在场者（不含双方）+ 地点写进 exchange——
+        // 公开性由引擎按 witnesses 判定，抽取 LLM 不判（对话结束后 9+ tick 无法回溯在场者）
         this.conversations.recordTalk(
           r.characterId,
           charState?.name ?? r.characterId,
@@ -734,6 +792,12 @@ export class Simulation {
           r.action.args.message as string ?? "",
           gameTime.tick,
           r.action.args.manner as string | undefined,
+          {
+            witnesses: charState
+              ? this.world.getCharactersAtLocation(charState.locationId).filter((id) => id !== r.characterId && id !== targetId)
+              : [],
+            locationId: charState?.locationId,
+          },
         );
         // 对话产生 happy moodlet
         if (charState) {
@@ -1188,6 +1252,7 @@ export class Simulation {
               memory: this.memory,
               impressions: this.impressions,
               conversationRequest,
+              repeatInterceptExemptTargets: this._confrontExemptTargets(id, gameTime.tick),
             });
           } else {
             r = await runAgentTick({
@@ -1199,6 +1264,7 @@ export class Simulation {
               relationships: this.relationships,
               memory: this.memory,
               impressions: this.impressions,
+              repeatInterceptExemptTargets: this._confrontExemptTargets(id, gameTime.tick),
             });
           }
         } else {
@@ -1211,6 +1277,7 @@ export class Simulation {
             relationships: this.relationships,
             memory: this.memory,
             impressions: this.impressions,
+            repeatInterceptExemptTargets: this._confrontExemptTargets(id, gameTime.tick),
           });
         }
 
@@ -1225,6 +1292,7 @@ export class Simulation {
           // 对话大头在反应轮，per-tick 去重就靠这条兜住（同一 tick 主轮已计则这里自动跳过）
           this.relationships.registerTalk(r.characterId, targetId, gameTime.tick);
           const charState = this.world.getCharacter(r.characterId);
+          // B1 witnesses 机械化（与主轮一致）
           this.conversations.recordTalk(
             r.characterId,
             charState?.name ?? r.characterId,
@@ -1232,6 +1300,12 @@ export class Simulation {
             r.action.args.message as string ?? "",
             gameTime.tick,
             r.action.args.manner as string | undefined,
+            {
+              witnesses: charState
+                ? this.world.getCharactersAtLocation(charState.locationId).filter((id) => id !== r.characterId && id !== targetId)
+                : [],
+              locationId: charState?.locationId,
+            },
           );
           // 更新对话对交换计数 + 冷却
           const pk = pairKey(r.characterId, targetId);
@@ -1314,6 +1388,9 @@ export class Simulation {
       // 对话真正结束：valence 水位清零，下一场对话从头计
       this._valenceWatermark.delete([conv.charA, conv.charB].sort().join(":"));
       this._scheduleTransactionSettlement(conv, gameTime);
+      // B1 立场抽取（第三兄弟）——注意先抽取再清摊牌场景闸（场景结束恢复）
+      this._scheduleStanceExtraction(conv, gameTime);
+      this._confrontSceneUntil.delete(stancePairKey(conv.charA, conv.charB));
       if (!mightContainPromise(conv.history)) continue;
       const cardA = this._configs.get(conv.charA)?.card;
       const cardB = this._configs.get(conv.charB)?.card;
@@ -1457,6 +1534,200 @@ export class Simulation {
         return;
       }
       console.log(`💱 [口头交易] ${giver.name} 身上没有${def.name}也不卖它，无法落账`);
+    }
+  }
+
+  // ── B1 立场落账（对话结束管线第三兄弟）──
+
+  /** 敌对立场的落账动词（LTM/流言白描用） */
+  private static STANCE_VERB: Record<OpenStanceKind, string> = {
+    expose: "当面揭穿",
+    accuse: "当面指控",
+    threaten: "放话威胁",
+    vow: "当面立誓针对",
+    break: "宣告绝交",
+    side_with: "公开站到对立面反对",
+  };
+
+  /**
+   * B1.5 阻尼豁免的数据源：有 activeOpenStance 或牵涉未 settled 事件的对。
+   * off 档恒空（红线②：off = 治愈系 A/B 基线，B1.5 全关）。
+   */
+  private _stanceDamperExemptPairs(): Set<string> {
+    if (getBreakLevel() === "off") return new Set();
+    const ns = this.world.narrative;
+    const out = new Set<string>(ns.pairsWithActiveStances());
+    for (const key of ns.unsettledEventPairKeys()) out.add(key);
+    return out;
+  }
+
+  /**
+   * 3.67 立场抽取（fire-and-forget）：对话结束时抽取当面亮明的立场并落账。
+   * 假阳性防线①（AND 预过滤）：摊牌类词 且 近窗负 valence ≤ -2（S1 valence 环形缓冲）；
+   * <4 句 / off 档 / 该对今天已落账 → 不调用。
+   */
+  private _scheduleStanceExtraction(
+    conv: { charA: string; charB: string; history: import("./conversation-mode.js").ConversationExchange[] },
+    gameTime: GameTime,
+  ): void {
+    if (getBreakLevel() === "off") return; // 红线②：off 档不启用
+    if (!mightContainShowdown(conv.history)) return; // 含 <4 句闸
+    if (this.pressureGraph.windowValence(conv.charA, conv.charB, gameTime.tick) > -2) return;
+    const cardA = this._configs.get(conv.charA)?.card;
+    const cardB = this._configs.get(conv.charB)?.card;
+    if (!cardA || !cardB) return;
+    // 防线④预判：该对今天已有敌对落账 → 连抽取都不跑（省成本）。
+    // 和解不受此闸——但和解也需要先过预过滤，且落账动作只减不增，安全。
+    const pk = stancePairKey(conv.charA, conv.charB);
+    const day = Math.floor((conv.history[conv.history.length - 1]?.tick ?? gameTime.tick) / 96);
+    const dayLogged = this.world.narrative.getStanceDayLog()[pk] === day;
+    const hasActive = this.world.narrative.getActiveOpenStances(conv.charA, conv.charB).length > 0;
+    const hasGrudge = Boolean(this.relationships.get(conv.charA, conv.charB).grudge);
+    if (dayLogged && !hasActive && !hasGrudge) return; // 没账可清也不许再立新账：跳过
+
+    const task = extractStances({
+      history: conv.history,
+      charAId: cardA.id, charAName: cardA.name,
+      charBId: cardB.id, charBName: cardB.name,
+      provider: this._provider,
+      modelId: this._modelId,
+    }).then((stances) => {
+      this._settleExtractedStances(conv, stances, gameTime);
+    }).catch((err: any) => {
+      console.warn(`⚖️ [立场抽取] ${conv.charA}↔${conv.charB} 失败:`, err?.message ?? err);
+    });
+    this._trackBackgroundTask(task);
+  }
+
+  /** break/threaten 的双边印象佐证（防线⑤）：双方对彼此的印象都攒过疙瘩才认 */
+  private _bilateralCorroboration(a: string, b: string): boolean {
+    const ab = this.impressions.get(a, b)?.frictions?.length ?? 0;
+    const ba = this.impressions.get(b, a)?.frictions?.length ?? 0;
+    return ab >= 1 && ba >= 1;
+  }
+
+  /** 给已存在的印象机械追加一条疙瘩（无印象则跳过——不无中生有造印象对象） */
+  private _addFriction(observerId: string, targetId: string, text: string): void {
+    const imp = this.impressions.get(observerId, targetId);
+    if (!imp) return;
+    if (!imp.frictions) imp.frictions = [];
+    if (!imp.frictions.includes(text)) imp.frictions.push(text);
+    if (imp.frictions.length > 3) imp.frictions = imp.frictions.slice(-3);
+  }
+
+  /** 落账一批抽取的立场（B1 形状：openStance + unresolvedWith + 双方 LTM imp8 + 有 witnesses 才流言 + 疙瘩计分 + 双方 obsession 登记） */
+  private _settleExtractedStances(
+    conv: { charA: string; charB: string; history: import("./conversation-mode.js").ConversationExchange[] },
+    stances: ExtractedStance[],
+    gameTime: GameTime,
+  ): void {
+    if (stances.length === 0) return;
+    const ns = this.world.narrative;
+    const tick = gameTime.tick;
+    const pk = stancePairKey(conv.charA, conv.charB);
+    const lastExchangeTick = conv.history[conv.history.length - 1]?.tick ?? tick;
+    const day = Math.floor(lastExchangeTick / 96);
+    // 公开性引擎机械判定：整场对话在场者并集（不含双方）
+    const witnesses = computeConversationWitnesses(conv.history, conv.charA, conv.charB);
+    const locationId = [...conv.history].reverse().find((e) => e.locationId)?.locationId;
+    const locName = locationId ? this.world.getLocation(locationId)?.name ?? locationId : "镇上";
+
+    for (const s of stances) {
+      const holderName = this.world.getCharacter(s.holderId)?.name ?? s.holderId;
+      const targetName = this.world.getCharacter(s.targetId)?.name ?? s.targetId;
+
+      // ── 和解向：命中即清对应 openStance + grudge + unresolvedWith（清账，不立新账）──
+      if (isReconcileKind(s.kind)) {
+        const archived = ns.resolveOpenStances(s.holderId, s.targetId, tick);
+        const hadGrudge = Boolean(this.relationships.get(s.holderId, s.targetId).grudge);
+        if (archived.length === 0 && !hadGrudge) continue; // 没账可清——和解立场不无中生有
+        this.relationships.clearGrudge(s.holderId, s.targetId);
+        for (const st of archived) {
+          ns.removeUnresolvedWith(st.holderId, st.targetId, st.id);
+          ns.removeUnresolvedWith(st.targetId, st.holderId, st.id);
+        }
+        this.longTerm.add(s.holderId, {
+          tick, type: "event", importance: 7,
+          content: `你和${targetName}把话说开了（${s.summary}）：「${s.evidence}」`,
+          relatedCharacterId: s.targetId,
+        });
+        this.longTerm.add(s.targetId, {
+          tick, type: "event", importance: 7,
+          content: `${holderName}和你把之前的疙瘩说开了（${s.summary}）`,
+          relatedCharacterId: s.holderId,
+        });
+        console.log(`⚖️ [立场→和解清账] ${holderName} ↔ ${targetName}: ${s.kind}（清 ${archived.length} 条立场${hadGrudge ? " + 疙瘩" : ""}）`);
+        continue;
+      }
+
+      // ── 敌对向 ──
+      // 防线④：每对每天 ≤1 条
+      if (ns.getStanceDayLog()[pk] === day) {
+        console.log(`⚖️ [立场] ${holderName} ↔ ${targetName} 今天已落过账，跳过（每对每天 ≤1）`);
+        continue;
+      }
+      // 防线③：严重度阶梯——break/threaten 必须有明示原话，否则降档 accuse
+      let kind = applySeverityLadder(s.kind as OpenStanceKind, s.evidence);
+      // 防线⑤：break/threaten 需双边印象佐证，缺佐证降档 accuse
+      if ((kind === "break" || kind === "threaten") && !this._bilateralCorroboration(s.holderId, s.targetId)) {
+        console.log(`⚖️ [立场] ${holderName} 的 ${kind} 缺双边印象佐证 → 降档 accuse`);
+        kind = "accuse";
+      }
+
+      const stanceId = `stance_${kind}_${pk.replace(":", "_")}_${tick}`;
+      const { refreshed } = ns.addOrRefreshOpenStance({
+        id: stanceId,
+        kind,
+        holderId: s.holderId,
+        targetId: s.targetId,
+        summary: s.summary,
+        evidence: s.evidence,
+        createdTick: lastExchangeTick,
+        lastRefreshTick: tick,
+        witnesses: [...witnesses],
+        locationId,
+      });
+      ns.recordStanceDay(pk, day);
+      const verb = Simulation.STANCE_VERB[kind];
+      // unresolvedWith：双方都记这桩没了结
+      ns.addUnresolvedWith(s.holderId, s.targetId, stanceId);
+      ns.addUnresolvedWith(s.targetId, s.holderId, stanceId);
+      // 双方 LTM imp8：交锋退出有代价，不再 48 小时蒸发
+      this.longTerm.add(s.holderId, {
+        tick, type: "event", importance: 8,
+        content: `你${verb}了${targetName}：「${s.evidence}」（${s.summary}——这事还没完）`,
+        relatedCharacterId: s.targetId,
+      });
+      this.longTerm.add(s.targetId, {
+        tick, type: "event", importance: 8,
+        content: `${holderName}${verb}了你：「${s.evidence}」（${s.summary}——这事还没完）`,
+        relatedCharacterId: s.holderId,
+      });
+      // 疙瘩计分：没疙瘩的结疙瘩（有的不重复覆盖），双方印象各攒一条
+      if (!this.relationships.get(s.holderId, s.targetId).grudge) {
+        this.relationships.setGrudge(s.holderId, s.targetId, s.summary.slice(0, 40), s.holderId, tick);
+      }
+      this._addFriction(s.holderId, s.targetId, `你${verb}过TA（${s.summary.slice(0, 30)}），还没了结`);
+      this._addFriction(s.targetId, s.holderId, `TA${verb}过你（${s.summary.slice(0, 30)}），还没了结`);
+      // 有 witnesses 才进流言（公开性机械判定；私下摊牌不外泄）
+      if (witnesses.length > 0) {
+        ns.getWorld().rumors.push({
+          content: `${holderName}在${locName}${verb}了${targetName}——${s.summary}`,
+          sourceCharId: witnesses[0],
+          tick,
+          reachedChars: [...witnesses],
+        });
+      }
+      // 双方 obsession 登记（B5 桩：只登记；消费在 S7 接上）
+      ns.registerObsession(s.holderId, {
+        id: `obs_${stanceId}_holder`, summary: `你${verb}了${targetName}，这事没完`,
+        createdDay: day, decayDays: 5, source: "stance",
+      });
+      ns.registerObsession(s.targetId, {
+        id: `obs_${stanceId}_target`, summary: `${holderName}${verb}了你，这事没完`,
+        createdDay: day, decayDays: 5, source: "stance",
+      });
+      console.log(`⚖️ [立场→落账] ${holderName} ${verb} ${targetName}（${kind}${refreshed ? "，refresh" : ""}，目击 ${witnesses.length} 人）：${s.summary}`);
     }
   }
 
@@ -2052,6 +2323,8 @@ export class Simulation {
               expiresAt: gameTime.tick + 16,
             });
             console.log(`💡 [auto_intent] ${seed.char}: 必须找${targetName}谈谈`);
+            // B1.5 摊牌场景闸：本场对话闸抬升 8→16 轮 + 豁免重复拦截，场景结束/TTL 恢复
+            this.raiseConfrontationScene(seed.char, seed.target, gameTime.tick);
           }
         }
       }

@@ -10,7 +10,7 @@
  * - promise：爽约累计（从 _appointments 派生：status==='missed' 且有 missedBy；
  *   双爽约不计入——§4.5 不加新计数器）
  * - bond：负关系 level 敌意
- * - stance：B1 立场账（接入前恒 0，activeOpenStances 参数留插座）
+ * - stance：B1 立场账（narrative openStances；只计近 3 天有活动的 active 条目）
  *
  * 三路输出：
  * 1. per-char pressure → narrative_state.setPressure（beat 表达式 jexl 可读）
@@ -30,6 +30,8 @@ import { updateWorldTension } from "./tension.js";
 const TICKS_PER_DAY = 96;
 /** 欠账宽限天数：与 simulation 讨债 OVERDUE_TICKS(192) 对齐——欠满 2 天才算逾期 */
 const DEBT_GRACE_DAYS = 2;
+/** stance 项只计近 3 天内有活动的（§1：防饱和失真） */
+const STANCE_ACTIVITY_WINDOW_TICKS = 3 * TICKS_PER_DAY;
 /** valence 环形缓冲容量 */
 const VALENCE_BUFFER_CAP = 256;
 /** 近窗默认窗口：1 游戏天 */
@@ -210,6 +212,19 @@ export class PressureGraph {
     for (const [key, count] of Object.entries(countMissedAppointmentsByPair(world.getAllAppointments()))) {
       const [x, y] = key.split(":") as [string, string];
       ensure(x, y).missedAppointments += count;
+    }
+
+    // stance：B1 立场账——只计近 3 天内有活动的 active openStance（§1 防饱和失真）
+    const stanceMap = ns.getWorld().openStances ?? {};
+    for (const [key, list] of Object.entries(stanceMap)) {
+      if (!Array.isArray(list)) continue;
+      const active = list.filter(
+        (s) => s?.status === "active" && tick - (s.lastRefreshTick ?? s.createdTick) <= STANCE_ACTIVITY_WINDOW_TICKS,
+      ).length;
+      if (active > 0) {
+        const [x, y] = key.split(":") as [string, string];
+        ensure(x, y).activeOpenStances += active;
+      }
     }
 
     // 2. pair 压力

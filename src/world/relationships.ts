@@ -146,11 +146,14 @@ export class RelationshipManager {
    * 空窗关系每（游戏）天向 0 轻微回落——关系要维护，不是只涨不跌的累加器。
    * 只动「超过 idleTicks 没互动」的对，向 0 收（正的降、负的升），幅度不超过其绝对值。
    * 疙瘩另有淡化逻辑，跳过。不更新 lastInteraction（否则永远 decay 不动）。
+   * exemptPairs（B1.5 阻尼豁免）：pairKey（排序 "a:b"）在集合内的对不衰减——
+   * 有 activeOpenStance/未 settled 事件的账要顶得住均值回归。
    */
-  applyIdleDecay(tick: number, idleTicks: number, amount: number): number {
+  applyIdleDecay(tick: number, idleTicks: number, amount: number, exemptPairs?: ReadonlySet<string>): number {
     let touched = 0;
     for (const rel of this._relationships.values()) {
       if (rel.grudge) continue;
+      if (exemptPairs?.has(relationshipKey(rel.characterA, rel.characterB))) continue;
       if (tick - rel.lastInteraction < idleTicks) continue;
       if (Math.abs(rel.level) < 0.5) continue;
       const step = Math.min(amount, Math.abs(rel.level));

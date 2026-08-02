@@ -8,7 +8,7 @@
  *   promise-extract → "承诺: 没有"；transaction-extract → "交割: 没有"；
  *   reflection → 洞察/心情/愿望 行格式；morning-plan → "- " 列表；
  *   observation → 一句白描；director → do_nothing 工具调用
- *   （stance-extract 分支留接口，S4 落 B1 时填真 schema）
+ *   stance-extract → {"stances":[{"kind":"no_stance"}]}（B1 schema 强制默认项）
  * - 剧本化冲突脚本：scriptTalk 给指定角色排队台词（decision/conversation 命中即说），
  *   enqueueKindResponse 对任意 kind 排队覆盖响应——离线彩排立场/冲突链路用
  */
@@ -132,8 +132,9 @@ export class SmartMockLLM implements LLMProvider {
         return respond("（无可用工具）");
       }
       case "stance-extract":
-        // S4 留接口：B1 立场抽取管线接入后在这里填真 schema（含 no_stance 默认项）
-        return respond('{"stances": []}');
+        // B1 真 schema（S4）：默认 no_stance（schema 强制默认项）。
+        // 彩排立场链路用 enqueueKindResponse("stance-extract", JSON.stringify({stances:[{kind,holder,target,summary,evidence}]}))
+        return respond('{"stances":[{"kind":"no_stance"}]}');
       default:
         // decision / conversation / 未知 kind → 原启发式决策
         break;
