@@ -270,6 +270,32 @@ describe("爽约 missedBy 随档", () => {
   });
 });
 
+describe("enqueueMutation flush（存档时序不丢载荷）", () => {
+  afterEach(cleanup);
+
+  it("enqueue 后不 tick 直接 save→load：载荷效果在档里，队列已清不二次结算", () => {
+    const sim = buildSim(40);
+    const goldBefore = sim.world.getCharacter("tomori")!.gold;
+    // 模拟 beat auto_events 的入队载荷（罪案投放：掉钱 + 事件记忆）——
+    // beat 触发标记在入队当刻已写随档，若 saveGame 不 flush 则载荷丢、代价已付
+    sim.enqueueMutation(() => {
+      sim.world.getCharacter("tomori")!.gold -= 25;
+      sim.memory.add("tomori", { tick: 40, type: "event", content: "收着的货款被人偷了", importance: 8 });
+    });
+    saveGame(sim, TEST_DB);
+    // flush 已执行且队列排空：下一 tick 的 drain 不会二次结算
+    expect((sim as any)._pendingMutations).toHaveLength(0);
+    expect(sim.world.getCharacter("tomori")!.gold).toBe(goldBefore - 25);
+
+    const restored = buildSim(0);
+    expect(loadGame(restored, TEST_DB)).toBe(true);
+    expect(restored.world.getCharacter("tomori")!.gold).toBe(goldBefore - 25);
+    expect(
+      restored.memory.getRecent("tomori", 30).some((m) => m.content.includes("货款被人偷了")),
+    ).toBe(true);
+  });
+});
+
 describe("beatLastTrigger 随档", () => {
   afterEach(cleanup);
 

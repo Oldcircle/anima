@@ -174,6 +174,46 @@ describe("B1 预过滤（防线①）", () => {
     expect(mock.callsByKind.get("stance-extract")).toBe(1);
     expect(sim.world.narrative.getOpenStances("alice", "bob")).toHaveLength(0);
   });
+
+  it("和解分叉：摊牌次日的道歉对话（valence 窗口空）触发抽取并清账", async () => {
+    const { sim, mock } = makeSim();
+    const ns = sim.world.narrative;
+    // 昨日摊牌已落账：active 立场 + 疙瘩
+    (sim as any)._settleExtractedStances(conv(showdownHistory(100)), [
+      { kind: "accuse", holderId: "alice", targetId: "bob", summary: "指控鲍勃偷钱", evidence: "你偷了我的钱，别装了。" },
+    ], tickToGameTime(112));
+    expect(ns.getActiveOpenStances("alice", "bob")).toHaveLength(1);
+    expect(sim.relationships.get("alice", "bob").grudge).toBeDefined();
+
+    // 次日道歉对话：valence 环形缓冲为空——旧 AND 门会把和解通路闸死
+    const t = 100 + 96;
+    const apology: ConversationExchange[] = [
+      { speakerId: "bob", speakerName: "鲍勃", message: "昨天的事……我想跟你说说。", tick: t, witnesses: [], locationId: "park" },
+      { speakerId: "alice", speakerName: "爱丽丝", message: "说吧。", tick: t + 1, witnesses: [], locationId: "park" },
+      { speakerId: "bob", speakerName: "鲍勃", message: "对不起，是我不对，钱的事是个误会。", tick: t + 2, witnesses: [], locationId: "park" },
+      { speakerId: "alice", speakerName: "爱丽丝", message: "……知道了。", tick: t + 3, witnesses: [], locationId: "park" },
+    ];
+    mock.enqueueKindResponse("stance-extract", JSON.stringify({
+      stances: [{ kind: "apologize", holder: "鲍勃", target: "爱丽丝", summary: "为指控的事道歉和好", evidence: "对不起，是我不对" }],
+    }));
+    (sim as any)._scheduleStanceExtraction(conv(apology), tickToGameTime(t + 12));
+    await sim.waitForBackgroundTasks();
+    expect(mock.callsByKind.get("stance-extract")).toBe(1);
+    expect(ns.getActiveOpenStances("alice", "bob")).toHaveLength(0);
+    expect(ns.getOpenStances("alice", "bob")[0]!.archiveReason).toBe("reconciled");
+    expect(sim.relationships.get("alice", "bob").grudge).toBeUndefined();
+  });
+
+  it("和解分叉不放行敌对面：无 activeOpenStance 时含和解词也过不了 valence 门", async () => {
+    const { sim, mock } = makeSim();
+    const history: ConversationExchange[] = [
+      ...showdownHistory(100),
+      { speakerId: "bob", speakerName: "鲍勃", message: "对不起嘛，别误会。", tick: 104, witnesses: [], locationId: "park" },
+    ];
+    (sim as any)._scheduleStanceExtraction(conv(history), tickToGameTime(112));
+    await sim.waitForBackgroundTasks();
+    expect(mock.callsByKind.get("stance-extract")).toBeUndefined();
+  });
 });
 
 // ────────── 抽取器解析 ──────────
@@ -192,6 +232,18 @@ describe("B1 抽取器（防线②③）", () => {
   it("evidence 不逐字命中转录 → 丢弃", async () => {
     const mock = new SmartMockLLM();
     mock.enqueueKindResponse("stance-extract", accuseJson("你就是个骗子我看透你了"));
+    const out = await extractStances({
+      history: showdownHistory(100),
+      charAId: "alice", charAName: "爱丽丝", charBId: "bob", charBName: "鲍勃",
+      provider: mock, modelId: "test",
+    });
+    expect(out).toHaveLength(0);
+  });
+
+  it("归属校验：evidence 是对方台词（holder 没说过这句）→ 丢弃不落账", async () => {
+    const mock = new SmartMockLLM();
+    // evidence "……你凭什么这么说。" 是鲍勃的台词，holder 却报了爱丽丝 → 归错方即丢
+    mock.enqueueKindResponse("stance-extract", accuseJson("……你凭什么这么说。"));
     const out = await extractStances({
       history: showdownHistory(100),
       charAId: "alice", charAName: "爱丽丝", charBId: "bob", charBName: "鲍勃",
@@ -346,6 +398,40 @@ describe("B1 落账形状", () => {
     expect(sim.relationships.get("alice", "bob").grudge).toBeUndefined();
     expect(ns.getCharacter("alice").unresolvedWith["bob"] ?? []).not.toContain(stanceId);
     expect(ns.getCharacter("bob").unresolvedWith["alice"] ?? []).not.toContain(stanceId);
+  });
+
+  it("方向翻转：次日 B 反向指控 A → 新账条；同 holder 再指控 → refresh 复用旧 stanceId", () => {
+    const { sim } = makeSim();
+    const ns = sim.world.narrative;
+    // day1：alice 指控 bob
+    (sim as any)._settleExtractedStances(conv(showdownHistory(100)), [
+      { kind: "accuse", holderId: "alice", targetId: "bob", summary: "第一天", evidence: "你偷了我的钱，别装了。" },
+    ], tickToGameTime(112));
+    const firstId = ns.getActiveOpenStances("alice", "bob")[0]!.id;
+
+    // day2：bob 反向指控 alice——必须是新账条，不污染 alice 持有的旧条
+    (sim as any)._settleExtractedStances(conv(showdownHistory(196)), [
+      { kind: "accuse", holderId: "bob", targetId: "alice", summary: "反向指控", evidence: "……你凭什么这么说。" },
+    ], tickToGameTime(208));
+    const active = ns.getActiveOpenStances("alice", "bob");
+    expect(active).toHaveLength(2);
+    const bobStance = active.find((s) => s.holderId === "bob")!;
+    expect(bobStance.id).not.toBe(firstId);
+    expect(bobStance.summary).toBe("反向指控");
+    expect(active.find((s) => s.holderId === "alice")!.summary).toBe("第一天"); // 旧条没被覆盖
+    expect(ns.getCharacter("bob").unresolvedWith["alice"]).toContain(bobStance.id);
+
+    // day3：alice 再次同类指控 → refresh，复用旧 stanceId（unresolvedWith 不长悬空引用）
+    (sim as any)._settleExtractedStances(conv(showdownHistory(292)), [
+      { kind: "accuse", holderId: "alice", targetId: "bob", summary: "第三天又提", evidence: "你偷了我的钱，别装了。" },
+    ], tickToGameTime(304));
+    const aliceStance = ns.getActiveOpenStances("alice", "bob").find((s) => s.holderId === "alice")!;
+    expect(aliceStance.id).toBe(firstId);
+    expect(aliceStance.summary).toBe("第三天又提");
+    const aliceUnresolved = ns.getCharacter("alice").unresolvedWith["bob"]!;
+    expect(aliceUnresolved).toHaveLength(2); // firstId + bobStance.id，没有第三个悬空 id
+    expect(aliceUnresolved).toContain(firstId);
+    expect(aliceUnresolved).toContain(bobStance.id);
   });
 
   it("和解不无中生有：没账可清时 apologize 不产生任何写入", () => {
@@ -519,6 +605,29 @@ describe("B1.5 摊牌场景闸", () => {
     expect(sim.isConfrontationSceneActive("alice", "bob", 201)).toBe(false);
   });
 
+  it("beat auto_seeds：只有 confront: true 才抬场景闸；high+target 仍照常注入 intent", () => {
+    const { sim } = makeSim();
+    sim.loadBeats([
+      {
+        id: "b_plain",
+        preconditions: ["true"],
+        auto_seeds: [{ char: "alice", target: "bob", topic: "得找他谈谈", urgency: "high" as const }],
+      },
+      {
+        id: "b_confront",
+        preconditions: ["true"],
+        auto_seeds: [{ char: "carol", target: "bob", topic: "当面摊牌", urgency: "high" as const, confront: true }],
+      },
+    ]);
+    sim.runBeatScan(tickToGameTime(100));
+    // 未标 confront 的 high+target 种子不再抬 16 轮闸（触发面收窄）
+    expect(sim.isConfrontationSceneActive("alice", "bob", 100)).toBe(false);
+    // 标了 confront 的照常抬闸
+    expect(sim.isConfrontationSceneActive("carol", "bob", 100)).toBe(true);
+    // intent 注入不依赖 confront：定向种子照常配注意力
+    expect(sim.world.getCurrentIntent("alice", 100)?.targetId).toBe("bob");
+  });
+
   it("重复拦截豁免目标：场景内互为豁免；off 档抬闸无效", () => {
     const { sim } = makeSim();
     sim.raiseConfrontationScene("alice", "bob", 100);
@@ -594,7 +703,7 @@ describe("B1 随档 normalize", () => {
     expect(ns2.getCharacter("alice").obsessions).toHaveLength(1);
   });
 
-  it("addOrRefreshOpenStance：同对同类 active → refresh 不重复", () => {
+  it("addOrRefreshOpenStance：同对同类同 holder active → refresh 不重复，复用既有 stanceId", () => {
     const { sim } = makeSim();
     const ns = sim.world.narrative;
     const first = ns.addOrRefreshOpenStance({
@@ -607,10 +716,32 @@ describe("B1 随档 normalize", () => {
       summary: "新", evidence: "e2", createdTick: 50, lastRefreshTick: 50, witnesses: ["carol"],
     });
     expect(second.refreshed).toBe(true);
+    expect(second.stance.id).toBe("s1"); // 复用既有 stanceId——unresolvedWith 引用一致
     const all = ns.getOpenStances("alice", "bob");
     expect(all).toHaveLength(1);
+    expect(all[0]!.id).toBe("s1");
     expect(all[0]!.summary).toBe("新");
     expect(all[0]!.lastRefreshTick).toBe(50);
     expect(all[0]!.witnesses).toEqual(["carol"]);
+  });
+
+  it("addOrRefreshOpenStance 三键匹配：B 反向同类指控 → 新条不折进 A 的旧条", () => {
+    const { sim } = makeSim();
+    const ns = sim.world.narrative;
+    ns.addOrRefreshOpenStance({
+      id: "s_ab", kind: "accuse", holderId: "alice", targetId: "bob",
+      summary: "A 指控 B", evidence: "e1", createdTick: 10, witnesses: [],
+    });
+    const reverse = ns.addOrRefreshOpenStance({
+      id: "s_ba", kind: "accuse", holderId: "bob", targetId: "alice",
+      summary: "B 反向指控 A", evidence: "e2", createdTick: 50, lastRefreshTick: 50, witnesses: [],
+    });
+    expect(reverse.refreshed).toBe(false);
+    expect(reverse.stance.id).toBe("s_ba");
+    const all = ns.getOpenStances("alice", "bob");
+    expect(all).toHaveLength(2);
+    const holderA = all.find((s) => s.holderId === "alice")!;
+    expect(holderA.summary).toBe("A 指控 B");
+    expect(holderA.lastRefreshTick).toBe(10); // 旧条完全没被 refresh 污染
   });
 });

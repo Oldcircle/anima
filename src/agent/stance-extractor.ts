@@ -9,6 +9,7 @@
  * 假阳性防线（§2 B1 全条采纳）：
  * ① 预过滤 AND：摊牌类词 且 近窗负 valence ≤ -2（调用方用 pressureGraph.windowValence 判）
  * ② schema 强制 no_stance 默认项 + evidence 逐字命中转录（代码 substring 校验，不命中即丢）
+ *    + 归属校验：evidence 所在句的 speaker 必须是 holder（归错方即丢弃该条）
  * ③ 严重度阶梯：break/threaten 必须有明示原话，否则降档 accuse
  * ④ 每对每天 ≤1 条（调用方按 stanceDayLog 判）
  * ⑤ break/threaten 需双边印象佐证（调用方判）
@@ -57,11 +58,34 @@ export function mightContainShowdown(history: ConversationExchange[]): boolean {
   return history.some((e) => SHOWDOWN_HINT.test(e.message));
 }
 
+/**
+ * 和解词（预过滤分叉）：该 pair 有 activeOpenStance 且对话含这些词时，
+ * 调用方跳过负 valence 门直接进抽取——摊牌次日的道歉对话 valence 窗口是空的，
+ * AND 门会把和解通路整个闸死（清账动作只减不增，放行安全）。
+ */
+export const RECONCILE_HINT = /对不起|道歉|原谅|误会|和好|是我不对|我错了|不怪你|把话说开|说开了|解释清楚|别往心里去/;
+
+export function mightContainReconcile(history: ConversationExchange[]): boolean {
+  if (history.length < 4) return false;
+  return history.some((e) => RECONCILE_HINT.test(e.message));
+}
+
 /** 防线②：evidence 必须逐字命中转录（substring），不命中即丢 */
 export function evidenceHits(history: ConversationExchange[], evidence: string): boolean {
   const ev = evidence?.trim();
   if (!ev) return false;
   return history.some((e) => e.message.includes(ev));
+}
+
+/**
+ * 防线②b 归属校验：evidence 所在句必须真的出自 holder 之口。
+ * 只命中"任意一句"会放过归错方的立场（把 B 的台词记成 A 亮的立场），
+ * 落账方向一错，unresolvedWith/疙瘩/流言全跟着错。
+ */
+export function evidenceSpokenBy(history: ConversationExchange[], evidence: string, speakerId: string): boolean {
+  const ev = evidence?.trim();
+  if (!ev) return false;
+  return history.some((e) => e.speakerId === speakerId && e.message.includes(ev));
 }
 
 /** break 的明示原话（防线③）：没有这些词的"绝交"是抽取脑补 */
@@ -175,6 +199,11 @@ kind 只能取以下值：
       // 防线②：evidence 逐字命中转录，不命中即丢
       if (!evidenceHits(history, s.evidence)) {
         console.log(`⚖️ [立场抽取] evidence 未逐字命中转录，丢弃: 「${s.evidence.slice(0, 40)}…」`);
+        continue;
+      }
+      // 防线②b：evidence 所在句的 speaker 必须是 holder（归错方即丢——方向错的账比没账更毒）
+      if (!evidenceSpokenBy(history, s.evidence, holderId)) {
+        console.log(`⚖️ [立场抽取] evidence 不是 holder(${holderName}) 说的，归属错误丢弃: 「${s.evidence.slice(0, 40)}…」`);
         continue;
       }
 

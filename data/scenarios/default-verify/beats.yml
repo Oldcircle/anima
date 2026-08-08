@@ -64,6 +64,8 @@ beats:
         target: shinji
         topic: "那15金已经拖到第四天了。今天必须当面把话说清楚——不是为了钱，是他那副'拖着拖着你就会忘'的样子让人火大。债、还有上回当客人面前那笔账，一次算干净。"
         urgency: high
+        # 摊牌 beat 显式抬 B1.5 场景闸（16 轮 + 重复拦截豁免）——只有标 confront 的才抬
+        confront: true
     on_trigger:
       hint: |
         摊牌只配注意力：吵成什么样、还不还钱、道不道歉——全归两人。

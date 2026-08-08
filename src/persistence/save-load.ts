@@ -29,6 +29,10 @@ export function peekSaveScenario(dbPath: string): string | undefined | null {
 
 /** 保存当前世界状态到 SQLite */
 export function saveGame(sim: Simulation, dbPath: string, scenarioId?: string): void {
+  // 入队未 drain 的 mutation（beat auto_events / 导演硬事件）先落地再快照：
+  // 载荷纯内存，而 beat 触发标记/导演配额在入队当刻已写随档——不 flush 会载荷丢、代价已付
+  sim.flushPendingMutations();
+
   const db = new AnimaDB(dbPath);
 
   try {

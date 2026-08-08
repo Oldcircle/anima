@@ -679,14 +679,18 @@ export class NarrativeState {
   }
 
   /**
-   * 落一条敌对立场：同对同类 active 已存在 → refresh（更新 lastRefreshTick/evidence/summary），
-   * 否则新增。返回 { stance, refreshed }。
+   * 落一条敌对立场：pair+kind+holder 三键匹配到 active 已存在 → refresh
+   * （更新 lastRefreshTick/evidence/summary，**复用既有 stanceId**——unresolvedWith/obsession
+   * 的引用保持一致），否则新增。只按 pair+kind 匹配会把 B 反向指控 A 折进 A 持有的旧条，
+   * 方向翻转污染账本。返回 { stance, refreshed }。
    */
   addOrRefreshOpenStance(stance: Omit<OpenStance, "status" | "lastRefreshTick"> & { lastRefreshTick?: number }): { stance: OpenStance; refreshed: boolean } {
     const map = this.getOpenStanceMap();
     const key = stancePairKey(stance.holderId, stance.targetId);
     if (!map[key]) map[key] = [];
-    const existing = map[key].find((s) => s.status === "active" && s.kind === stance.kind);
+    const existing = map[key].find(
+      (s) => s.status === "active" && s.kind === stance.kind && s.holderId === stance.holderId,
+    );
     const tick = stance.lastRefreshTick ?? stance.createdTick;
     if (existing) {
       existing.lastRefreshTick = tick;

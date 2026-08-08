@@ -31,6 +31,7 @@ import {
   computeConversationWitnesses,
   extractStances,
   isReconcileKind,
+  mightContainReconcile,
   mightContainShowdown,
   type ExtractedStance,
 } from "./stance-extractor.js";
@@ -195,6 +196,16 @@ export class Simulation {
   /** 入队一个会修改世界/配置的变更，下一个 tick 开头执行。 */
   enqueueMutation(fn: () => void): void {
     this._pendingMutations.push(fn);
+  }
+
+  /**
+   * 存档前 flush：把还没被 runOneTick drain 的入队载荷立刻执行。
+   * 入队载荷是纯内存，而 beat 一次性消费标记 / 导演周配额在入队当刻已写随档——
+   * 存档落在 enqueue 与 drain 之间时载荷会整段丢、代价已付（例如 verify_d1_crime
+   * 的罪案投放蒸发但 beat 已标 triggered）。saveGame 保存路径必须先调这里。
+   */
+  flushPendingMutations(): void {
+    this.drainMutations();
   }
 
   /** 立刻 drain 所有 pending 变更（runOneTick 内部调用）。 */
@@ -1661,7 +1672,12 @@ export class Simulation {
   ): void {
     if (getBreakLevel() === "off") return; // 红线②：off 档不启用
     if (!mightContainShowdown(conv.history)) return; // 含 <4 句闸
-    if (this.pressureGraph.windowValence(conv.charA, conv.charB, gameTime.tick) > -2) return;
+    const hasActive = this.world.narrative.getActiveOpenStances(conv.charA, conv.charB).length > 0;
+    // 预过滤分叉：该 pair 有 activeOpenStance 且对话含和解词 → 跳过 valence 门直接进抽取。
+    // 摊牌次日的道歉对话近窗 valence 是空的，AND 门会把和解通路整个闸死；
+    // 清账动作只减不增，放行安全。敌对类保持 AND 门（摊牌词 且 近窗负 valence≤-2）。
+    const reconcilePath = hasActive && mightContainReconcile(conv.history);
+    if (!reconcilePath && this.pressureGraph.windowValence(conv.charA, conv.charB, gameTime.tick) > -2) return;
     const cardA = this._configs.get(conv.charA)?.card;
     const cardB = this._configs.get(conv.charB)?.card;
     if (!cardA || !cardB) return;
@@ -1670,7 +1686,6 @@ export class Simulation {
     const pk = stancePairKey(conv.charA, conv.charB);
     const day = Math.floor((conv.history[conv.history.length - 1]?.tick ?? gameTime.tick) / 96);
     const dayLogged = this.world.narrative.getStanceDayLog()[pk] === day;
-    const hasActive = this.world.narrative.getActiveOpenStances(conv.charA, conv.charB).length > 0;
     const hasGrudge = Boolean(this.relationships.get(conv.charA, conv.charB).grudge);
     if (dayLogged && !hasActive && !hasGrudge) return; // 没账可清也不许再立新账：跳过
 
@@ -1765,9 +1780,8 @@ export class Simulation {
         kind = "accuse";
       }
 
-      const stanceId = `stance_${kind}_${pk.replace(":", "_")}_${tick}`;
-      const { refreshed } = ns.addOrRefreshOpenStance({
-        id: stanceId,
+      const { stance: settled, refreshed } = ns.addOrRefreshOpenStance({
+        id: `stance_${kind}_${pk.replace(":", "_")}_${tick}`,
         kind,
         holderId: s.holderId,
         targetId: s.targetId,
@@ -1778,6 +1792,9 @@ export class Simulation {
         witnesses: [...witnesses],
         locationId,
       });
+      // refresh 时复用既有 stanceId——unresolvedWith/obsession 的引用与和解清账保持一致，
+      // 否则 refresh 会往 unresolvedWith 里塞一个没人认领的新 id（清账清不掉的悬空引用）
+      const stanceId = settled.id;
       ns.recordStanceDay(pk, day);
       const verb = Simulation.STANCE_VERB[kind];
       // unresolvedWith：双方都记这桩没了结
@@ -2508,8 +2525,11 @@ export class Simulation {
               expiresAt: gameTime.tick + 16,
             });
             console.log(`💡 [auto_intent] ${seed.char}: 必须找${targetName}谈谈`);
-            // B1.5 摊牌场景闸：本场对话闸抬升 8→16 轮 + 豁免重复拦截，场景结束/TTL 恢复
-            this.raiseConfrontationScene(seed.char, seed.target, gameTime.tick);
+            // B1.5 摊牌场景闸：只有显式标 confront: true 的种子才抬闸（8→16 轮 + 豁免
+            // 重复拦截，场景结束/TTL 恢复）——high+target 不自动抬，触发面过宽
+            if (seed.confront === true) {
+              this.raiseConfrontationScene(seed.char, seed.target, gameTime.tick);
+            }
           }
         }
       }

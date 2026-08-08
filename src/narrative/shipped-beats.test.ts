@@ -137,12 +137,24 @@ describe("default-verify beats：构造应触发状态 → 必触发", () => {
     expect(scanOne(def, ctxFor(verifyScenario, undefined, { day: 1, hour: 8 }))).toBeUndefined();
   });
 
-  it("verify_d1_showdown：day1 10:00 触发，auto_seeds 定向摊牌（asuka→shinji high）", () => {
+  it("verify_d1_showdown：day1 10:00 触发，auto_seeds 定向摊牌（asuka→shinji high + confront 抬闸标记）", () => {
     const def = beatById(verifyScenario, "verify_d1_showdown");
     const ev = scanOne(def, ctxFor(verifyScenario, undefined, { day: 1, hour: 10 }));
     expect(ev?.reason).toBe("preconditions_met");
     expect(def.auto_seeds).toHaveLength(1);
-    expect(def.auto_seeds![0]).toMatchObject({ char: "asuka", target: "shinji", urgency: "high" });
+    expect(def.auto_seeds![0]).toMatchObject({ char: "asuka", target: "shinji", urgency: "high", confront: true });
+  });
+
+  it("confront 标记只在摊牌 beat 上（其他 beat 的 high+target 种子不抬 16 轮闸）", () => {
+    for (const scenario of [defaultScenario, verifyScenario, kiraScenario]) {
+      for (const beat of scenario.beats) {
+        for (const seed of beat.auto_seeds ?? []) {
+          if (seed.confront === true) {
+            expect(`${scenario.manifest.id}:${beat.id}`).toBe("default-verify:verify_d1_showdown");
+          }
+        }
+      }
+    }
   });
 
   it("verify_pressure_spike：≥45 触发；种子水位 42 不触发（阈值下方标定回归）", () => {

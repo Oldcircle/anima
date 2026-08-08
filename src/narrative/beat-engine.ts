@@ -37,6 +37,12 @@ export interface BeatDefinition {
     topic: string;
     urgency: "low" | "med" | "high";
     target?: string;
+    /**
+     * B1.5 摊牌场景闸开关：只有显式标 confront: true 的种子才 raiseConfrontationScene
+     * （16 轮闸 + 重复拦截豁免）。high+target 只保证 intent 定向，不自动抬闸——
+     * 否则所有定向种子都把对话闸抬到 16 轮，触发面过宽。
+     */
+    confront?: boolean;
   }>;
 }
 
@@ -289,6 +295,15 @@ export function lintBeats(beats: BeatDefinition[], options?: { characterIds?: st
     const c = beat.cooldown_after_trigger;
     if (c !== undefined && c !== "never" && c !== "realtime" && !(typeof c === "number" && Number.isFinite(c) && c >= 0)) {
       problems.push(`[${beat.id}] cooldown_after_trigger 非法值: ${JSON.stringify(c)}（允许 "never" | "realtime" | 非负数）`);
+    }
+
+    for (const [i, seed] of (beat.auto_seeds ?? []).entries()) {
+      if (seed.confront !== undefined && typeof seed.confront !== "boolean") {
+        problems.push(`[${beat.id}] auto_seeds[${i}].confront 必须是布尔值`);
+      }
+      if (seed.confront === true && !(seed.urgency === "high" && typeof seed.target === "string" && seed.target.length > 0)) {
+        problems.push(`[${beat.id}] auto_seeds[${i}] confront: true 需要 urgency: high 且带 target（否则场景闸没有对象）`);
+      }
     }
 
     const payload = beat.on_trigger;
