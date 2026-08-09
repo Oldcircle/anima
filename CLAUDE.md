@@ -132,6 +132,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 ## 活跃文档
 
 - [STATUS.md](./STATUS.md) — **会话交接文档**（当前进度 + 下次入口 + 跨会话教训），进项目先读这个
+- [DESIGN-revival.md](./DESIGN-revival.md) — **复活调优规格**（压力图谱/第二幕机器/活人感质感/剧本包 + 红线 + 单测形状清单），新叙事机制（pressure-graph/world-events/crime-supply/stance-extractor/执念/beat 升级）以此为准
 - [PLAN-kira.md](./PLAN-kira.md) — kira-incident 剧本包（死亡笔记非致死移植）：正典解剖 + 诅咒之册机制 + 信息图/到期日设计
 - [AUDIT-aliveness-20260704.md](./AUDIT-aliveness-20260704.md) — **活人感全面体检报告**（93 条验证后发现：6 个实锤 bug + 六大结构性根因 + quick wins/deep work 修复路线），「过家家感」问题以此为准
 - [PLAN-appointments.md](./PLAN-appointments.md) — 约定系统（arrange_meet 工具 + 到点结算赴约/爽约 + 记挂/愧疚钩子），已实施

@@ -3,6 +3,40 @@
 > 每次有实质进展时更新。记录当前进度和下次继续的入口，不是日志。
 > （旧 STATUS.md 因 gitignore 未入仓而丢失，本文件 2026-07-03 重建，开发文档已全部入仓）
 
+## 当前状态（2026-08-09）
+
+### 复活调优收口：压力图谱 + 第二幕机器 + 活人感质感 · live 验收 PASS · 判决 [logs/sim-default-verify-VERDICT.md](./logs/sim-default-verify-VERDICT.md)
+
+**解冻**：用户 08-02 拍板恢复 agent 版本并整体调优（活人感 + 剧情能推进）。main 本身就是 agent 版
+（anima-author 才是作者席范式），未回退任何提交；工作在分支 `revive/agent-aliveness`（11 commits，
+待用户过目后合 main）。规格全文 = [DESIGN-revival.md](./DESIGN-revival.md)（7 路深度体检 → 两轮
+对抗设计评审 74 findings → v3.1 定稿 → 8 阶段实施 → 两轮代码审查修复）。
+
+**落了什么（931 单测全绿，694→931）**：
+- **A 压力图谱**（`src/narrative/pressure-graph.ts`）：疙瘩/grudge/债务/爽约/立场/负关系六路边收割，
+  per-char pressure 回写 + tension 两恒 0 插座接真数据（上限回 100）+ 热点摘要进导演与 beat extras
+- **B 第二幕机器**：立场落账（对话结束抽取第三兄弟 `stance-extractor.ts`，五道假阳性防线+和解清账+
+  阻尼豁免——openStance 对不清 grudge/不 idleDecay）；导演硬事件原语（`world-events.ts`：theft/accident/
+  letter，enqueueMutation 安全通路+周配额随档+真凶主权双白名单——**绝不从 cast 挑真凶**）；罪行供给器
+  （`crime-supply.ts`：cast 放大真实灰行为 / npc 注入够格之罪+isStatic 生存豁免）；beat 升级（cooldown
+  循环/extras/事件 status 生命周期/new_phase 与 auto_events 机械载荷/表达式加载期 lint）；执念载体
+  （obsessions 随档，晨间打算+此刻区+反思三处消费）
+- **C 质感**：talk schema 叙事标签复活、对话所求（正负混合+敌对限额 top-1）、疑惑节流、开场白反模板、
+  二级 prompt 人设加深、独处人格锚、群聊 v1（`ANIMA_GROUP_SCENE` 实验开关默认关）
+- **D 剧本包**：default 脱空壳（seeds 四条+状态反应 beats）；`default-verify` 验收剧本（预热标定阈值下方）；
+  kira 后续幕 3 beats
+- **验收 runner**（`src/narrative/default-verify.sim.test.ts`）：deepseek-chat 钉死+调用硬顶+402 熔断+
+  finally 落盘+干跑彩排模式（`ANIMA_RUNNER_DRYRUN=1`）
+
+**live 验收（两发合计 ¥2.21，判决 PASS）**：罪案投放→跨天调查线（战场原对账本+锁具图鉴查案）；
+**无人编排的证据竞赛**（light 毁证《犯罪心理学》×L 同晨追同一本书）；pressure_spike 被 run 内新账
+涌现点火+cooldown 复燃；day2 晨间打算 7/7 背着昨日之账（asuka↔shinji 债务弧两侧各自谋划）；
+缓存收敛 70.2%；零崩溃经济健康。未达：立场落账 0 确认（防线全在岗、门槛偏严待长跑调）、约定产出 0（老问题）。
+
+**下次入口**：① 分支合 main（用户过目）② 观察项三件：立场门槛/约定坍缩/7 天尺度主张的 live 长跑
+（充值后；复验命令在 VERDICT 尾部，**绝不裸跑 pnpm test:sim**）③ 前端消费新状态（pressure/openStance/
+obsession 可视化）未做。
+
 ## 当前状态（2026-07-15）
 
 ### 酒馆栈生产收尾（07-13 两条遗留全收）+ 全链半日 PASS + r4 起跑 · 判决见 [logs/nsfw-verify/VERDICT.md](./logs/nsfw-verify/VERDICT.md)
