@@ -17,6 +17,7 @@
  */
 
 import type { World } from "../world/world.js";
+import type { EventBus } from "../core/event-bus.js";
 import type { ShortTermMemory } from "../memory/short-term.js";
 import { getBreakLevel, isWorldEventEnabled, obsessionsEnabled } from "../agent/break-config.js";
 import { addMoodlet } from "../world/moodlets.js";
@@ -48,6 +49,8 @@ export interface WorldEventDeps {
   world: World;
   memory: ShortTermMemory;
   tick: number;
+  /** anchored_steal 锚定路径的锚源（recentActions 无成功/受害者/金额信息，不作数）——缺省则锚定路径不可用 */
+  eventBus?: EventBus;
 }
 
 export interface WorldEventOutcome {
@@ -96,18 +99,44 @@ export function checkAndReserveWorldEventQuota(
 
 // ── 真凶资格（红线）──
 
+/** anchored_steal 的锚：那次真实 steal 的案情（绑定受害者与金额上限） */
+export interface StealAnchor {
+  tick: number;
+  /** 该次 steal 的真实受害者（偷店无具名受害者 → 整条事件不可作锚） */
+  victimId: string;
+  /** 该次真实所得（从事件描述解析；解析不出则锚不可用） */
+  amount?: number;
+}
+
+export type PerpEligibility = { kind: "npc" } | { kind: "anchored_steal"; anchor: StealAnchor } | null;
+
 /**
- * theft_with_perp 的真凶资格：npc 登记表里的 NPC，或近窗真实执行过 steal 的 cast 成员。
- * 都不是 → null（世界绝不从 cast 挑真凶）。
+ * theft_with_perp 的真凶资格（红线：世界绝不从 cast 挑真凶）：
+ * - npc 登记表里的静态 NPC（世界代写行为仅限无 agent 的 NPC）
+ * - 或锚定该 cast 成员近窗**真实执行且成功未被抓**的一次 steal——案情绑定：
+ *   受害者必须是该次 steal 的真实受害者、金额不超过该次真实所得。
+ *   被抓的尝试不算（零转移、后果已当场结算）；偷店无具名受害者不可作为对人立案的锚。
+ *   锚源 = eventBus 事件史（recentActions 只有 actionId+tick，无成功/受害者/金额信息，不作数）。
  */
-export function perpEligibility(world: World, perpId: string, tick: number): "npc" | "anchored_steal" | null {
-  if (world.narrative.isNpc(perpId)) return "npc";
-  const state = world.getCharacter(perpId);
-  if (!state) return null;
-  const anchored = (state.recentActions ?? []).some(
-    (a) => a.actionId === "steal" && tick - a.tick <= STEAL_ANCHOR_WINDOW_TICKS,
-  );
-  return anchored ? "anchored_steal" : null;
+export function perpEligibility(
+  world: World,
+  perpId: string,
+  tick: number,
+  eventBus?: EventBus,
+): PerpEligibility {
+  if (world.narrative.isNpc(perpId)) return { kind: "npc" };
+  if (!eventBus) return null;
+  for (let i = eventBus.history.length - 1; i >= 0; i--) {
+    const e = eventBus.history[i]!;
+    if (tick - e.tick > STEAL_ANCHOR_WINDOW_TICKS) break;
+    if (e.type !== "action.steal" || e.actorId !== perpId) continue;
+    if (e.description.includes("抓住")) continue; // 被抓=失败尝试，已有当场后果链，不可作"成功偷窃"的锚
+    const victimId = e.targetId && world.getCharacter(e.targetId) ? e.targetId : undefined;
+    if (!victimId) continue; // 偷店：无具名受害者，不可对人立案
+    const m = e.description.match(/偷了(\d+)金币/);
+    return { kind: "anchored_steal", anchor: { tick: e.tick, victimId, amount: m ? Number(m[1]) : undefined } };
+  }
+  return null;
 }
 
 // ── 硬事件结算 ──
@@ -139,11 +168,11 @@ export function applyTheftWithPerp(deps: WorldEventDeps, params: TheftParams): W
   if (!victim || !perp) {
     return { ok: false, description: `未知角色（perp=${params.perpId}, victim=${params.victimId}）`, error: "unknown_character" };
   }
-  const eligibility = perpEligibility(world, params.perpId, tick);
+  const eligibility = perpEligibility(world, params.perpId, tick, deps.eventBus);
   if (!eligibility) {
     return {
       ok: false,
-      description: `拒绝：${params.perpId} 不是合法真凶——只允许 npc 登记的 NPC，或近窗真实执行过 steal 的角色（世界不替 cast 写行为）`,
+      description: `拒绝：${params.perpId} 不是合法真凶——只允许 npc 登记的 NPC，或近窗真实执行过成功 steal 的角色（世界不替 cast 写行为；被抓的尝试与偷店不作数）`,
       error: "perp_not_eligible",
     };
   }
@@ -151,14 +180,40 @@ export function applyTheftWithPerp(deps: WorldEventDeps, params: TheftParams): W
   if (!Number.isFinite(amount) || amount <= 0) {
     return { ok: false, description: `amount 必须是正数（got ${params.amount}）`, error: "invalid_amount" };
   }
+  // 锚定路径的案情绑定（红线）：只能对那次真实 steal 的受害者、以真实所得为上限补被发现链——
+  // 换受害者/放大金额=世界替 cast 写了一桩没发生过的新罪。
+  if (eligibility.kind === "anchored_steal") {
+    const anchor = eligibility.anchor;
+    if (params.victimId !== anchor.victimId) {
+      return {
+        ok: false,
+        description: `拒绝：锚定的那次偷窃受害者是 ${anchor.victimId}，不是 ${params.victimId}——只能对真实案件补被发现链，不能换受害者立新案`,
+        error: "anchor_victim_mismatch",
+      };
+    }
+    if (anchor.amount === undefined || amount > anchor.amount) {
+      return {
+        ok: false,
+        description: `拒绝：金额 ${amount} 超出该次偷窃真实所得（${anchor.amount ?? "未知"}）——不能放大案值`,
+        error: "anchor_amount_exceeded",
+      };
+    }
+  }
+  if (victim.gold < amount) {
+    return {
+      ok: false,
+      description: `拒绝：${victim.name} 身上只有 ${victim.gold} 金币，偷不走 ${amount}——世界不制造"0金币不翼而飞"的荒谬案`,
+      error: "victim_insufficient_gold",
+    };
+  }
   const discoveryLocId = params.discoveryLocationId ?? victim.life?.workplace;
   const discoveryLoc = discoveryLocId ? world.getLocation(discoveryLocId) : undefined;
   if (!discoveryLoc) {
     return { ok: false, description: `发现地点不存在（${discoveryLocId ?? "未指定且受害者无工作地点"}）`, error: "invalid_location" };
   }
 
-  // 1) 真金转移（金币守恒：受害者丢多少，真凶得多少）
-  const taken = Math.min(amount, victim.gold);
+  // 1) 真金转移（金币守恒：受害者丢多少，真凶得多少；余额已预检，不会扣穿）
+  const taken = amount;
   victim.gold -= taken;
   perp.gold += taken;
 
@@ -194,7 +249,7 @@ export function applyTheftWithPerp(deps: WorldEventDeps, params: TheftParams): W
 
   return {
     ok: true,
-    description: `失窃已注入（真凶=${params.perpId}[${eligibility}]，${taken} 金币已真实转移，赃物入包）。受害者 ${victim.name} 将在到达${discoveryLoc.name}时发现`,
+    description: `失窃已注入（真凶=${params.perpId}[${eligibility.kind}]，${taken} 金币已真实转移，赃物入包）。受害者 ${victim.name} 将在到达${discoveryLoc.name}时发现`,
   };
 }
 

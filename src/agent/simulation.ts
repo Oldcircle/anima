@@ -1677,7 +1677,11 @@ export class Simulation {
     // 摊牌次日的道歉对话近窗 valence 是空的，AND 门会把和解通路整个闸死；
     // 清账动作只减不增，放行安全。敌对类保持 AND 门（摊牌词 且 近窗负 valence≤-2）。
     const reconcilePath = hasActive && mightContainReconcile(conv.history);
-    if (!reconcilePath && this.pressureGraph.windowValence(conv.charA, conv.charB, gameTime.tick) > -2) return;
+    if (!reconcilePath && this.pressureGraph.windowValence(conv.charA, conv.charB, gameTime.tick) > -2) {
+      // 诊断（live 零落账可归因）：词面命中了摊牌，但近窗 valence 门没过
+      console.log(`⚖️ [立场抽取] ${conv.charA}↔${conv.charB} 词面命中但近窗 valence 门未过（>-2），跳过`);
+      return;
+    }
     const cardA = this._configs.get(conv.charA)?.card;
     const cardB = this._configs.get(conv.charB)?.card;
     if (!cardA || !cardB) return;
@@ -1687,7 +1691,11 @@ export class Simulation {
     const day = Math.floor((conv.history[conv.history.length - 1]?.tick ?? gameTime.tick) / 96);
     const dayLogged = this.world.narrative.getStanceDayLog()[pk] === day;
     const hasGrudge = Boolean(this.relationships.get(conv.charA, conv.charB).grudge);
-    if (dayLogged && !hasActive && !hasGrudge) return; // 没账可清也不许再立新账：跳过
+    if (dayLogged && !hasActive && !hasGrudge) {
+      console.log(`⚖️ [立场抽取] ${conv.charA}↔${conv.charB} 今日已落账且无账可清，跳过`);
+      return;
+    }
+    console.log(`⚖️ [立场抽取] ${conv.charA}↔${conv.charB} 进入抽取（${reconcilePath ? "和解通路" : "摊牌通路"}）`);
 
     const task = extractStances({
       history: conv.history,
@@ -2099,6 +2107,7 @@ export class Simulation {
       enqueueMutation: config.enqueueMutation ?? ((fn) => this.enqueueMutation(fn)),
       pressureGraph: config.pressureGraph ?? this.pressureGraph,
       getRecentMotives: config.getRecentMotives ?? (() => this.getRecentMotives()),
+      eventBus: config.eventBus ?? this.eventBus,
     });
   }
 
@@ -2320,7 +2329,7 @@ export class Simulation {
     // beat 路径同样不许从 cast 挑真凶/off 档同样被闸。beat 是剧本预定投放，不占导演周配额）──
     theft_with_perp: (payload, ctx) => {
       const r = applyTheftWithPerp(
-        { world: this.world, memory: this.memory, tick: ctx.tick },
+        { world: this.world, memory: this.memory, tick: ctx.tick, eventBus: this.eventBus },
         {
           perpId: typeof payload.perp_id === "string" ? payload.perp_id : String(payload.perp ?? ""),
           victimId: typeof payload.victim_id === "string" ? payload.victim_id : String(payload.victim ?? ""),

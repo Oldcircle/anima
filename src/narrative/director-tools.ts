@@ -16,6 +16,7 @@ import type { ImpressionStore } from "../memory/impressions.js";
 import type { InMemoryPulseStore } from "./pulse-store.js";
 import type { InMemoryAgendaStore } from "./agenda-store.js";
 import type { PressureGraph } from "./pressure-graph.js";
+import type { EventBus } from "../core/event-bus.js";
 import { getBreakLevel, isWorldEventEnabled } from "../agent/break-config.js";
 import { hasItem, resolveItem } from "../world/item-registry.js";
 import {
@@ -52,6 +53,8 @@ export interface DirectorToolContext {
   enqueueMutation?: (fn: () => void) => void;
   /** B2: surface_grudge 需要读 pair 压力（催化门槛判定） */
   pressureGraph?: PressureGraph;
+  /** B2: theft_with_perp 锚定路径的锚源（事件史；recentActions 无案情信息不作数） */
+  eventBus?: EventBus;
 }
 
 export interface DirectorToolResult {
@@ -551,14 +554,51 @@ export const injectWorldEventTool: DirectorToolDefinition = {
     if (eventType === "theft_with_perp") {
       const perpId = args.perp_id as string;
       const victimId = args.victim_id as string;
-      if (!perpId || !victimId || !world.getCharacter(victimId)) {
+      const victim = victimId ? world.getCharacter(victimId) : undefined;
+      if (!perpId || !victim) {
         return { ok: false, description: `theft_with_perp 需要合法的 perp_id 与 victim_id`, error: "unknown_character" };
       }
-      if (!perpEligibility(world, perpId, tick)) {
+      const amount = typeof args.amount === "number" ? Math.floor(args.amount) : 0;
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return { ok: false, description: `theft_with_perp 需要正数 amount（got ${String(args.amount)}）`, error: "invalid_amount" };
+      }
+      if (victim.gold < amount) {
         return {
           ok: false,
-          description: `拒绝：${perpId} 不是合法真凶。真凶只允许两种——npc 登记的静态 NPC，或近 2 天真实执行过 steal 的角色。世界绝不替 cast 成员捏造罪行`,
+          description: `拒绝：${victim.name} 身上只有 ${victim.gold} 金币，偷不走 ${amount}——换个金额或换个受害者`,
+          error: "victim_insufficient_gold",
+        };
+      }
+      const elig = perpEligibility(world, perpId, tick, ctx.eventBus);
+      if (!elig) {
+        return {
+          ok: false,
+          description: `拒绝：${perpId} 不是合法真凶。真凶只允许两种——npc 登记的静态 NPC，或近 2 天真实执行过**成功** steal 的角色（被抓的尝试与偷店不作数）。世界绝不替 cast 成员捏造罪行`,
           error: "perp_not_eligible",
+        };
+      }
+      if (elig.kind === "anchored_steal") {
+        if (victimId !== elig.anchor.victimId) {
+          return {
+            ok: false,
+            description: `拒绝：${perpId} 锚定的那次偷窃受害者是 ${elig.anchor.victimId}——只能对真实案件补被发现链，不能换受害者立新案`,
+            error: "anchor_victim_mismatch",
+          };
+        }
+        if (elig.anchor.amount === undefined || amount > elig.anchor.amount) {
+          return {
+            ok: false,
+            description: `拒绝：金额 ${amount} 超出该次偷窃真实所得（${elig.anchor.amount ?? "未知"}）——不能放大案值`,
+            error: "anchor_amount_exceeded",
+          };
+        }
+      }
+      const discLocId = typeof args.discovery_location_id === "string" ? args.discovery_location_id : victim.life?.workplace;
+      if (!discLocId || !world.getLocation(discLocId)) {
+        return {
+          ok: false,
+          description: `拒绝：发现地点不存在（${discLocId ?? "未指定且受害者无工作地点"}）——指定 discovery_location_id`,
+          error: "invalid_location",
         };
       }
     } else if (eventType === "accident_damage") {
@@ -597,7 +637,7 @@ export const injectWorldEventTool: DirectorToolDefinition = {
     }
 
     // 只入队：世界写入统一在下一 tick 开头 drain（与 agent 决策不并发）
-    const deps = { world, memory: memory!, tick };
+    const deps = { world, memory: memory!, tick, eventBus: ctx.eventBus };
     ctx.enqueueMutation!(() => {
       let outcome;
       if (eventType === "theft_with_perp") {

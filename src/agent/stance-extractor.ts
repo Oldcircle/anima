@@ -182,7 +182,10 @@ kind 只能取以下值：
     for (const raw of rawList) {
       if (!raw || typeof raw !== "object") continue;
       const s = raw as Record<string, unknown>;
-      if (s.kind === "no_stance") continue;
+      if (s.kind === "no_stance") {
+        console.log(`⚖️ [立场抽取] LLM 判定无立场（${charAName}↔${charBName}）`);
+        continue;
+      }
       if (typeof s.kind !== "string" || !ALL_KINDS.includes(s.kind)) continue;
       if (typeof s.holder !== "string" || typeof s.evidence !== "string") continue;
 
@@ -217,8 +220,9 @@ kind 只能取以下值：
       if (out.length >= 1) break; // 每场对话最多 1 条（防线④的对话内层）
     }
     return out;
-  } catch {
-    // 坏 JSON / provider 失败：不落账不崩
+  } catch (err) {
+    // 坏 JSON / provider 失败：不落账不崩（诊断日志——live 零落账可归因）
+    console.log(`⚖️ [立场抽取] 输出不可解析或调用失败（${charAName}↔${charBName}）：${(err as Error)?.message?.slice(0, 60) ?? "unknown"}`);
     return [];
   }
 }

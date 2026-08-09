@@ -147,13 +147,73 @@ describe("B2 inject_world_event — 守门", () => {
     expect(Object.keys(world.narrative.getWorldEventQuota().usedByWeek).length).toBe(0);
   });
 
-  it("cast 成员近窗真实执行过 steal → 锚定放大器路径允许", () => {
+  it("cast 锚定：成功未被抓的真实 steal + 受害者/金额绑定 → 允许", async () => {
     const world = makeWorld();
-    const perp = world.getCharacter("perp_cast")!;
-    perp.recentActions.push({ actionId: "steal", tick: 92 });
-    const ctx = makeCtx(world, 100);
-    const r = injectWorldEventTool.handler({ ...THEFT_ARGS, perp_id: "perp_cast" }, ctx);
+    const bus = new EventBus();
+    await bus.emit({
+      id: "e1", tick: 92, type: "action.steal", actorId: "perp_cast", targetId: "victim",
+      locationId: "park", description: "悄悄偷了30金币", effects: [], witnesses: [],
+    });
+    const ctx = makeCtx(world, 100, { eventBus: bus });
+    const r = injectWorldEventTool.handler({ ...THEFT_ARGS, perp_id: "perp_cast", amount: 30 }, ctx);
     expect(r.ok).toBe(true);
+  });
+
+  it("cast 锚定红线：被抓的 steal 尝试不作锚（零转移的失败尝试不能被写成成功偷窃）", async () => {
+    const world = makeWorld();
+    const bus = new EventBus();
+    await bus.emit({
+      id: "e1", tick: 92, type: "action.steal", actorId: "perp_cast", targetId: "victim",
+      locationId: "park", description: "试图偷victim的钱，但被当场抓住了！所有人都看到了", effects: [], witnesses: [],
+    });
+    const ctx = makeCtx(world, 100, { eventBus: bus });
+    const r = injectWorldEventTool.handler({ ...THEFT_ARGS, perp_id: "perp_cast", amount: 20 }, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("perp_not_eligible");
+    expect(ctx.queued.length).toBe(0);
+    expect(Object.keys(world.narrative.getWorldEventQuota().usedByWeek).length).toBe(0);
+  });
+
+  it("cast 锚定红线：换受害者立新案被拒（只能对真实案件的受害者补被发现链）", async () => {
+    const world = makeWorld();
+    world.addCharacter("other", "路人丙", "park");
+    const bus = new EventBus();
+    await bus.emit({
+      id: "e1", tick: 92, type: "action.steal", actorId: "perp_cast", targetId: "other",
+      locationId: "park", description: "悄悄偷了30金币", effects: [], witnesses: [],
+    });
+    const ctx = makeCtx(world, 100, { eventBus: bus });
+    const r = injectWorldEventTool.handler({ ...THEFT_ARGS, perp_id: "perp_cast", amount: 20 }, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("anchor_victim_mismatch");
+    expect(ctx.queued.length).toBe(0);
+  });
+
+  it("cast 锚定红线：金额放大案值被拒（amount ≤ 该次真实所得）", async () => {
+    const world = makeWorld();
+    const bus = new EventBus();
+    await bus.emit({
+      id: "e1", tick: 92, type: "action.steal", actorId: "perp_cast", targetId: "victim",
+      locationId: "park", description: "悄悄偷了30金币", effects: [], witnesses: [],
+    });
+    const ctx = makeCtx(world, 100, { eventBus: bus });
+    const r = injectWorldEventTool.handler({ ...THEFT_ARGS, perp_id: "perp_cast", amount: 50 }, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("anchor_amount_exceeded");
+    expect(ctx.queued.length).toBe(0);
+  });
+
+  it("cast 锚定红线：偷店（无具名受害者）不可作为对人立案的锚", async () => {
+    const world = makeWorld();
+    const bus = new EventBus();
+    await bus.emit({
+      id: "e1", tick: 92, type: "action.steal", actorId: "perp_cast", targetId: "shop",
+      locationId: "park", description: "悄悄偷了30金币", effects: [], witnesses: [],
+    });
+    const ctx = makeCtx(world, 100, { eventBus: bus });
+    const r = injectWorldEventTool.handler({ ...THEFT_ARGS, perp_id: "perp_cast", amount: 20 }, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("perp_not_eligible");
   });
 });
 
@@ -215,15 +275,18 @@ describe("B2 theft_with_perp — 金币守恒 + 物证 + 延迟发现", () => {
     expect(world.narrative.getPendingDiscoveries().length).toBe(0);
   });
 
-  it("amount 超过受害者身上的钱：只偷走实际有的（不凭空造钱）", () => {
+  it("amount 超过受害者身上的钱：预检拒绝且不烧配额（不制造 0 金币不翼而飞的荒谬案）", () => {
     const world = makeWorld();
     addNpcPerp(world, 0);
     world.getCharacter("victim")!.gold = 10;
     const ctx = makeCtx(world, 100);
-    injectWorldEventTool.handler({ ...THEFT_ARGS, amount: 999 }, ctx);
-    ctx.drain();
-    expect(world.getCharacter("victim")!.gold).toBe(0);
-    expect(world.getCharacter("npc_drifter")!.gold).toBe(10);
+    const r = injectWorldEventTool.handler({ ...THEFT_ARGS, amount: 999 }, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("victim_insufficient_gold");
+    expect(ctx.queued.length).toBe(0);
+    expect(Object.keys(world.narrative.getWorldEventQuota().usedByWeek).length).toBe(0);
+    expect(world.getCharacter("victim")!.gold).toBe(10);
+    expect(world.getCharacter("npc_drifter")!.gold).toBe(0);
   });
 });
 

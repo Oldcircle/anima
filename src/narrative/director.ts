@@ -28,6 +28,7 @@ import { ALL_DIRECTOR_READ_TOOLS, READ_TOOL_NAMES } from "./director-read-tools.
 import { InMemoryPulseStore, extractTargetChar, type PulseRecord } from "./pulse-store.js";
 import { InMemoryAgendaStore } from "./agenda-store.js";
 import type { PressureGraph } from "./pressure-graph.js";
+import type { EventBus } from "../core/event-bus.js";
 
 /** B2: recent-motive 环形缓冲条目（simulation 侧内存 buffer，third 档才有数据） */
 export interface RecentMotiveEntry {
@@ -107,6 +108,8 @@ export interface DirectorConfig {
   pressureGraph?: PressureGraph;
   /** B2: recent-motive 环形缓冲读取口（只给导演；空集安全——没有就不注入） */
   getRecentMotives?: () => ReadonlyArray<RecentMotiveEntry>;
+  /** B2: theft_with_perp 锚定路径的锚源（事件史） */
+  eventBus?: EventBus;
 }
 
 export interface DirectorCallLog {
@@ -133,6 +136,7 @@ export class Director {
   private enqueueMutation?: (fn: () => void) => void;
   private pressureGraph?: PressureGraph;
   private getRecentMotives?: () => ReadonlyArray<RecentMotiveEntry>;
+  private eventBus?: EventBus;
 
   /** 每天的剩余调用预算（key = game day） */
   private budgetByDay = new Map<number, number>();
@@ -159,6 +163,7 @@ export class Director {
     this.enqueueMutation = config.enqueueMutation;
     this.pressureGraph = config.pressureGraph;
     this.getRecentMotives = config.getRecentMotives;
+    this.eventBus = config.eventBus;
   }
 
   /** D2: 暴露 pulse store 供外部 reducer 调用 + 测试访问 */
@@ -246,9 +251,10 @@ export class Director {
       pulseStore: this.pulseStore,
       agendaStore: this.agendaStore,
       currentDay: params.day,
-      // B2: 硬事件安全通路 + 压力图（surface_grudge 门槛判定）
+      // B2: 硬事件安全通路 + 压力图（surface_grudge 门槛判定）+ 锚源
       enqueueMutation: this.enqueueMutation,
       pressureGraph: this.pressureGraph,
+      eventBus: this.eventBus,
     };
 
     const useLoop = this.useReadTools;
