@@ -77,3 +77,10 @@ objects:
     keywords: [盆栽, 花盆]
     canon:
       - 最旧那只陶盆缺了个口，是店开张那年就在的
+  - id: cashbox
+    name: 收银匣
+    summary: 柜台下的小木匣，卖花的零钱和订金都收在里面
+    keywords: [收银, 钱盒, 钱匣, 订金]
+    canon:
+      - 木匣没锁，全凭人不欺花
+    tamperable: true

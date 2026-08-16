@@ -124,14 +124,15 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     tools.push(buildTamperTool(ctx));
   }
 
-  // 2e4. accuse：镇上有未破案件 + 非 off 档才浮现（M4 案件收束）。
-  // 低频翻转（案件开/结）；koukou trial 的同名工具靠末尾去重先到先得——
+  // 2e4. accuse：镇上有**公开的**未破案件 + 非 off 档才浮现（M4 案件收束）。
+  // 公开=受害者真发现了失窃——否则作案瞬间全镇冒出"指控悬案"工具就是引擎泄密。
+  // 低频翻转（发现/结案）；koukou trial 的同名工具靠末尾去重先到先得——
   // koukou 无 theft 案件账本，此工具在该剧本恒不浮现，无实际冲突
   if (
     groundingEnabled() &&
     getBreakLevel() !== "off" &&
     ctx.narrative &&
-    ctx.narrative.getOpenCases().length > 0
+    ctx.narrative.getPublicOpenCases().length > 0
   ) {
     tools.push(buildAccuseTool(ctx));
   }

@@ -1,0 +1,26 @@
+id: grounding-verify
+name: 世界接地全链验收（default 镜像 + npc 供罪）
+description: |
+  PLAN-grounding M0-M4 的全链验收剧本（≠ default 本体，别拿它当日常剧本跑）。
+  与 default 同一套七人阵容与地点，唯一差异 = crime_supply 换 npc 模式：
+  预热期（48 tick）后由静态 NPC 对最有钱的 cast 成员投一桩真凶失窃
+  （theft_with_perp → 自动立案 + 钱盒撬痕 trace + 延迟发现 + visibleTo 情报）。
+  验收链：theft 立案 → 受害者发现（案件公开）→ examine 查撬痕 → accuse 对质 →
+  破案/无证/冤案任一终局；同车验 examine 冷却闸 + M2 正典抽取长程。
+  零 beats 零 seeds——整条链必须自燃，不接受编排出来的绿灯。
+
+characters:
+  - asuka
+  - l_lawliet
+  - lelouch
+  - light
+  - rei
+  - senjougahara
+  - shinji
+
+locations: "*"
+
+break_level: mild
+decision_pov: third
+# 与 default 本体的唯一差异：npc 供罪（真凶 ground truth 存在，accuse 才有裁决对象）
+crime_supply: npc

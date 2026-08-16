@@ -50,6 +50,8 @@ function makeWorldWithCase(): World {
     { perpId: "npc_drifter", victimId: "victim", amount: 50, discoveryLocationId: "bakery", cause: "月底要结货款" },
   );
   expect(outcome.ok).toBe(true);
+  // 默认把案件置为已公开（发现路径单独测）
+  w.narrative.markCasePublic("theft_40_victim", 41);
   return w;
 }
 
@@ -132,6 +134,23 @@ describe("案件账本", () => {
 });
 
 describe("accuse 浮现门", () => {
+  it("未公开的案件不浮现（引擎不泄露没人发现的罪）；发现即公开后浮现", () => {
+    const w = new World(LOCATIONS.map((l) => ({ ...l, presentCharacters: [] })), 40);
+    w.addCharacter("victim", "小美", "plaza");
+    w.getCharacter("victim")!.gold = 100;
+    w.addCharacter("accuser", "L", "plaza");
+    w.addCharacter("npc_drifter", "外乡流浪汉", "plaza");
+    w.narrative.registerNpc("npc_drifter", "外乡流浪汉");
+    applyTheftWithPerp(
+      { world: w, memory: new ShortTermMemory(), tick: 40 },
+      { perpId: "npc_drifter", victimId: "victim", amount: 50, discoveryLocationId: "bakery", cause: "月底要结货款" },
+    );
+    expect(w.narrative.getOpenCases()).toHaveLength(1); // 案子在账
+    expect(accuseTool(w)).toBeUndefined(); // 但没人发现——工具不浮现
+    w.narrative.markCasePublic("theft_40_victim", 60);
+    expect(accuseTool(w)).toBeDefined();
+  });
+
   it("有 open 案件+mild 上架；off 档/无案件/GROUNDING=0 不上架；结案后消失", () => {
     const world = makeWorldWithCase();
     expect(accuseTool(world)).toBeDefined();

@@ -413,6 +413,8 @@ export function processPendingDiscoveries(world: World, memory: ShortTermMemory,
       if (victim.locationId !== d.locationId) continue;
       // 到场 → 发现落账
       memory.add(d.victimId, { tick, type: "event", content: d.discoveryMemory, importance: 8 });
+      // M4 案件公开：从这一刻起 accuse 才浮现（没被发现的罪不存在于任何人的世界里）
+      world.narrative.markCasePublic(d.id, tick);
       if (d.unresolvedEvent) {
         world.narrative.addUnresolvedEvent({ ...d.unresolvedEvent, createdTick: tick });
         // B5 罪案受害执念：发现当刻登记，事件 settled 即清（只配注意力不写结果）

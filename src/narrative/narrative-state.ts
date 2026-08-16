@@ -190,6 +190,12 @@ export interface CaseEntry {
   /** 每人一发：accuserId → accusedId（当众指控是重棋，不许翻来覆去泼脏水） */
   accusations: Record<string, string>;
   closedTick?: number;
+  /**
+   * 案件公开时刻（受害者真发现失窃那刻，processPendingDiscoveries 落）。
+   * accuse 只对公开案件浮现——否则作案瞬间全镇就冒出"指控悬案"的工具，
+   * 等于引擎泄露了一桩没人知道的罪（信息隔离）。
+   */
+  publicSinceTick?: number;
 }
 
 /** 冷案窗：悬 5 游戏天没人破 → 诚实搁置 */
@@ -726,9 +732,22 @@ export class NarrativeState {
     return Object.values(this.getCaseLedger()).filter((c) => c.status === "open");
   }
 
-  /** 最新的未破案件（accuse 工具 v1 的默认对象） */
+  /** 公开的未破案件（accuse 浮现判据：没被发现的罪不存在于任何人的世界里） */
+  getPublicOpenCases(): CaseEntry[] {
+    return this.getOpenCases().filter((c) => c.publicSinceTick !== undefined);
+  }
+
+  /** 最新的公开未破案件（accuse 工具 v1 的默认对象） */
   getLatestOpenCase(): CaseEntry | undefined {
-    return this.getOpenCases().sort((a, b) => b.createdTick - a.createdTick)[0];
+    return this.getPublicOpenCases().sort((a, b) => b.createdTick - a.createdTick)[0];
+  }
+
+  /** 案件公开（受害者发现失窃那刻由 processPendingDiscoveries 调用） */
+  markCasePublic(id: string, tick: number): boolean {
+    const c = this.getCaseLedger()[id];
+    if (!c || c.publicSinceTick !== undefined) return false;
+    c.publicSinceTick = tick;
+    return true;
   }
 
   /** 记一次指控（每人每案一发；已指控过返回 false） */
