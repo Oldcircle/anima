@@ -243,22 +243,28 @@ export function applyTheftWithPerp(deps: WorldEventDeps, params: TheftParams): W
   // 4b) 器物层落痕（PLAN-grounding M0）：发现地点有钱盒类器物就把撬痕落成 ground truth——
   //     撬痕从作案那刻起物理存在（比发现早），examine 查得到、调查者对得上。
   //     没有匹配器物静默跳过：器物层是增强不是硬依赖。
-  world.objects.addTraceAt(discoveryLoc.id, "钱盒", {
-    id: `theft_${tick}_pried`,
-    text: "锁扣上有几道新鲜的撬痕，像是被硬物别开过",
-    addedTick: tick,
-    source: "event",
-  });
+  //     词面对齐（r1 微瑕修复）：发现/风声文本用命中器物的真名——否则听风声的人拿"铁盒"
+  //     去 resolveByName 搜不到"收银匣"，调查线在词面上就断了。
+  const tillObject = world.objects.resolveByName(discoveryLoc.id, "钱盒");
+  if (tillObject) {
+    world.objects.addTrace(tillObject.key, {
+      id: `theft_${tick}_pried`,
+      text: "锁扣上有几道新鲜的撬痕，像是被硬物别开过",
+      addedTick: tick,
+      source: "event",
+    });
+  }
+  const tillName = tillObject?.name ?? "铁盒";
 
   // 4) 延迟发现（随档）：到场才落发现记忆；风声必须晚于发现
   world.narrative.addPendingDiscovery({
     id: `theft_${tick}_${params.victimId}`,
     victimId: params.victimId,
     locationId: discoveryLoc.id,
-    discoveryMemory: `你到了${discoveryLoc.name}，翻开自己收钱的铁盒——里面的${taken}金币不翼而飞！锁扣上有被撬动过的痕迹。${params.cause}，这笔钱本来就指着用的`,
-    observable: "脸色发白地翻着一只空铁盒，手都在抖。",
+    discoveryMemory: `你到了${discoveryLoc.name}，翻开自己收钱的${tillName}——里面的${taken}金币不翼而飞！锁扣上有被撬动过的痕迹。${params.cause}，这笔钱本来就指着用的`,
+    observable: `脸色发白地翻着空了的${tillName}，手都在抖。`,
     intentSummary: `收着的${taken}金币被人偷了。得弄清楚是谁干的——这事不能就这么算了。`,
-    rumor: `听说${victim.name}收着的一笔钱不翼而飞了，铁盒被撬得干干净净`,
+    rumor: `听说${victim.name}收在${discoveryLoc.name}${tillName}里的一笔钱不翼而飞了，锁扣被撬得干干净净`,
     unresolvedEvent: {
       id: `theft_${tick}_${params.victimId}`,
       summary: `${victim.name}收在${discoveryLoc.name}的${taken}金币失窃了，不知道是谁干的`,

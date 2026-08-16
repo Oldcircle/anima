@@ -1615,7 +1615,7 @@ function buildExamineTool(ctx: ToolBuildContext): ActionDefinition {
   return {
     tool: {
       name: "examine",
-      description: `仔细查看这里的某样东西，看清它真实的样子。这里值得细看的有：${names}。`,
+      description: `仔细查看或翻查这里的某样东西——外观、夹层、底部、暗处，看清它真实的样子（正大光明的查看，不会弄坏东西）。这里值得细看的有：${names}。`,
       parameters: {
         type: "object",
         properties: {
@@ -1671,7 +1671,7 @@ function buildTamperTool(ctx: ToolBuildContext): ActionDefinition {
   return {
     tool: {
       name: "tamper",
-      description: `对这里的某样东西偷偷做手脚——抹掉痕迹、涂改、藏起来。这是见不得人的事：会留下代价，也可能被人看见。能下手的：${names}。`,
+      description: `偷偷破坏、销毁或涂改这里的某样东西——为了掩盖什么不可告人的事。这是坏事，不是查看（想查看用 examine）：会留下代价，也可能被人看见。能下手的：${names}。`,
       parameters: {
         type: "object",
         properties: {
