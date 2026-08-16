@@ -23,6 +23,8 @@ import { getTodayFestival, type Festival } from "../world/festivals.js";
 import { ShortTermMemory } from "../memory/short-term.js";
 import { LongTermMemoryStore, formatSharedHistory } from "../memory/long-term.js";
 import { runAgentTick, describeObservableAction, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
+import { mentionedObjects, extractFacts, settleExtractedFacts } from "./fact-extractor.js";
+import { groundingEnabled } from "../world/world-objects.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest, filterGroupInbox } from "./conversation-mode.js";
 import { extractPromise, mightContainPromise, extractTransaction, mightContainTransaction, type ExtractedTransaction } from "./promise-extractor.js";
@@ -1490,6 +1492,8 @@ export class Simulation {
       this._scheduleTransactionSettlement(conv, gameTime);
       // B1 立场抽取（第三兄弟）——注意先抽取再清摊牌场景闸（场景结束恢复）
       this._scheduleStanceExtraction(conv, gameTime);
+      // M2 正典抽取（第四兄弟）：对已知器物的世界断言 → 三规裁决落账
+      this._scheduleFactExtraction(conv, gameTime);
       this._confrontSceneUntil.delete(stancePairKey(conv.charA, conv.charB));
       if (!mightContainPromise(conv.history)) continue;
       const cardA = this._configs.get(conv.charA)?.card;
@@ -1707,6 +1711,57 @@ export class Simulation {
       this._settleExtractedStances(conv, stances, gameTime);
     }).catch((err: any) => {
       console.warn(`⚖️ [立场抽取] ${conv.charA}↔${conv.charB} 失败:`, err?.message ?? err);
+    });
+    this._trackBackgroundTask(task);
+  }
+
+  /**
+   * M2 正典抽取（fire-and-forget，对话结束管线第四兄弟）：抽取对已知器物说出的
+   * 世界断言，三规裁决落账（首述即正典 / 隐藏真相世界裁决 / 既成正典不可嘴改）。
+   * 预过滤：≥4 句 且 词面命中已知器物（每对话 ≤1 调用）；ANIMA_GROUNDING=0 整层退场。
+   */
+  private _scheduleFactExtraction(
+    conv: { charA: string; charB: string; history: import("./conversation-mode.js").ConversationExchange[] },
+    gameTime: GameTime,
+  ): void {
+    if (!groundingEnabled()) return;
+    const locationId = [...conv.history].reverse().find((e) => e.locationId)?.locationId;
+    const objects = mentionedObjects(
+      conv.history,
+      this.world.objects,
+      locationId,
+      this.world.getAllLocations().map((l) => l.id),
+    );
+    if (objects.length === 0) return;
+    const cardA = this._configs.get(conv.charA)?.card;
+    const cardB = this._configs.get(conv.charB)?.card;
+    if (!cardA || !cardB) return;
+    console.log(`📜 [正典] ${conv.charA}↔${conv.charB} 词面命中 ${objects.map((o) => o.name).join("、")}，进入抽取`);
+    const witnesses = computeConversationWitnesses(conv.history, conv.charA, conv.charB);
+    const castNames = new Map(this.world.getAllCharacters().map((c) => [c.name, c.id]));
+    const task = extractFacts({
+      history: conv.history,
+      objects,
+      speakers: [
+        { id: cardA.id, name: cardA.name },
+        { id: cardB.id, name: cardB.name },
+      ],
+      castNames,
+      provider: this._provider,
+      modelId: this._modelId,
+    }).then((facts) => {
+      if (facts.length === 0) return;
+      settleExtractedFacts(
+        {
+          store: this.world.objects,
+          getCharacter: (id) => this.world.getCharacter(id),
+          tick: gameTime.tick,
+          witnesses,
+        },
+        facts,
+      );
+    }).catch((err: any) => {
+      console.warn(`📜 [正典] ${conv.charA}↔${conv.charB} 失败:`, err?.message ?? err);
     });
     this._trackBackgroundTask(task);
   }

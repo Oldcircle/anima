@@ -122,6 +122,17 @@ describe("examine 与痕迹", () => {
     expect(store.examine("x.cup", "a", 1)).toContain("寻常");
   });
 
+  it("复查冷却闸：短窗内未变化=冷却；变化/过窗/没看过=不冷却", () => {
+    const store = makeStore();
+    expect(store.isExamineOnCooldown("library.ledger", "l", 10)).toBe(false); // 没看过
+    store.examine("library.ledger", "l", 10);
+    expect(store.isExamineOnCooldown("library.ledger", "l", 12)).toBe(true); // 窗内未变化
+    store.addTrace("library.ledger", { id: "t", text: "x", addedTick: 13, source: "event" });
+    expect(store.isExamineOnCooldown("library.ledger", "l", 14)).toBe(false); // 变了随时可查
+    store.examine("library.ledger", "l", 14);
+    expect(store.isExamineOnCooldown("library.ledger", "l", 14 + 8)).toBe(false); // 过窗
+  });
+
   it("重复衰减：未变化的器物再查只给短反馈；变化后全文恢复", () => {
     const store = makeStore();
     const first = store.examine("library.ledger", "l", 10)!;

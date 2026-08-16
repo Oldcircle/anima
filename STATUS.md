@@ -35,10 +35,19 @@ examine 零引导全员自发采用（51次/13件器物/7地点）；**L 查借�
 无回归。坏味道当日已修：examine 占决策 31%、61% 复读——重复衰减已落地（未变化器物复查只给
 "没什么新东西"短反馈，955 单测）。M2 需求被实证：器物真了、翻开后的内容细节仍是编的（"十七笔/十五笔"）。
 
-**下次入口**：① M2 懒实体化正典裁决（三规则+史料推导——PLAN §2 M2，核心新范式件；halfday r1
-已实证需求）② M3 tamper 灰工具+PbtA 三段掷骰（重访 diff 通道在等它）③ 重复衰减 live 复验搭车
-④ 遗留：fate 类 beat 的罪案 trace 接线（beats.yml schema 扩展；default-verify 的 verify_d1_crime
-目前仍纯文本注入，杂货店钱盒不会自动带撬痕）⑤ Bartle 玩法人格夹带（PLAN 附录）。
+**M2 懒实体化正典裁决已落地（同日）· live 首演 PASS（r2，¥1.31）** · 判决
+[logs/sim-halfday-grounding-r2-VERDICT.md](./logs/sim-halfday-grounding-r2-VERDICT.md)。
+`src/agent/fact-extractor.ts`（对话结束管线第四兄弟）：预过滤（≥4句+词面命中器物，r2 全场只烧
+2 次抽取）→ LLM 抽取（evidence 逐字+归属两道闸复用 stance、**人名升档**防利己钻空、contradict
+行号校验）→ **三规裁决**（①无主细节首述即正典→examine 立刻可查=闭环 ②hidden 持有推导
+verified/false、推不出 rumor ③顶撞正典挂账不动正典）→ claims 账本随档。967 单测全绿。
+**重复衰减 v1 被 r2 证伪**（examine 56 次不降反升，短反馈杀不掉行为）→ **v2 冷却闸当日落地**
+（8 tick 窗内复查未变化器物执行期拒绝），live 复验搭下次长跑。缓存 73.3% 新高（含暖缓存红利）。
+
+**下次入口**：① 冷却闸 live 复验搭车（看 examine 占比回落 + ✗ 重试不暴涨）② M3 tamper 灰工具
++PbtA 三段掷骰（重访 diff 通道在等它；canonized/false/contradict 的 live 样本也等它制造张力）
+③ M2.5 候选：语义级"复述正典"判定（r2 的 rumor 实为 authored 正典变体复述）④ 遗留：fate 类
+beat 的罪案 trace 接线（default-verify 的 verify_d1_crime 仍纯文本注入）⑤ Bartle 玩法人格夹带。
 
 ## 当前状态（2026-08-09）
 

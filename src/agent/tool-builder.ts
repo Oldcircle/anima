@@ -1603,6 +1603,15 @@ function buildExamineTool(ctx: ToolBuildContext): ActionDefinition {
           success: false,
         };
       }
+      // 复查冷却闸（r2 教训：光衰减内容杀不掉复查行为）：短窗内对未变化器物复查
+      // 执行期拒绝 + 指路反馈——把重复从"完成的动作"变成"被弹回的信号"
+      if (store.isExamineOnCooldown(obj.key, ctx.card.id, actionCtx.tick)) {
+        return {
+          description: `你刚看过${obj.name}了，没什么新变化——手头该做的事还等着。`,
+          effects: [],
+          success: false,
+        };
+      }
       const truth = store.examine(obj.key, ctx.card.id, actionCtx.tick) ?? "";
       console.log(`🔍 [examine] ${ctx.card.id} → ${obj.key}`);
       return {

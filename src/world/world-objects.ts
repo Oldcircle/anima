@@ -66,6 +66,29 @@ export const MAX_DYNAMIC_CANON_FACTS = 6;
 export const MAX_TRACES = 8;
 /** 意图触发指路行上限（宁漏勿噪） */
 export const INTENT_MATCH_CAP = 2;
+/** 断言账本上限（FIFO 淘汰） */
+export const MAX_CLAIMS = 60;
+/**
+ * 复查冷却窗（tick）：r2 实测短反馈杀不掉复查行为（战场原对货架×12——examine 是
+ * 永远成功的廉价动作，打算里挂着"盘货"就一直选它）。冷却窗内对未变化器物复查
+ * 直接执行期拒绝（自然语言指路反馈），把重复从"完成的动作"变成"被弹回的信号"。
+ */
+export const EXAMINE_COOLDOWN_TICKS = 8;
+
+/**
+ * M2 断言账本条目：谁对哪件器物说了什么、世界怎么裁决的。
+ * canonized=首述即正典 / verified=史料推导为真 / false=史料推导为伪（与世界不符）/
+ * rumor=推不出（传闻死胡同）/ contradict=与既成正典矛盾（正典不动，说法挂账）
+ */
+export interface WorldClaim {
+  id: string;
+  tick: number;
+  speakerId: string;
+  objectKey: string;
+  claim: string;
+  verdict: "canonized" | "verified" | "false" | "rumor" | "contradict";
+  witnesses?: string[];
+}
 
 /** 器物层总开关：`ANIMA_GROUNDING=0` 逐字节回归旧行为 */
 export function groundingEnabled(): boolean {
@@ -109,11 +132,14 @@ export interface WorldObjectsSnapshot {
       lastSeen?: Record<string, { tick: number; digest: string }>;
     }
   >;
+  /** M2 断言账本（全局，不挂单个对象——器物删了账还在） */
+  claims?: WorldClaim[];
 }
 
 export class WorldObjectStore {
   private byKey = new Map<string, WorldObjectState>();
   private byLocation = new Map<string, string[]>();
+  private claims: WorldClaim[] = [];
 
   /**
    * 登记一个地点的器物声明。幂等：重复登记（读档后 upsertLocation、剧本重载）
@@ -248,11 +274,24 @@ export class WorldObjectStore {
   }
 
   /**
+   * 复查冷却判定（examine 工具执行期闸）：冷却窗内对**未变化**器物的复查应被拒绝。
+   * 变化过的器物随时可查（diff 通道邀请的正是这一查）。
+   */
+  isExamineOnCooldown(key: string, characterId: string, tick: number): boolean {
+    const obj = this.byKey.get(key);
+    if (!obj) return false;
+    const seen = obj.lastSeen[characterId];
+    if (!seen) return false;
+    if (seen.digest !== this.digest(obj)) return false; // 变了 → 不冷却
+    return tick - seen.tick < EXAMINE_COOLDOWN_TICKS;
+  }
+
+  /**
    * examine 的 ground truth：骨架描述 + 正典 + 当下痕迹。记录 lastSeen（重访 diff 基线）。
    *
-   * 重复衰减（halfday live r1 教训：examine 占决策 31%、六成是对未变化器物的复读）：
-   * 同一角色对**没有变化**的器物再查，只给一句"没什么新东西"的短反馈——不复读全文、
-   * 不刷记忆、不喂奖励回路；器物一旦有变化（trace/flags/正典），全文恢复。
+   * 重复衰减（r1 教训）：冷却窗外对未变化器物的复查只给短反馈——不复读全文不刷记忆；
+   * 器物一旦有变化（trace/flags/正典），全文恢复。冷却窗内的复查由调用方用
+   * isExamineOnCooldown 在执行期直接拒绝（r2 教训：光衰减内容杀不掉行为）。
    */
   examine(key: string, characterId: string, tick: number): string | undefined {
     const obj = this.byKey.get(key);
@@ -308,6 +347,25 @@ export class WorldObjectStore {
     return lines;
   }
 
+  // ── M2 断言账本 ──
+
+  /** 落一条裁决过的断言（FIFO 上限）。同 id 去重（重复裁决不重复落账）。 */
+  addClaim(claim: WorldClaim): boolean {
+    if (this.claims.some((c) => c.id === claim.id)) return false;
+    this.claims.push(claim);
+    if (this.claims.length > MAX_CLAIMS) this.claims.splice(0, this.claims.length - MAX_CLAIMS);
+    return true;
+  }
+
+  getClaims(filter?: { objectKey?: string; speakerId?: string; verdict?: WorldClaim["verdict"] }): WorldClaim[] {
+    return this.claims.filter(
+      (c) =>
+        (!filter?.objectKey || c.objectKey === filter.objectKey) &&
+        (!filter?.speakerId || c.speakerId === filter.speakerId) &&
+        (!filter?.verdict || c.verdict === filter.verdict),
+    );
+  }
+
   // ── 随档（对齐 narrative-state 模式：只存动态，读档逐字段规范化） ──
 
   getSnapshot(): WorldObjectsSnapshot {
@@ -329,13 +387,26 @@ export class WorldObjectStore {
         lastSeen: Object.keys(obj.lastSeen).length > 0 ? obj.lastSeen : undefined,
       };
     }
-    return { version: 1, objects };
+    return { version: 1, objects, claims: this.claims.length > 0 ? this.claims : undefined };
   }
 
   /** 读档：动态状态覆盖到已登记器物上；YAML 里已删除的器物动态直接丢弃（宁缺毋乱） */
   replaceSnapshot(snapshot: unknown): void {
     if (!snapshot || typeof snapshot !== "object") return;
     const snap = snapshot as Partial<WorldObjectsSnapshot>;
+    // M2 断言账本（全局，独立于 objects 恢复）
+    if (Array.isArray(snap.claims)) {
+      this.claims = snap.claims
+        .filter(
+          (c): c is WorldClaim =>
+            !!c && typeof c === "object" &&
+            typeof c.id === "string" && typeof c.speakerId === "string" &&
+            typeof c.objectKey === "string" && typeof c.claim === "string" &&
+            typeof c.tick === "number" && Number.isFinite(c.tick) &&
+            ["canonized", "verified", "false", "rumor", "contradict"].includes(c.verdict as string),
+        )
+        .slice(-MAX_CLAIMS);
+    }
     if (!snap.objects || typeof snap.objects !== "object") return;
     for (const [key, raw] of Object.entries(snap.objects)) {
       const obj = this.byKey.get(key);
