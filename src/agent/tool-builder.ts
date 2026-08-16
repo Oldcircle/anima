@@ -22,6 +22,7 @@ import { argueFrictionGateEnabled, argueFrictionIncludesNegativeLevel, getBreakL
 import type { ShopItem } from "../world/item-types.js";
 import { parseAppointmentTime, describeAppointmentTime } from "../world/appointments.js";
 import { groundingEnabled, type WorldObjectStore } from "../world/world-objects.js";
+import { rollPbta } from "../world/pbta.js";
 
 export interface ToolBuildContext {
   state: CharacterState;
@@ -49,6 +50,8 @@ export interface ToolBuildContext {
   objects?: WorldObjectStore;
   /** 意图触发的匹配源文本（今日打算+在身意图+执念摘要），agent-loop 组装 */
   intentTexts?: string[];
+  /** 世界侧掷骰的随机源（测试钉死结果用），默认 Math.random */
+  rng?: () => number;
 }
 
 /**
@@ -103,6 +106,17 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
   // 2e2. examine：地点有器物即浮现（器物集随地点静态——缓存键仍是角色×地点）
   if (groundingEnabled() && ctx.objects && ctx.objects.getAtLocation(ctx.location.id).length > 0) {
     tools.push(buildExamineTool(ctx));
+  }
+
+  // 2e3. tamper：地点有可下手器物 + 非 off 档（灰行为，治愈系基线不解锁）。
+  // 风险与代价由世界侧 PbtA 掷骰决定——模型不掷骰，只扮演结果
+  if (
+    groundingEnabled() &&
+    getBreakLevel() !== "off" &&
+    ctx.objects &&
+    ctx.objects.getTamperableAtLocation(ctx.location.id).length > 0
+  ) {
+    tools.push(buildTamperTool(ctx));
   }
 
   // 2f. 物品启用的工具（notebook→journal, guitar→practice_music 等）
@@ -1620,6 +1634,120 @@ function buildExamineTool(ctx: ToolBuildContext): ActionDefinition {
         duration: 1,
         observableState: `正在仔细端详${obj.name}`,
       };
+    },
+  };
+}
+
+/**
+ * tamper（PLAN-grounding M3）——对器物做见不得人的手脚，毁证/涂改/做手脚。
+ * 世界侧 PbtA 三段掷骰结算（模型不掷骰只扮演结果）：
+ * - success：得手，原有痕迹被抹掉（真毁证——调查者再也查不到），只留极细微二级痕迹
+ * - cost：得手但太急，留下明眼人一看便知的痕迹；在场者可能瞥见
+ * - complication（fail forward）：没得手还碰出动静——留慌乱翻动的乱痕 + 被目击风险最高
+ * 必留二级痕迹（世界里没有完美犯罪）→ 重访 diff 通道接住"和记忆里不一样"。
+ * per 角色冷却半个游戏天；被目击走 `_tamperWitness` 后门在 agent-loop 落旁观者记忆。
+ */
+function buildTamperTool(ctx: ToolBuildContext): ActionDefinition {
+  const store = ctx.objects!;
+  const names = store.getTamperableAtLocation(ctx.location.id).map((o) => o.name).join("、");
+  return {
+    tool: {
+      name: "tamper",
+      description: `对这里的某样东西偷偷做手脚——抹掉痕迹、涂改、藏起来。这是见不得人的事：会留下代价，也可能被人看见。能下手的：${names}。`,
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么，为什么要冒这个险" },
+          target: { type: "string", description: "对什么下手（这里的东西）" },
+          goal: { type: "string", description: "想做成什么（如：把那页撕掉、抹掉痕迹）" },
+        },
+        required: ["thought", "target", "goal"],
+      },
+    },
+    handler: (args, actionCtx) => {
+      const target = String(args.target ?? "").trim();
+      const goal = String(args.goal ?? "").trim() || "做点手脚";
+      const obj = target ? store.resolveByName(ctx.location.id, target) : undefined;
+      if (!obj || !obj.tamperable) {
+        return {
+          description: `你围着${target || "它"}转了一圈，没找到能不留破绽下手的地方。能下手的是：${names}。`,
+          effects: [],
+          success: false,
+        };
+      }
+      if (store.isTamperOnCooldown(ctx.card.id, actionCtx.tick)) {
+        return {
+          description: "你今天已经动过一次手脚了，神经还绷着——短时间内再干一票太冒险。",
+          effects: [],
+          success: false,
+        };
+      }
+
+      const roll = rollPbta(ctx.rng);
+      store.noteTamper(ctx.card.id, actionCtx.tick);
+      const bystanders = actionCtx.nearbyCharacters;
+      const witnessId = bystanders.length > 0 ? [...bystanders].sort()[0] : undefined;
+      console.log(`🕳️ [tamper] ${ctx.card.id} → ${obj.key}（${goal}）roll=${roll.total} ${roll.outcome}`);
+
+      if (roll.outcome === "success") {
+        store.tamperObject(obj.key, { clearTraces: true });
+        store.addTrace(obj.key, {
+          id: `tamper_${actionCtx.tick}_subtle`,
+          text: "凑得极近才能看出一点不自然——像被人小心处理过",
+          addedTick: actionCtx.tick,
+          source: "interaction",
+        });
+        return {
+          description: `你不动声色地对${obj.name}下了手（${goal}）——得手了。原先的痕迹被抹得干干净净，只有凑得极近才能看出一点不自然。`,
+          effects: [],
+          duration: 1,
+        };
+      }
+
+      if (roll.outcome === "cost") {
+        store.tamperObject(obj.key, { clearTraces: true });
+        store.addTrace(obj.key, {
+          id: `tamper_${actionCtx.tick}_obvious`,
+          text: "有明显被人动过手脚的痕迹——毛边和错位藏不住",
+          addedTick: actionCtx.tick,
+          source: "interaction",
+        });
+        const result: ActionResult & { _tamperWitness?: { observerId: string; content: string } } = {
+          description: `你对${obj.name}下了手（${goal}）——手脚是做成了，但太急，留下了明眼人一看便知的毛边。${witnessId ? "而且刚才好像有人朝这边看了一眼。" : ""}`,
+          effects: [],
+          duration: 1,
+          observableState: `在${obj.name}边上动作很快地折腾着什么`,
+        };
+        if (witnessId) {
+          result._tamperWitness = {
+            observerId: witnessId,
+            content: `你瞥见${ctx.card.name}在${obj.name}边上动作很快地折腾了几下，见有人看过来立刻装作没事`,
+          };
+        }
+        return result;
+      }
+
+      // complication：没得手，fail forward——留乱痕+目击风险最高
+      store.tamperObject(obj.key, { clearTraces: false });
+      store.addTrace(obj.key, {
+        id: `tamper_${actionCtx.tick}_botched`,
+        text: "有人慌乱翻动过的乱痕——干得毛毛糙糙，一看就是心里有鬼",
+        addedTick: actionCtx.tick,
+        source: "interaction",
+      });
+      const result: ActionResult & { _tamperWitness?: { observerId: string; content: string } } = {
+        description: `你刚要对${obj.name}动手（${goal}）就乱了阵脚——不但没做成，还碰出了动静，留下一片毛毛糙糙的乱痕。${witnessId ? "更糟的是，有人看见了。" : "得赶紧离开这里。"}`,
+        effects: [{ type: "need_change", targetId: actionCtx.characterId, field: "fun", delta: -10 }],
+        duration: 1,
+        observableState: `在${obj.name}边上手忙脚乱，神色慌张`,
+      };
+      if (witnessId) {
+        result._tamperWitness = {
+          observerId: witnessId,
+          content: `你亲眼看见${ctx.card.name}在${obj.name}上翻动做手脚，被发现后神色慌张地缩了手`,
+        };
+      }
+      return result;
     },
   };
 }

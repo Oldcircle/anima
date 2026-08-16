@@ -484,7 +484,7 @@ export async function runAgentTick(params: {
       },
     };
   } else {
-    result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought, params.relationships);
+    result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, thought, params.relationships, params.memory);
   }
 
   // ── Layer D: tick 内 ToolResult 反馈循环（参考 Claude Code 的 is_error 模式）──
@@ -563,7 +563,7 @@ export async function runAgentTick(params: {
     toolCall.id = retryCall.id ?? callId;
     toolCall.name = retryCall.name;
     toolCall.arguments = retryCall.arguments;
-    result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, retryResponse.content || thought, params.relationships);
+    result = await executeAction(toolCall, dynamicActions, card, state, world, eventBus, gameTime, retryResponse.content || thought, params.relationships, params.memory);
     const ok = result.result?.success === false ? "✗" : "✓";
     console.log(`[${card.id}] ${ok} 重试后 ${toolCall.name} → ${result.result?.description?.slice(0, 60) ?? "(无描述)"}`);
   }
@@ -634,6 +634,7 @@ async function executeAction(
   gameTime: GameTime,
   thought: string,
   relationships?: RelationshipManager,
+  memory?: ShortTermMemory,
 ): Promise<AgentTickResult> {
   const actionDef = actions.find((a) => a.tool.name === toolCall.name);
   if (!actionDef) {
@@ -795,6 +796,18 @@ async function executeAction(
     const begAmount = (result as any)._begAmount;
     if (typeof begAmount === "number") {
       state.gold += begAmount;
+    }
+  } else if (toolCall.name === "tamper") {
+    // M3 目击后门：旁观者的所见直接进其记忆（对齐 crime-supply 目击窗口写法）
+    const witness = (result as any)._tamperWitness as { observerId: string; content: string } | undefined;
+    if (witness && memory && world.getCharacter(witness.observerId)) {
+      memory.add(witness.observerId, {
+        tick: gameTime.tick,
+        type: "observation",
+        content: witness.content,
+        importance: 7,
+        relatedCharacterId: card.id,
+      });
     }
   }
 

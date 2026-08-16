@@ -74,6 +74,8 @@ export const MAX_CLAIMS = 60;
  * 直接执行期拒绝（自然语言指路反馈），把重复从"完成的动作"变成"被弹回的信号"。
  */
 export const EXAMINE_COOLDOWN_TICKS = 8;
+/** tamper 冷却（per 角色全局，半个游戏天）：做过一票手脚神经绷着，短期不再干 */
+export const TAMPER_COOLDOWN_TICKS = 48;
 
 /**
  * M2 断言账本条目：谁对哪件器物说了什么、世界怎么裁决的。
@@ -134,12 +136,15 @@ export interface WorldObjectsSnapshot {
   >;
   /** M2 断言账本（全局，不挂单个对象——器物删了账还在） */
   claims?: WorldClaim[];
+  /** M3 tamper 冷却账（charId → 上次动手脚 tick） */
+  tamperLog?: Record<string, number>;
 }
 
 export class WorldObjectStore {
   private byKey = new Map<string, WorldObjectState>();
   private byLocation = new Map<string, string[]>();
   private claims: WorldClaim[] = [];
+  private tamperLog: Record<string, number> = {};
 
   /**
    * 登记一个地点的器物声明。幂等：重复登记（读档后 upsertLocation、剧本重载）
@@ -347,6 +352,35 @@ export class WorldObjectStore {
     return lines;
   }
 
+  // ── M3 tamper（篡改：毁证是有代价的不可逆行为） ──
+
+  /** 该地点可下手的器物（tamperable=true） */
+  getTamperableAtLocation(locationId: string): WorldObjectState[] {
+    return this.getAtLocation(locationId).filter((o) => o.tamperable);
+  }
+
+  isTamperOnCooldown(characterId: string, tick: number): boolean {
+    const last = this.tamperLog[characterId];
+    return last !== undefined && tick - last < TAMPER_COOLDOWN_TICKS;
+  }
+
+  noteTamper(characterId: string, tick: number): void {
+    this.tamperLog[characterId] = tick;
+  }
+
+  /**
+   * 篡改的机械本体：清掉现有物理痕迹（毁证——原有撬痕/毛边真的消失，调查者再也
+   * 查不到）+ 打 tampered 标志。二级痕迹由调用方按掷骰结果另行 addTrace
+   * （必留痕迹：世界里没有完美犯罪，只有更细微的痕迹）。
+   */
+  tamperObject(key: string, opts: { clearTraces: boolean }): boolean {
+    const obj = this.byKey.get(key);
+    if (!obj || !obj.tamperable) return false;
+    if (opts.clearTraces) obj.traces = [];
+    obj.flags["tampered"] = true;
+    return true;
+  }
+
   // ── M2 断言账本 ──
 
   /** 落一条裁决过的断言（FIFO 上限）。同 id 去重（重复裁决不重复落账）。 */
@@ -387,13 +421,25 @@ export class WorldObjectStore {
         lastSeen: Object.keys(obj.lastSeen).length > 0 ? obj.lastSeen : undefined,
       };
     }
-    return { version: 1, objects, claims: this.claims.length > 0 ? this.claims : undefined };
+    return {
+      version: 1,
+      objects,
+      claims: this.claims.length > 0 ? this.claims : undefined,
+      tamperLog: Object.keys(this.tamperLog).length > 0 ? this.tamperLog : undefined,
+    };
   }
 
   /** 读档：动态状态覆盖到已登记器物上；YAML 里已删除的器物动态直接丢弃（宁缺毋乱） */
   replaceSnapshot(snapshot: unknown): void {
     if (!snapshot || typeof snapshot !== "object") return;
     const snap = snapshot as Partial<WorldObjectsSnapshot>;
+    // M3 tamper 冷却账
+    if (snap.tamperLog && typeof snap.tamperLog === "object" && !Array.isArray(snap.tamperLog)) {
+      this.tamperLog = {};
+      for (const [cid, t] of Object.entries(snap.tamperLog)) {
+        if (typeof t === "number" && Number.isFinite(t)) this.tamperLog[cid] = t;
+      }
+    }
     // M2 断言账本（全局，独立于 objects 恢复）
     if (Array.isArray(snap.claims)) {
       this.claims = snap.claims

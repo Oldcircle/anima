@@ -44,10 +44,21 @@ verified/false、推不出 rumor ③顶撞正典挂账不动正典）→ claims 
 **重复衰减 v1 被 r2 证伪**（examine 56 次不降反升，短反馈杀不掉行为）→ **v2 冷却闸当日落地**
 （8 tick 窗内复查未变化器物执行期拒绝），live 复验搭下次长跑。缓存 73.3% 新高（含暖缓存红利）。
 
-**下次入口**：① 冷却闸 live 复验搭车（看 examine 占比回落 + ✗ 重试不暴涨）② M3 tamper 灰工具
-+PbtA 三段掷骰（重访 diff 通道在等它；canonized/false/contradict 的 live 样本也等它制造张力）
-③ M2.5 候选：语义级"复述正典"判定（r2 的 rumor 实为 authored 正典变体复述）④ 遗留：fate 类
-beat 的罪案 trace 接线（default-verify 的 verify_d1_crime 仍纯文本注入）⑤ Bartle 玩法人格夹带。
+**M3 tamper + PbtA 世界侧骰子已落地（同日，973 单测全绿，live 待烧）**：
+- `src/world/pbta.ts`：2d6 三段掷骰（10+ 成功 16.7% / 7-9 付代价成功 41.7% / ≤6 带并发症失败
+  41.7%，fail forward——失败永远制造新处境）。**模型不掷骰**（采样漂向叙事连贯），引擎 roll 完
+  喂结果让它扮演；rng 可注入测试钉死
+- `tamper` 灰工具（tool-builder）：tamperable 器物+非 off 档浮现。success=毁证成立（**旧痕迹真
+  消失**，调查者再也查不到）+细微二级痕迹；cost=得手+明眼毛边+可能被瞥见；complication=没得手+
+  慌乱乱痕+目击最重。**必留二级痕迹**（没有完美犯罪）→ 重访 diff 通道接住；目击走
+  `_tamperWitness` 后门在 agent-loop 落旁观者观察记忆（crime-supply 同款写法）；per 角色冷却
+  半游戏天随档；`🕳️` 日志
+
+**下次入口**：① M3 live 样本要有作案动机才有意义——搭 default-verify/kira 类罪案剧本长跑
+（tamper 毁证 → L 重访 diff → 对质，全链首演；顺带验 examine 冷却闸+M2 canonized 路线）
+② M2.5 候选：语义级"复述正典"判定（r2 的 rumor 实为 authored 正典变体复述）③ 遗留：fate 类
+beat 的罪案 trace 接线（default-verify 的 verify_d1_crime 仍纯文本注入）④ Bartle 玩法人格夹带
+⑤ 前端消费：器物/正典/claims 可视化未做。
 
 ## 当前状态（2026-08-09）
 
