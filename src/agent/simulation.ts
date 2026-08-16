@@ -37,7 +37,7 @@ import {
   mightContainShowdown,
   type ExtractedStance,
 } from "./stance-extractor.js";
-import { stancePairKey, type OpenStanceKind } from "../narrative/narrative-state.js";
+import { stancePairKey, COLD_CASE_TICKS, type OpenStanceKind } from "../narrative/narrative-state.js";
 import { ImpressionStore } from "../memory/impressions.js";
 import { updateImpressionsBidirectional } from "./impression-updater.js";
 import { shouldObserve, generateObservation, type ObservationResult } from "./observation-reasoning.js";
@@ -523,6 +523,17 @@ export class Simulation {
       this.world.narrative.sweepStanceTTL(gameTime.tick);
       // B5：执念 5 天衰减 sweep（settled 即清走 onEventSettled 钩子，这里只清自然过期的）
       this.world.narrative.sweepObsessions(gameTime.day);
+      // M4 冷案扫描：悬 5 游戏天没人破的案子诚实搁置（悬案是合法终局，不是禁令）
+      for (const coldCase of this.world.narrative.getStaleCases(gameTime.tick, COLD_CASE_TICKS)) {
+        this.world.narrative.closeCase(coldCase.id, "cold", gameTime.tick);
+        this.memory.add(coldCase.victimId, {
+          tick: gameTime.tick,
+          type: "thought",
+          content: "那笔被偷的钱……案子怕是就这么凉了。到底是谁的手伸进过你的钱盒，也许永远不会知道了",
+          importance: 6,
+        });
+        console.log(`🧊 [case] ${coldCase.id} 冷案搁置（悬 5 天无人破）`);
+      }
       // B1.5 阻尼豁免：有 activeOpenStance / 未 settled 事件的对，
       // 暂停 grudge 3 天自动清与 idleDecay——账本要顶得住均值回归（off 档豁免集恒空）
       const damperExempt = this._stanceDamperExemptPairs();

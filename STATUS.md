@@ -54,11 +54,22 @@ verified/false、推不出 rumor ③顶撞正典挂账不动正典）→ claims 
   `_tamperWitness` 后门在 agent-loop 落旁观者观察记忆（crime-supply 同款写法）；per 角色冷却
   半游戏天随档；`🕳️` 日志
 
-**下次入口**：① M3 live 样本要有作案动机才有意义——搭 default-verify/kira 类罪案剧本长跑
-（tamper 毁证 → L 重访 diff → 对质，全链首演；顺带验 examine 冷却闸+M2 canonized 路线）
-② M2.5 候选：语义级"复述正典"判定（r2 的 rumor 实为 authored 正典变体复述）③ 遗留：fate 类
-beat 的罪案 trace 接线（default-verify 的 verify_d1_crime 仍纯文本注入）④ Bartle 玩法人格夹带
-⑤ 前端消费：器物/正典/claims 可视化未做。
+**M4 案件收束已落地（同日，979 单测全绿）——PLAN-grounding M0-M4 全部完成，live 全链待烧**：
+- **案件账本**（narrative-state `cases` 随档+normalize）：theft_with_perp 自动立案，真凶
+  ground truth **只进引擎账本绝不进 prompt**；每人每案一发指控；5 天冷案扫描（06:00 块，
+  悬案=合法终局，🧊 日志）
+- **accuse 对质工具**：有 open 案件+非 off 档浮现。三路裁决——破案（人赃俱获：结案+退赃
+  backdoor+风声+作案者身败）/ 指对无证 / 冤案。**信息隔离是灵魂**：无证两路对指控者的反馈
+  **逐字一致**（引擎绝不泄露指没指对），差别只落被指者记忆——真凶"钱袋不能再留在身上"
+  （通往 tamper/销赃），无辜者"百口莫辩"结死仇。立场/疙瘩/执念/风声全套复用 B1 机器
+- 修一个真 bug：在场校验曾用构建期闭包（执行期语义错），改 actionCtx 执行期解析
+
+**下次入口（首位）= 全链 live 大戏**：罪案剧本长跑（default-verify 阵容或专用剧本）——
+theft 立案 → examine 查撬痕 → 真凶 tamper 毁证 → 调查者重访 diff → accuse 对质 →
+破案/无证/冤案任一终局。一次长跑同时验：M3 tamper 首演、M4 三终局、examine 冷却闸、
+M2 canonized 路线、真凶被指后"处理钱袋"的行为闭环（信息隔离给的饵）。预算 ~¥1.6-2（余额 5.21）。
+次位：② M2.5 语义级"复述正典"判定 ③ fate 类 beat 的 trace 接线 ④ Bartle 玩法人格
+⑤ 前端消费（器物/正典/claims/案件可视化）。
 
 ## 当前状态（2026-08-09）
 

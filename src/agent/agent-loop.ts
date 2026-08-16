@@ -27,6 +27,8 @@ import { textSimilarity } from "../memory/mmr.js";
 import { applyNarrativeTags, extractTagsFromArgs, hasAnyTags } from "../narrative/tag-applier.js";
 import { getDecisionPov, obsessionsEnabled } from "./break-config.js";
 import { groundingEnabled } from "../world/world-objects.js";
+import { removeFromInventory } from "../world/item-registry.js";
+import { STOLEN_EVIDENCE_ITEM } from "../narrative/world-events.js";
 import { parseMotiveChannel, type MotiveChannel } from "./motive-channel.js";
 import { v4 as uuid } from "uuid";
 
@@ -189,6 +191,9 @@ export async function runAgentTick(params: {
       ...(currentIntent ? [currentIntent.summary] : []),
       ...(obsessionTexts ?? []),
     ],
+    // M4 案件收束：accuse 浮现与裁决数据源
+    narrative: world.narrative,
+    getCharacterById: (id: string) => world.getCharacter(id),
   };
   const dynamicActions = buildToolList(toolCtx);
   const environmentInfo = buildEnvironmentSnapshot(toolCtx);
@@ -808,6 +813,45 @@ async function executeAction(
         importance: 7,
         relatedCharacterId: card.id,
       });
+    }
+  } else if (toolCall.name === "accuse") {
+    // M4 后门：破案结算（搜出赃物 + 退赃，金币守恒）+ 各方记忆落账
+    const settle = (result as any)._accuseSettle as
+      | { caseId: string; perpId: string; victimId: string; amount: number }
+      | undefined;
+    if (settle) {
+      const perp = world.getCharacter(settle.perpId);
+      const victim = world.getCharacter(settle.victimId);
+      if (perp) removeFromInventory(perp.inventory, STOLEN_EVIDENCE_ITEM, 1);
+      if (perp && victim) {
+        const restitution = Math.min(perp.gold, settle.amount);
+        perp.gold -= restitution;
+        victim.gold += restitution;
+        if (memory) {
+          memory.add(settle.victimId, {
+            tick: gameTime.tick,
+            type: "event",
+            content: `被偷走的货款回来了${restitution < settle.amount ? "一部分" : ""}（${restitution} 金币）——${card.name}当众抓住了贼`,
+            importance: 8,
+            relatedCharacterId: card.id,
+          });
+        }
+      }
+    }
+    const accuseMemories = (result as any)._accuseMemories as
+      | Array<{ observerId: string; content: string; importance: number }>
+      | undefined;
+    if (accuseMemories && memory) {
+      for (const m of accuseMemories) {
+        if (!world.getCharacter(m.observerId)) continue;
+        memory.add(m.observerId, {
+          tick: gameTime.tick,
+          type: "observation",
+          content: m.content,
+          importance: m.importance,
+          relatedCharacterId: card.id,
+        });
+      }
     }
   }
 

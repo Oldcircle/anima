@@ -220,6 +220,17 @@ export function applyTheftWithPerp(deps: WorldEventDeps, params: TheftParams): W
   // 2) 赃物入真凶背包（持久物证——调查线索的物理载体）
   addToInventory(perp.inventory, STOLEN_EVIDENCE_ITEM, 1, { obtainedTick: tick });
 
+  // 2b) M4 立案（案件账本随档）：真凶 ground truth 只进引擎账本，绝不进任何 prompt——
+  //     accuse 工具据此裁决破案/无证/冤案；5 天没人破走冷案扫描
+  world.narrative.registerCase({
+    id: `theft_${tick}_${params.victimId}`,
+    kind: "theft",
+    perpId: params.perpId,
+    victimId: params.victimId,
+    amount: taken,
+    createdTick: tick,
+  });
+
   // 3) 受害者"去取货款"intent（只配注意力：去不去、什么时候去归角色）
   world.setIntent(params.victimId, {
     kind: "plan",

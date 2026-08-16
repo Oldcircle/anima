@@ -170,7 +170,30 @@ export interface WorldNarrativeState {
    * （key "npc_last_crime" / "npc_seeded_at"）也记在这里。Record 不用 Map（JSON 往返安全）。
    */
   crimeSupplyLedger: Record<string, number>;
+  /**
+   * M4 案件账本（PLAN-grounding，随档）：caseId → 案件（真凶 ground truth + 指控记录）。
+   * theft_with_perp 注册；accuse 工具据此裁决破案/无证/冤案；5 天冷案扫描搁置。
+   * fate 类无主之罪不入账（无真凶=天然悬案，accuse 不浮现）。
+   */
+  cases: Record<string, CaseEntry>;
 }
+
+/** M4 案件条目 */
+export interface CaseEntry {
+  id: string;
+  kind: "theft";
+  perpId: string;
+  victimId: string;
+  amount: number;
+  createdTick: number;
+  status: "open" | "solved" | "cold";
+  /** 每人一发：accuserId → accusedId（当众指控是重棋，不许翻来覆去泼脏水） */
+  accusations: Record<string, string>;
+  closedTick?: number;
+}
+
+/** 冷案窗：悬 5 游戏天没人破 → 诚实搁置 */
+export const COLD_CASE_TICKS = 480;
 
 export interface NarrativeStateSnapshot {
   world: WorldNarrativeState;
@@ -193,6 +216,7 @@ export function emptyNarrativeState(): NarrativeStateSnapshot {
       openStances: {},
       stanceDayLog: {},
       crimeSupplyLedger: {},
+      cases: {},
     },
     characters: {},
     locations: {},
@@ -326,6 +350,27 @@ export function normalizeNarrativeSnapshot(
   } else {
     for (const [k, v] of Object.entries(w.crimeSupplyLedger)) {
       if (typeof v !== "number" || !Number.isFinite(v)) delete w.crimeSupplyLedger[k];
+    }
+  }
+
+  // M4：案件账本（旧档缺失回填空；缺必填字段的条目整条丢弃——半截案件比没案件更毒）
+  if (!w.cases || typeof w.cases !== "object" || Array.isArray(w.cases)) {
+    w.cases = {};
+  } else {
+    for (const [k, c] of Object.entries(w.cases)) {
+      const bad =
+        !c || typeof c !== "object" ||
+        typeof c.perpId !== "string" || typeof c.victimId !== "string" ||
+        typeof c.amount !== "number" || !Number.isFinite(c.amount) ||
+        typeof c.createdTick !== "number" || !Number.isFinite(c.createdTick) ||
+        !["open", "solved", "cold"].includes(c.status as string);
+      if (bad) {
+        delete w.cases[k];
+        continue;
+      }
+      if (!c.accusations || typeof c.accusations !== "object" || Array.isArray(c.accusations)) {
+        c.accusations = {};
+      }
     }
   }
 
@@ -652,6 +697,60 @@ export class NarrativeState {
       w.crimeSupplyLedger = {};
     }
     return w.crimeSupplyLedger;
+  }
+
+  // ── M4 案件账本 ──
+
+  /** 案件账本（懒初始化——构造器传入的旧快照没走 normalize） */
+  getCaseLedger(): Record<string, CaseEntry> {
+    const w = this.snapshot.world;
+    if (!w.cases || typeof w.cases !== "object" || Array.isArray(w.cases)) {
+      w.cases = {};
+    }
+    return w.cases;
+  }
+
+  /** 立案（theft_with_perp 注册；已存在同 id 不覆盖——案情不许被重写） */
+  registerCase(entry: Omit<CaseEntry, "status" | "accusations">): boolean {
+    const ledger = this.getCaseLedger();
+    if (ledger[entry.id]) return false;
+    ledger[entry.id] = { ...entry, status: "open", accusations: {} };
+    return true;
+  }
+
+  getCase(id: string): CaseEntry | undefined {
+    return this.getCaseLedger()[id];
+  }
+
+  getOpenCases(): CaseEntry[] {
+    return Object.values(this.getCaseLedger()).filter((c) => c.status === "open");
+  }
+
+  /** 最新的未破案件（accuse 工具 v1 的默认对象） */
+  getLatestOpenCase(): CaseEntry | undefined {
+    return this.getOpenCases().sort((a, b) => b.createdTick - a.createdTick)[0];
+  }
+
+  /** 记一次指控（每人每案一发；已指控过返回 false） */
+  recordAccusation(caseId: string, accuserId: string, accusedId: string): boolean {
+    const c = this.getCaseLedger()[caseId];
+    if (!c || c.status !== "open") return false;
+    if (c.accusations[accuserId]) return false;
+    c.accusations[accuserId] = accusedId;
+    return true;
+  }
+
+  closeCase(id: string, status: "solved" | "cold", tick: number): boolean {
+    const c = this.getCaseLedger()[id];
+    if (!c || c.status !== "open") return false;
+    c.status = status;
+    c.closedTick = tick;
+    return true;
+  }
+
+  /** 冷案候选：悬超过 maxAgeTicks 的 open 案件 */
+  getStaleCases(tick: number, maxAgeTicks: number): CaseEntry[] {
+    return this.getOpenCases().filter((c) => tick - c.createdTick > maxAgeTicks);
   }
 
   // ── B1 立场账 ──

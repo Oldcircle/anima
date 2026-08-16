@@ -23,6 +23,7 @@ import type { ShopItem } from "../world/item-types.js";
 import { parseAppointmentTime, describeAppointmentTime } from "../world/appointments.js";
 import { groundingEnabled, type WorldObjectStore } from "../world/world-objects.js";
 import { rollPbta } from "../world/pbta.js";
+import { STOLEN_EVIDENCE_ITEM } from "../narrative/world-events.js";
 
 export interface ToolBuildContext {
   state: CharacterState;
@@ -52,6 +53,10 @@ export interface ToolBuildContext {
   intentTexts?: string[];
   /** 世界侧掷骰的随机源（测试钉死结果用），默认 Math.random */
   rng?: () => number;
+  /** M4 案件账本入口（accuse 工具的浮现与裁决数据源） */
+  narrative?: import("../narrative/narrative-state.js").NarrativeState;
+  /** 按 id 取角色状态（accuse 赃物在身裁决用；agent-loop 传 world.getCharacter） */
+  getCharacterById?: (id: string) => CharacterState | undefined;
 }
 
 /**
@@ -117,6 +122,18 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     ctx.objects.getTamperableAtLocation(ctx.location.id).length > 0
   ) {
     tools.push(buildTamperTool(ctx));
+  }
+
+  // 2e4. accuse：镇上有未破案件 + 非 off 档才浮现（M4 案件收束）。
+  // 低频翻转（案件开/结）；koukou trial 的同名工具靠末尾去重先到先得——
+  // koukou 无 theft 案件账本，此工具在该剧本恒不浮现，无实际冲突
+  if (
+    groundingEnabled() &&
+    getBreakLevel() !== "off" &&
+    ctx.narrative &&
+    ctx.narrative.getOpenCases().length > 0
+  ) {
+    tools.push(buildAccuseTool(ctx));
   }
 
   // 2f. 物品启用的工具（notebook→journal, guitar→practice_music 等）
@@ -1747,6 +1764,176 @@ function buildTamperTool(ctx: ToolBuildContext): ActionDefinition {
           content: `你亲眼看见${ctx.card.name}在${obj.name}上翻动做手脚，被发现后神色慌张地缩了手`,
         };
       }
+      return result;
+    },
+  };
+}
+
+/**
+ * accuse（PLAN-grounding M4 案件收束）——当面指控某人是未破案件的作案者。
+ * 三路裁决（真凶 ground truth 在案件账本，**绝不进 prompt**）：
+ * - 破案：指对且赃物在身——当场抖出铁证，案结、退赃（backdoor 结算）、作案者身败
+ * - 指对无证 / 冤案：**对指控者的反馈完全一致**（对方矢口否认、僵局）——引擎不许泄露
+ *   你指没指对（信息隔离：隐藏信息靠物理隔离不靠自律）。差别只落在被指者的记忆里：
+ *   真凶知道自己被盯上（"钱袋必须处理掉"→ 通往 tamper/销赃），无辜者结死仇
+ * - 每人每案一发（当众指控是重棋，不许翻来覆去泼脏水）；立场/疙瘩/执念/风声全套复用 B1 机器
+ */
+function buildAccuseTool(ctx: ToolBuildContext): ActionDefinition {
+  const ns = ctx.narrative!;
+  return {
+    tool: {
+      name: "accuse",
+      description:
+        "当面指控在场的某个人就是镇上那桩悬案的作案者。这是一步重棋：指对了且人赃俱获，案子当场了结；拿不出实证或指错了人，会结下死仇、名声受损。每桩案子你只有一次开口的机会——想清楚再说。",
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么，凭什么认定是这个人" },
+          target: { type: "string", description: "指控谁（必须在场，当面说）" },
+          accusation: { type: "string", description: "你认定的案情（一句话，当众说出口的指控）" },
+        },
+        required: ["thought", "target", "accusation"],
+      },
+    },
+    handler: (args, actionCtx) => {
+      const targetName = String(args.target ?? "").trim();
+      const accusation = String(args.accusation ?? "").trim() || "就是你干的";
+      const case_ = ns.getLatestOpenCase();
+      if (!case_) {
+        return { description: "镇上现在没有悬着的案子，指控无从谈起。", effects: [], success: false };
+      }
+      // 被指者必须在场（当面对质）——用执行期 actionCtx 的在场名单，不是构建期闭包
+      let accused: { id: string; name: string } | undefined;
+      for (const nid of actionCtx.nearbyCharacters) {
+        const c = ctx.getCharacterById?.(nid);
+        if (!c) continue;
+        if (c.name === targetName || c.name.includes(targetName) || targetName.includes(c.name) || nid === targetName) {
+          accused = { id: nid, name: c.name };
+          break;
+        }
+      }
+      if (!accused) {
+        return {
+          description: `${targetName || "那个人"}不在场——指控要当着本人的面说才有分量，背后说是另一回事。`,
+          effects: [],
+          success: false,
+        };
+      }
+      if (accused.id === ctx.card.id) {
+        return { description: "指控自己？这说不通。", effects: [], success: false };
+      }
+      // 每人每案一发
+      if (!ns.recordAccusation(case_.id, ctx.card.id, accused.id)) {
+        return {
+          description: "这桩案子你已经当众指控过一次了——再翻来覆去，只会让人觉得你在泼脏水。",
+          effects: [],
+          success: false,
+        };
+      }
+
+      const tick = actionCtx.tick;
+      const witnesses = actionCtx.nearbyCharacters.filter((id) => id !== accused.id);
+      const accusedState = ctx.getCharacterById?.(accused.id);
+      const holdsPouch = accusedState ? hasItem(accusedState.inventory ?? [], STOLEN_EVIDENCE_ITEM) : false;
+      const isPerp = accused.id === case_.perpId;
+      const locName = ctx.location.name;
+      console.log(`⚖️ [accuse] ${ctx.card.id} → ${accused.id} @ ${case_.id}（${isPerp ? (holdsPouch ? "破案" : "指对无证") : "冤案"}）`);
+
+      // ── 破案：指对 + 赃物在身（人赃俱获，客观铁证可以确证） ──
+      if (isPerp && holdsPouch) {
+        ns.closeCase(case_.id, "solved", tick);
+        ctx.relationships?.setGrudge(accused.id, ctx.card.id, "当众揭发了我", ctx.card.id, tick);
+        if (witnesses.length > 0) {
+          ns.getWorld().rumors.push({
+            content: `${ctx.card.name}在${locName}当众指认${accused.name}偷了那笔货款——当场人赃俱获，案子破了`,
+            sourceCharId: witnesses[0],
+            tick,
+            reachedChars: [...witnesses],
+          });
+        }
+        const result: ActionResult & Record<string, unknown> = {
+          description: `你当着所有人的面指认${accused.name}（${accusation}）——对峙之下，那只不属于他的钱袋兜不住了。人赃俱获，案子破了。`,
+          effects: [{ type: "need_change", targetId: actionCtx.characterId, field: "fun", delta: 15 }],
+          duration: 1,
+          observableState: `刚当众指认了${accused.name}`,
+        };
+        result._accuseSettle = { caseId: case_.id, perpId: accused.id, victimId: case_.victimId, amount: case_.amount };
+        result._accuseMemories = [
+          {
+            observerId: accused.id,
+            content: `${ctx.card.name}当众指认了你，钱袋就在你身上——赖不掉了。你在全镇人眼里成了贼`,
+            importance: 9,
+          },
+          ...(witnesses[0]
+            ? [{
+                observerId: witnesses[0],
+                content: `你亲眼看见${ctx.card.name}当众指认${accused.name}偷货款——人赃俱获，案子当场破了`,
+                importance: 8,
+              }]
+            : []),
+        ];
+        return result;
+      }
+
+      // ── 无证对峙（指对无证 / 冤案——对指控者的反馈必须完全一致：引擎不泄露真相） ──
+      const { stance } = ns.addOrRefreshOpenStance({
+        id: `stance_accuse_case_${case_.id}_${ctx.card.id}_${tick}`,
+        kind: "accuse",
+        holderId: ctx.card.id,
+        targetId: accused.id,
+        summary: `当众指控TA是「${case_.id.startsWith("theft") ? "货款失窃案" : "悬案"}」的作案者`,
+        evidence: accusation.slice(0, 80),
+        createdTick: tick,
+        lastRefreshTick: tick,
+        witnesses: [...witnesses],
+        locationId: ctx.location.id,
+      });
+      ns.addUnresolvedWith(ctx.card.id, accused.id, stance.id);
+      ns.addUnresolvedWith(accused.id, ctx.card.id, stance.id);
+      // 被指者对指控者结死仇（无论冤不冤——被当众点名都是奇耻）
+      if (ctx.relationships && !ctx.relationships.get(accused.id, ctx.card.id).grudge) {
+        ctx.relationships.setGrudge(accused.id, ctx.card.id, "当众指控我是贼", ctx.card.id, tick);
+      }
+      const day = Math.floor(tick / 96);
+      ns.registerObsession(ctx.card.id, {
+        id: `obs_${stance.id}_holder`, summary: `你当众指控了${accused.name}，拿不出实证——这局僵着`,
+        createdDay: day, decayDays: 5, source: "stance", relatedId: stance.id,
+      });
+      ns.registerObsession(accused.id, {
+        id: `obs_${stance.id}_target`, summary: `${ctx.card.name}当众指控你是作案者，这事没完`,
+        createdDay: day, decayDays: 5, source: "stance", relatedId: stance.id,
+      });
+      if (witnesses.length > 0) {
+        ns.getWorld().rumors.push({
+          content: `${ctx.card.name}在${locName}当众指控${accused.name}是失窃案的贼，却拿不出实证——两人当场僵住`,
+          sourceCharId: witnesses[0],
+          tick,
+          reachedChars: [...witnesses],
+        });
+      }
+      const result: ActionResult & Record<string, unknown> = {
+        description: `你当着${witnesses.length > 0 ? "所有人" : "TA"}的面指控${accused.name}（${accusation}）——对方脸色一沉，矢口否认。你拿不出能钉死的实证，对峙僵在了原地。这话说出去就收不回了。`,
+        effects: [{ type: "need_change", targetId: actionCtx.characterId, field: "social", delta: -8 }],
+        duration: 1,
+        observableState: `刚当众指控了${accused.name}`,
+      };
+      // 信息隔离的落点：差别只进被指者自己的记忆——真凶知道自己被盯上，无辜者结的是纯冤仇
+      result._accuseMemories = [
+        {
+          observerId: accused.id,
+          content: isPerp
+            ? `${ctx.card.name}当众指控了你——他没有实证，但他真的盯上你了。那只钱袋不能再留在身上`
+            : `${ctx.card.name}当众冤枉你是偷货款的贼——你根本没做过，百口莫辩。这个仇记下了`,
+          importance: 9,
+        },
+        ...(witnesses[0]
+          ? [{
+              observerId: witnesses[0],
+              content: `你看见${ctx.card.name}当众指控${accused.name}是贼，拿不出证据，两人僵在原地——谁是谁非说不清`,
+              importance: 7,
+            }]
+          : []),
+      ];
       return result;
     },
   };
