@@ -64,12 +64,17 @@ verified/false、推不出 rumor ③顶撞正典挂账不动正典）→ claims 
   （通往 tamper/销赃），无辜者"百口莫辩"结死仇。立场/疙瘩/执念/风声全套复用 B1 机器
 - 修一个真 bug：在场校验曾用构建期闭包（执行期语义错），改 actionCtx 执行期解析
 
-**下次入口（首位）= 全链 live 大戏**：罪案剧本长跑（default-verify 阵容或专用剧本）——
-theft 立案 → examine 查撬痕 → 真凶 tamper 毁证 → 调查者重访 diff → accuse 对质 →
-破案/无证/冤案任一终局。一次长跑同时验：M3 tamper 首演、M4 三终局、examine 冷却闸、
-M2 canonized 路线、真凶被指后"处理钱袋"的行为闭环（信息隔离给的饵）。预算 ~¥1.6-2（余额 5.21）。
-次位：② M2.5 语义级"复述正典"判定 ③ fate 类 beat 的 trace 接线 ④ Bartle 玩法人格
-⑤ 前端消费（器物/正典/claims/案件可视化）。
+**全链 live 大戏 r1 已烧（grounding-verify 剧本，112 tick/596 调用/¥1.21）：机械链 6/7 PASS** ·
+判决 [logs/sim-grounding-verify-live1-VERDICT.md](./logs/sim-grounding-verify-live1-VERDICT.md)。
+零编排自燃：tick72 失窃立案+撬痕落收银匣 → 公开门整夜正确闭锁 → day2 晨 rei 发现（accuse 解锁）→
+风声传开；run 尾只剩 4 游戏小时，指控未上演（时间窗非机制）。**accuse 零滥用**（浮现 67 次零乱指，
+重棋措辞压住新玩具效应）；examine 冷却闸复验 PASS（56→29 次，占决策 10%）；缓存 64.1%。
+基建同车修：案件公开门（发现才浮现 accuse——引擎不泄露没人知道的罪）+ 花店收银匣 authoring 洞。
+
+**下次入口**：① 大戏 r2 延长弧看终局——END_TICK=232（day3 10:00，≈¥2.5-3，余额 3.67 需先充值
+或砍到 184）——命令在 VERDICT 尾部 ② **动词空间缺"搜查"**（r1 发现：L 拿 tamper 当深查用被叙事
+成做贼）——补 search 可供性 + tamper 描述收紧 ③ 微瑕：theft 风声文本"铁盒"与器物真名词面错位
+④ M2.5 语义复述判定 ⑤ fate beat trace 接线 ⑥ Bartle 玩法人格 ⑦ 前端消费（器物/正典/案件可视化）。
 
 ## 当前状态（2026-08-09）
 
