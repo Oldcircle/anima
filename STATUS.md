@@ -29,10 +29,16 @@
 - **缓存纪律**：器物集/examine 描述/骨架行随「角色×地点」静态（有单测锁定逐字节一致）；动态全走此刻区；
   `ANIMA_GROUNDING=0` 整层退场逐字节回退（off 档 A/B）；prompt-cache-discipline 回归绿
 
-**下次入口**：① halfday live 验收（看点：examine 真被调用/意图指路命中率/骨架行不挤爆 token）
-② M2 懒实体化正典裁决（三规则+史料推导——PLAN §2 M2，核心新范式件）③ M3 tamper 灰工具+PbtA
-三段掷骰 ④ 遗留：fate 类 beat 的罪案 trace 接线（beats.yml schema 扩展；default-verify 的
-verify_d1_crime 目前仍纯文本注入，杂货店钱盒不会自动带撬痕）⑤ Bartle 玩法人格夹带（PLAN 附录）。
+**halfday live 验收 r1（同日，¥0.64）：PASS** · 判决 [logs/sim-halfday-grounding-r1-VERDICT.md](./logs/sim-halfday-grounding-r1-VERDICT.md)。
+examine 零引导全员自发采用（51次/13件器物/7地点）；**L 查借阅台账后拿着正典钩子当众质询夜神月**
+（调查戏首次踩真器物开打）；asuka 反复查咖啡机被鲁鲁修当场调侃（器物交互自动进社交层）；缓存 67.1%
+无回归。坏味道当日已修：examine 占决策 31%、61% 复读——重复衰减已落地（未变化器物复查只给
+"没什么新东西"短反馈，955 单测）。M2 需求被实证：器物真了、翻开后的内容细节仍是编的（"十七笔/十五笔"）。
+
+**下次入口**：① M2 懒实体化正典裁决（三规则+史料推导——PLAN §2 M2，核心新范式件；halfday r1
+已实证需求）② M3 tamper 灰工具+PbtA 三段掷骰（重访 diff 通道在等它）③ 重复衰减 live 复验搭车
+④ 遗留：fate 类 beat 的罪案 trace 接线（beats.yml schema 扩展；default-verify 的 verify_d1_crime
+目前仍纯文本注入，杂货店钱盒不会自动带撬痕）⑤ Bartle 玩法人格夹带（PLAN 附录）。
 
 ## 当前状态（2026-08-09）
 

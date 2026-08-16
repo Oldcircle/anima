@@ -122,6 +122,22 @@ describe("examine 与痕迹", () => {
     expect(store.examine("x.cup", "a", 1)).toContain("寻常");
   });
 
+  it("重复衰减：未变化的器物再查只给短反馈；变化后全文恢复", () => {
+    const store = makeStore();
+    const first = store.examine("library.ledger", "l", 10)!;
+    expect(first).toContain("台账按月换页"); // 首查全文
+    const repeat = store.examine("library.ledger", "l", 11)!;
+    expect(repeat).toContain("没什么新东西"); // 复读被衰减
+    expect(repeat).not.toContain("台账按月换页");
+    // 别的角色首查不受影响
+    expect(store.examine("library.ledger", "light", 12)).toContain("台账按月换页");
+    // 器物变化 → 全文恢复（含新痕迹）
+    store.addTrace("library.ledger", { id: "torn", text: "最新一页被撕掉了", addedTick: 13, source: "event" });
+    const afterChange = store.examine("library.ledger", "l", 14)!;
+    expect(afterChange).toContain("最新一页被撕掉了");
+    expect(afterChange).toContain("台账按月换页");
+  });
+
   it("trace 同 id 去重；addTraceAt 词面命中落痕、命不中静默跳过", () => {
     const store = makeStore();
     expect(store.addTrace("library.ledger", { id: "t1", text: "x", addedTick: 1, source: "event" })).toBe(true);

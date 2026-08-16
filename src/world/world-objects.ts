@@ -249,16 +249,25 @@ export class WorldObjectStore {
 
   /**
    * examine 的 ground truth：骨架描述 + 正典 + 当下痕迹。记录 lastSeen（重访 diff 基线）。
+   *
+   * 重复衰减（halfday live r1 教训：examine 占决策 31%、六成是对未变化器物的复读）：
+   * 同一角色对**没有变化**的器物再查，只给一句"没什么新东西"的短反馈——不复读全文、
+   * 不刷记忆、不喂奖励回路；器物一旦有变化（trace/flags/正典），全文恢复。
    */
   examine(key: string, characterId: string, tick: number): string | undefined {
     const obj = this.byKey.get(key);
     if (!obj) return undefined;
+    const digest = this.digest(obj);
+    const seen = obj.lastSeen[characterId];
+    obj.lastSeen[characterId] = { tick, digest };
+    if (seen && seen.digest === digest) {
+      return `和你上次看到的没什么两样，没什么新东西`;
+    }
     const parts: string[] = [];
     if (obj.summary) parts.push(obj.summary);
     for (const f of obj.canonFacts) parts.push(f.text);
     for (const t of obj.traces) parts.push(t.text);
     if (parts.length === 0) parts.push(`${obj.name}没什么特别的，就是寻常的${obj.name}`);
-    obj.lastSeen[characterId] = { tick, digest: this.digest(obj) };
     return parts.join("；");
   }
 
