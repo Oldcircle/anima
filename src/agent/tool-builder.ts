@@ -21,6 +21,7 @@ import { getItemDef, hasItem, resolveItem } from "../world/item-registry.js";
 import { argueFrictionGateEnabled, argueFrictionIncludesNegativeLevel, getBreakLevel } from "./break-config.js";
 import type { ShopItem } from "../world/item-types.js";
 import { parseAppointmentTime, describeAppointmentTime } from "../world/appointments.js";
+import { groundingEnabled, type WorldObjectStore } from "../world/world-objects.js";
 
 export interface ToolBuildContext {
   state: CharacterState;
@@ -44,6 +45,10 @@ export interface ToolBuildContext {
   activePhase?: string;
   /** 剧本提供的 phase-specific 工具集 */
   phaseTools?: ActionDefinition[];
+  /** 器物层（PLAN-grounding M0/M1）：examine 工具与此刻区器物触发线的数据源 */
+  objects?: WorldObjectStore;
+  /** 意图触发的匹配源文本（今日打算+在身意图+执念摘要），agent-loop 组装 */
+  intentTexts?: string[];
 }
 
 /**
@@ -94,6 +99,11 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
 
   // 2e. give：恒定声明（背包与在场者在执行期校验）
   tools.push(buildGiveTool(ctx));
+
+  // 2e2. examine：地点有器物即浮现（器物集随地点静态——缓存键仍是角色×地点）
+  if (groundingEnabled() && ctx.objects && ctx.objects.getAtLocation(ctx.location.id).length > 0) {
+    tools.push(buildExamineTool(ctx));
+  }
 
   // 2f. 物品启用的工具（notebook→journal, guitar→practice_music 等）
   for (const item of (ctx.state.inventory ?? [])) {
@@ -1563,6 +1573,48 @@ function buildLocationTool(
  * 店里现价/库存/买不买得起）全部在这里补回给模型。工具表保持字节稳定，
  * 时效信息作为消息内容随每 tick 更新——对应 Claude Code 的 system-reminder 模式。
  */
+/**
+ * examine（PLAN-grounding M1 触发通道③：主动触发）——模型问，世界答 ground truth。
+ * 描述与器物名单随地点静态（缓存键=角色×地点）；返回内容进记忆，lastSeen 落重访 diff 基线。
+ */
+function buildExamineTool(ctx: ToolBuildContext): ActionDefinition {
+  const store = ctx.objects!;
+  const names = store.getAtLocation(ctx.location.id).map((o) => o.name).join("、");
+  return {
+    tool: {
+      name: "examine",
+      description: `仔细查看这里的某样东西，看清它真实的样子。这里值得细看的有：${names}。`,
+      parameters: {
+        type: "object",
+        properties: {
+          thought: { type: "string", description: "你在想什么，为什么想看它" },
+          target: { type: "string", description: "看什么（这里的东西）" },
+        },
+        required: ["thought", "target"],
+      },
+    },
+    handler: (args, actionCtx) => {
+      const target = String(args.target ?? "").trim();
+      const obj = target ? store.resolveByName(ctx.location.id, target) : undefined;
+      if (!obj) {
+        return {
+          description: `你四下看了看，没找到「${target || "想看的东西"}」。这里值得细看的是：${names}。`,
+          effects: [],
+          success: false,
+        };
+      }
+      const truth = store.examine(obj.key, ctx.card.id, actionCtx.tick) ?? "";
+      console.log(`🔍 [examine] ${ctx.card.id} → ${obj.key}`);
+      return {
+        description: `你仔细查看${obj.name}：${truth}`,
+        effects: [],
+        duration: 1,
+        observableState: `正在仔细端详${obj.name}`,
+      };
+    },
+  };
+}
+
 export function buildEnvironmentSnapshot(ctx: ToolBuildContext): string {
   const lines: string[] = [];
 
@@ -1622,6 +1674,13 @@ export function buildEnvironmentSnapshot(ctx: ToolBuildContext): string {
       const remainHours = Math.ceil((g.matureTicks - (ctx.tick - g.plantedTick)) / 4);
       lines.push(`你在农田种着一块菜地，大约还要${remainHours}小时成熟（去照看照看能熟得快点）。`);
     }
+  }
+
+  // 器物层（PLAN-grounding M1 触发通道②④）：重访 diff + 意图指路。
+  // 只提醒不给真相——真相必须用 examine 换（保住看见→行动→反馈的玩家回路）
+  if (groundingEnabled() && ctx.objects) {
+    lines.push(...ctx.objects.diffForCharacter(ctx.location.id, ctx.state.id));
+    lines.push(...ctx.objects.matchIntents(ctx.location.id, ctx.intentTexts ?? [], ctx.state.id));
   }
 
   if (lines.length === 0) return "";

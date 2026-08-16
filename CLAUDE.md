@@ -132,6 +132,7 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 ## 活跃文档
 
 - [STATUS.md](./STATUS.md) — **会话交接文档**（当前进度 + 下次入口 + 跨会话教训），进项目先读这个
+- [PLAN-grounding.md](./PLAN-grounding.md) — **世界接地规格**（器物层/懒实体化正典/注入触发/AI=玩家总帧 + PbtA 骰子/信息经济），器物层（world-objects/examine/骨架行）以此为准
 - [DESIGN-revival.md](./DESIGN-revival.md) — **复活调优规格**（压力图谱/第二幕机器/活人感质感/剧本包 + 红线 + 单测形状清单），新叙事机制（pressure-graph/world-events/crime-supply/stance-extractor/执念/beat 升级）以此为准
 - [PLAN-kira.md](./PLAN-kira.md) — kira-incident 剧本包（死亡笔记非致死移植）：正典解剖 + 诅咒之册机制 + 信息图/到期日设计
 - [AUDIT-aliveness-20260704.md](./AUDIT-aliveness-20260704.md) — **活人感全面体检报告**（93 条验证后发现：6 个实锤 bug + 六大结构性根因 + quick wins/deep work 修复路线），「过家家感」问题以此为准
@@ -152,6 +153,7 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com  # 可选，默认值
 DEEPSEEK_THINKING=disabled        # 思考模式（auto/disabled/enabled），仅 deepseek-v4-* 生效
 ANIMA_BREAK_LEVEL=mild            # 破线强度 off/mild/strong（下行通道解锁），默认 mild；scenario manifest break_level 优先级更高
 ANIMA_DECISION_POV=first          # 决策视角 first/third，默认 first。third=作者预测框架（深翻顶块+决策指令）+ 私有通道：两层动机行【表面】｜【真心】经 motive-channel.ts 解析，真心层只走观看者通道（WS motive 字段/🎭 日志）、本人记忆只回流表面层。与 BREAK_LEVEL 正交，见 STATUS
+ANIMA_GROUNDING=1                 # 器物层（PLAN-grounding M0/M1）：地点招牌器物+examine+触发通道。默认开；=0 整层退场逐字节回归（A/B）
 ANIMA_PROMPT_DUMP=1               # 可选调试：把每次 LLM 请求体落盘 logs/prompt-dumps/<kind>/，供相邻请求 diff 前缀断点
 PORT=3001                         # Web 服务端口，可选
 ```

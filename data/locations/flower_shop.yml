@@ -55,3 +55,25 @@ atmosphere:
   rainy: |
     雨天的花店特别安静，门口的花被搬进屋里，挤挤挨挨地摆了一地。
     雨水顺着屋檐滴下来，和花店里轻柔的音乐混在一起。泥土的潮湿味和花香交织。
+
+# 器物层（PLAN-grounding M0）
+objects:
+  - id: workbench
+    name: 花艺台
+    summary: 剪枝包花的木工作台，留着剪刀和麻绳的痕迹
+    keywords: [花艺, 工作台, 剪刀]
+    canon:
+      - 台面左角的水渍圈是常年放水壶的位置
+  - id: order_book
+    name: 订花簿
+    summary: 记订花的小本子——谁订了花、送给谁，都写在上面
+    keywords: [订花, 本子, 订单]
+    canon:
+      - 有些订花人指名不留名字——本子上就画一个圈代替
+    tamperable: true
+  - id: pots
+    name: 门口盆栽
+    summary: 门口一排盆栽，每天开门前浇好水
+    keywords: [盆栽, 花盆]
+    canon:
+      - 最旧那只陶盆缺了个口，是店开张那年就在的

@@ -26,6 +26,7 @@ import { addMoodlet, type MoodletEmotion } from "../world/moodlets.js";
 import { textSimilarity } from "../memory/mmr.js";
 import { applyNarrativeTags, extractTagsFromArgs, hasAnyTags } from "../narrative/tag-applier.js";
 import { getDecisionPov, obsessionsEnabled } from "./break-config.js";
+import { groundingEnabled } from "../world/world-objects.js";
 import { parseMotiveChannel, type MotiveChannel } from "./motive-channel.js";
 import { v4 as uuid } from "uuid";
 
@@ -162,6 +163,10 @@ export async function runAgentTick(params: {
   // 缓存纪律：工具表只随（角色×地点）变化；每 tick 抖动的可供性信息
   // 由同一个 ctx 生成环境快照，注入 user prompt 末尾的"此刻区"。
   const characterNames = new Map(world.getAllCharacters().map((c) => [c.id, c.name]));
+  // B5 执念（一次读取两处消费：此刻区"心里挂着的事" + 器物意图触发）
+  const obsessionTexts = obsessionsEnabled()
+    ? world.narrative.getActiveObsessions(card.id, gameTime.day, 2).map((o) => o.summary)
+    : undefined;
   const toolCtx = {
     state,
     card,
@@ -177,6 +182,13 @@ export async function runAgentTick(params: {
     characterNames,
     activePhase: world.narrative.getWorld().activePhase,
     phaseTools: params.phaseTools,
+    // 器物层（PLAN-grounding M1）：examine 数据源 + 意图触发匹配源（打算/在身意图/执念）
+    objects: world.objects,
+    intentTexts: [
+      ...(state.todayPlan?.day === gameTime.day ? state.todayPlan.items : []),
+      ...(currentIntent ? [currentIntent.summary] : []),
+      ...(obsessionTexts ?? []),
+    ],
   };
   const dynamicActions = buildToolList(toolCtx);
   const environmentInfo = buildEnvironmentSnapshot(toolCtx);
@@ -235,10 +247,10 @@ export async function runAgentTick(params: {
     upcomingAppointments,
     todayPlan: state.todayPlan?.day === gameTime.day ? state.todayPlan.items : undefined,
     // B5 多日执念消费：此刻区 ≤2 条（off 档不注入——红线②治愈系基线）
-    obsessions: obsessionsEnabled()
-      ? world.narrative.getActiveObsessions(card.id, gameTime.day, 2).map((o) => o.summary)
-      : undefined,
+    obsessions: obsessionTexts,
     environmentInfo,
+    // 器物骨架行（M1 入场触发）：静态per地点，随氛围块进稳定区
+    objectSkeleton: groundingEnabled() ? world.objects.describeSkeleton(state.locationId) : undefined,
   });
 
   // 对话模式：如果提供了 conversationRequest，使用它替代标准 prompt。

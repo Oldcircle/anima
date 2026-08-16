@@ -49,3 +49,42 @@ atmosphere:
   rainy: |
     下雨天来图书馆的人多了些，大家都想找个安静干燥的地方待着。
     雨声透过窗户隐隐约约传进来，反而让屋里显得更安静。空气比平时潮湿一点。
+
+# 器物层（PLAN-grounding M0）：招牌器物 + 预埋正典钩子（环境叙事）
+objects:
+  - id: ledger
+    name: 借阅台账
+    summary: 前台那本厚台账，谁借走了什么书、哪天该还，都要登记在上面
+    keywords: [台账, 借阅, 记录, 登记]
+    canon:
+      - 台账按月换页，赖着不还书的人，名字会一直挂在页上
+      - 登记全凭管理员的笔——字迹认人，涂改一眼就能看出来
+    tamperable: true
+  - id: shelves
+    name: 书架
+    summary: 一排排高书架，按分区插着书，哪一格缺了书都看得出空当
+    keywords: [书架, 分区, 藏书]
+    canon:
+      - 心理学分区在靠窗最里一排，平时少有人光顾
+      - 最高一格要踩梯凳才够得着，落灰最厚
+    tamperable: true
+  - id: reading_desk
+    name: 阅览桌
+    summary: 靠窗的旧木阅览桌，桌面被磨得发亮
+    keywords: [阅览桌, 靠窗]
+    canon:
+      - 桌角有前人用小刀刻的半个名字，没刻完就被管理员逮住了
+  - id: front_drawer
+    name: 前台抽屉
+    summary: 管理员前台下面带锁的抽屉，收着零钱和借书卡
+    keywords: [抽屉, 钱盒, 前台, 借书卡]
+    canon:
+      - 锁是老式的一字锁，钥匙就拴在管理员腰上
+    tamperable: true
+  - id: notice_board
+    name: 门口公告板
+    summary: 门口的软木公告板，贴着闭馆通知和旧海报
+    keywords: [公告板, 海报, 通知]
+    canon:
+      - 海报层层叠叠没人清理，最底下一层已经晒得发白
+    tamperable: true

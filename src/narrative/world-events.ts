@@ -229,6 +229,16 @@ export function applyTheftWithPerp(deps: WorldEventDeps, params: TheftParams): W
     expiresAt: tick + 32,
   });
 
+  // 4b) 器物层落痕（PLAN-grounding M0）：发现地点有钱盒类器物就把撬痕落成 ground truth——
+  //     撬痕从作案那刻起物理存在（比发现早），examine 查得到、调查者对得上。
+  //     没有匹配器物静默跳过：器物层是增强不是硬依赖。
+  world.objects.addTraceAt(discoveryLoc.id, "钱盒", {
+    id: `theft_${tick}_pried`,
+    text: "锁扣上有几道新鲜的撬痕，像是被硬物别开过",
+    addedTick: tick,
+    source: "event",
+  });
+
   // 4) 延迟发现（随档）：到场才落发现记忆；风声必须晚于发现
   world.narrative.addPendingDiscovery({
     id: `theft_${tick}_${params.victimId}`,

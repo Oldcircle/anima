@@ -55,6 +55,8 @@ export interface Location {
   shop?: import("./item-types.js").ShopItem[];
   /** 员工专属工具（从 YAML 加载） */
   workerTools?: LocationTool[];
+  /** 招牌器物声明（从 YAML 加载；PLAN-grounding M0 器物层） */
+  objects?: import("./world-objects.js").WorldObjectDef[];
 }
 
 /** 临时情绪效果（Moodlet） */

@@ -25,3 +25,25 @@ atmosphere:
   rainy: |
     雨天的码头没什么人，渔船都拴在桩上不出海。雨点打在海面上，
     溅起密密麻麻的小水花。木栈桥湿滑得很，走路要小心。缆绳在风中吱嘎作响。
+
+# 器物层（PLAN-grounding M0）
+objects:
+  - id: nets
+    name: 渔网架
+    summary: 晾渔网的木架，网眼里还挂着碎海草
+    keywords: [渔网]
+    canon:
+      - 谁家的网补丁多，谁家最近收成差——码头上瞒不住
+  - id: boathouse
+    name: 船屋
+    summary: 码头尽头的旧船屋，堆着桨和油桶
+    keywords: [船屋, 油桶]
+    canon:
+      - 门上的挂锁早锈死了，其实一拽就开——码头的人都知道
+    tamperable: true
+  - id: mooring
+    name: 系船桩
+    summary: 一排系船桩，缆绳在上面磨出深槽
+    keywords: [系船桩, 缆绳]
+    canon:
+      - 最外侧那根桩子有裂纹，老渔民不往那儿系船

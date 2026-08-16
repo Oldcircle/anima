@@ -43,3 +43,33 @@ atmosphere:
   rainy: |
     雨天杂货店的生意反而好些，进来避雨顺便买东西的人不少。
     门口摆了个装伞的桶，地上被踩出一片水渍。
+
+# 器物层（PLAN-grounding M0）
+objects:
+  - id: till
+    name: 柜台钱盒
+    summary: 柜台后的铁皮钱盒，白天收的货款都搁在里面，晚上才上锁
+    keywords: [钱盒, 铁盒, 货款, 柜台]
+    canon:
+      - 锁扣去年换过一次新的，旧的那个用螺丝刀就能别开
+      - 店主记账全靠盒底压着的一沓单据
+    tamperable: true
+  - id: shelves
+    name: 货架
+    summary: 顶到房梁的木货架，日用品和零食分层摆放
+    keywords: [货架, 日用品, 存货]
+    canon:
+      - 最上层的存货落着灰，店主自己都记不清放了什么
+  - id: radio
+    name: 老收音机
+    summary: 柜台后那台老收音机，店主一开门就拧开
+    keywords: [收音机]
+    canon:
+      - 旋钮松了，只收得到早间新闻和一个戏曲台
+  - id: price_board
+    name: 特价牌
+    summary: 门口的手写特价牌，粉笔字
+    keywords: [特价, 牌子]
+    canon:
+      - 笔迹是店主的，写错了就用袖口一抹
+    tamperable: true

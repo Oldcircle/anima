@@ -104,6 +104,7 @@ export function saveGame(sim: Simulation, dbPath: string, scenarioId?: string): 
       longTermMemories,
       appointments,
       narrativeJson: JSON.stringify(sim.world.narrative.getSnapshot()),
+      worldObjectsJson: JSON.stringify(sim.world.objects.getSnapshot()),
       scenarioId,
       locationStockJson: JSON.stringify(
         Object.fromEntries(
@@ -155,6 +156,15 @@ export function loadGame(sim: Simulation, dbPath: string, scenarioId?: string): 
         sim.world.narrative.replaceSnapshot(snap);
       } catch (e) {
         console.warn(`⚠️  narrative_state 读档失败: ${(e as Error).message}`);
+      }
+    }
+
+    // 器物层动态状态（traces/flags/lastSeen/运行期正典）——YAML 声明已在 World 构造时登记
+    if (worldState.worldObjectsJson) {
+      try {
+        sim.world.objects.replaceSnapshot(JSON.parse(worldState.worldObjectsJson));
+      } catch (e) {
+        console.warn(`⚠️  world_objects 读档失败: ${(e as Error).message}`);
       }
     }
 

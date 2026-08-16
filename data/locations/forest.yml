@@ -29,3 +29,25 @@ atmosphere:
   rainy: |
     雨天的森林像被水浸透了，每片叶子都在滴水。
     树干变成深褐色，苔藓绿得发亮。脚下的泥很滑，空气里全是泥土和绿叶的味道。
+
+# 器物层（PLAN-grounding M0）
+objects:
+  - id: old_stump
+    name: 老树桩
+    summary: 林间空地的大树桩，年轮数得清
+    keywords: [树桩, 年轮]
+    canon:
+      - 树桩中心有个浅洞，偶尔有人往里放小东西——像个不成文的信箱
+    tamperable: true
+  - id: trail_fork
+    name: 小径岔口
+    summary: 两条小径的岔口，一条往深林、一条绕回镇上
+    keywords: [小径, 岔口, 深林]
+    canon:
+      - 往深林那条走的人少，落叶积得厚——有没有人走过，一眼就能看出来
+  - id: spring
+    name: 山泉眼
+    summary: 石缝里渗出的山泉，接一捧冰得牙酸
+    keywords: [山泉, 泉水]
+    canon:
+      - 泉眼边那块石头被踩得溜光——来接水的人都踩同一块

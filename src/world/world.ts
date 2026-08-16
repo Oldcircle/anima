@@ -17,12 +17,15 @@ import type { LifeState } from "../character/types.js";
 import { tickToGameTime, type GameTime } from "../core/tick-engine.js";
 import { getDefaultNeeds, getDecayRates } from "./need-definitions.js";
 import { NarrativeState } from "../narrative/narrative-state.js";
+import { WorldObjectStore } from "./world-objects.js";
 
 export class World {
   private _state: WorldState;
   private _characters: Map<string, CharacterState> = new Map();
   /** 叙事状态命名空间（N2 引入）。与 needs/relationships 平级。 */
   readonly narrative: NarrativeState;
+  /** 器物层（PLAN-grounding M0）：地点招牌器物的 ground truth 存储 */
+  readonly objects: WorldObjectStore;
 
   /**
    * kira-incident 剧本状态（诅咒之册）。瞬态不入档（v1：一次 sim 跑完整个事件，
@@ -46,6 +49,8 @@ export class World {
       locations: new Map(locations.map((l) => [l.id, { ...l, presentCharacters: [...l.presentCharacters] }])),
     };
     this.narrative = new NarrativeState();
+    this.objects = new WorldObjectStore();
+    for (const l of locations) this.objects.registerLocation(l);
   }
 
   get tick(): number {
@@ -93,6 +98,8 @@ export class World {
     } else {
       this._state.locations.set(loc.id, { ...loc, presentCharacters: [...(loc.presentCharacters ?? [])] });
     }
+    // 器物层同步登记（幂等：已有动态状态保留）
+    this.objects.registerLocation(loc);
   }
 
   /**

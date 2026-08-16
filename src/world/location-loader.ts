@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { parse as parseYAML } from "yaml";
 import type { Location, LocationAtmosphere, LocationTool, CareerLevel } from "./types.js";
 import type { ShopItem } from "./item-types.js";
+import { normalizeObjectDefs } from "./world-objects.js";
 
 interface RawLocation {
   id: string;
@@ -19,6 +20,7 @@ interface RawLocation {
   worker_tools?: LocationTool[];
   career_track?: CareerLevel[];
   shop?: ShopItem[];
+  objects?: unknown;
 }
 
 function toLocation(raw: RawLocation): Location {
@@ -34,6 +36,7 @@ function toLocation(raw: RawLocation): Location {
     workerTools: raw.worker_tools,
     careerTrack: raw.career_track,
     shop: raw.shop,
+    objects: normalizeObjectDefs(raw.objects),
   };
 }
 

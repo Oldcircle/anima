@@ -25,3 +25,25 @@ atmosphere:
   rainy: |
     雨天的农田变成了一片泥泞，田垄间积了水。庄稼被雨打得直不起腰。
     没人在田里干活，只有雨声和偶尔的蛙鸣。
+
+# 器物层（PLAN-grounding M0）
+objects:
+  - id: toolshed
+    name: 农具棚
+    summary: 田边的农具棚，锄头铁锹靠墙立着
+    keywords: [农具, 锄头, 铁锹]
+    canon:
+      - 农具不上锁，借用要放回原位——这是田里的规矩
+    tamperable: true
+  - id: scarecrow
+    name: 稻草人
+    summary: 田中央的旧稻草人，戴一顶褪色的草帽
+    keywords: [稻草人, 草帽]
+    canon:
+      - 草帽已经换过三顶，前两顶都是被台风卷走的
+  - id: well
+    name: 老水井
+    summary: 田角的老水井，辘轳还能用
+    keywords: [水井, 辘轳]
+    canon:
+      - 井绳每年换一次；井底据说掉过一把钥匙，一直没捞上来

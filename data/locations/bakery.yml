@@ -59,3 +59,32 @@ atmosphere:
   rainy: |
     雨天的面包店格外温暖，玻璃窗被热气蒸出水雾。
     推门进去的瞬间，湿冷的空气和烤面包的香气撞在一起，让人不自觉地放松肩膀。
+
+# 器物层（PLAN-grounding M0）
+objects:
+  - id: register
+    name: 收银台
+    summary: 柜台一角的收银台，抽屉里收着当日货款
+    keywords: [收银, 钱盒, 货款, 抽屉]
+    canon:
+      - 抽屉合不严，得抬一下再推才关得上——熟手都知道
+    tamperable: true
+  - id: oven
+    name: 老烤炉
+    summary: 这家店的心脏，一台烧了很多年的老烤炉
+    keywords: [烤炉, 烤箱]
+    canon:
+      - 炉膛第二层受热不匀，只用来烤脆皮——店里的老规矩
+  - id: display
+    name: 展示柜
+    summary: 玻璃展示柜，可颂和面包按出炉批次摆
+    keywords: [展示柜, 可颂, 玻璃柜]
+    canon:
+      - 玻璃上每天都会留下小孩的手印和鼻尖印
+  - id: backdoor
+    name: 后门
+    summary: 通后巷的木后门，平时进货走这里
+    keywords: [后门, 后巷]
+    canon:
+      - 门轴缺油，一推就吱呀响，夜里听得格外清楚
+    tamperable: true

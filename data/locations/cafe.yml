@@ -68,3 +68,32 @@ atmosphere:
   rainy: |
     雨打在遮阳棚上，发出密集的沙沙声。玻璃门上蒙了一层雾气，
     偶尔有人推门进来，带进一股潮湿的风和泥土的味道。店里比平时暖和。
+
+# 器物层（PLAN-grounding M0）
+objects:
+  - id: machine
+    name: 咖啡机
+    summary: 吧台后的咖啡机，嗡嗡声是店里的底噪
+    keywords: [咖啡机]
+    canon:
+      - 蒸汽阀有个小脾气，拧到一半要停半拍再拧到底——只有店里人知道
+  - id: window_seat
+    name: 靠窗座
+    summary: 落地窗边最抢手的位子，阳光最好
+    keywords: [靠窗, 位子, 座位]
+    canon:
+      - 桌面下粘着不知哪年谁按上去的口香糖，硬得像化石
+  - id: register
+    name: 收银台
+    summary: 吧台一端的收银台，找零盘就摆在旁边
+    keywords: [收银, 钱盒, 找零]
+    canon:
+      - 找零盘里常年混着一枚谁也不肯收的外国硬币
+    tamperable: true
+  - id: menu_board
+    name: 菜单黑板
+    summary: 手写粉笔菜单，今日特调写在最上面
+    keywords: [黑板, 菜单, 特调]
+    canon:
+      - 右下角有一块谁都不许擦的旧字迹，是开店那天写的
+    tamperable: true

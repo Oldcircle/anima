@@ -470,6 +470,8 @@ export function buildUserPrompt(params: {
   obsessions?: string[];
   /** 环境快照（tool-builder.buildEnvironmentSnapshot）：各地点谁在/营业、店内现价库存 */
   environmentInfo?: string;
+  /** 器物骨架行（PLAN-grounding M1 入场触发）：本地点招牌器物名单——静态per地点，随氛围块进稳定区 */
+  objectSkeleton?: string;
 }): string {
   const { card, state, gameTime, nearbyCharacters, recentEvents, locationName, allLocationNames } = params;
   const locationType = params.locationType ?? "public";
@@ -495,11 +497,13 @@ export function buildUserPrompt(params: {
   if (params.festivalHint) parts.push(`\n🎉 **${params.festivalHint}**`);
 
   // 环境感知：优先用 atmosphere 描写，否则回退到地点名（随地点/时段/天气缓变）
+  // 器物骨架行跟在氛围后面：只有名字零状态，变化频率与氛围块一致（缓存安全）
   const atmosphereText = getAtmosphereText(params.atmosphere, gameTime.hour, params.weather ?? "sunny");
+  const skeletonSuffix = params.objectSkeleton ? `\n${params.objectSkeleton}` : "";
   if (atmosphereText) {
-    parts.push(`\n## 你现在看到的\n${locationName}——${atmosphereText}`);
+    parts.push(`\n## 你现在看到的\n${locationName}——${atmosphereText}${skeletonSuffix}`);
   } else {
-    parts.push(`\n## 你现在看到的\n${locationName}。`);
+    parts.push(`\n## 你现在看到的\n${locationName}。${skeletonSuffix}`);
   }
 
   // ── 此刻区（每 tick 更新）──

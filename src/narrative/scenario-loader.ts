@@ -20,6 +20,7 @@ import { parse as parseYAML } from "yaml";
 import { loadCharacterFromYAML, loadCharactersFromDir } from "../character/loader.js";
 import { loadLocationsFromDir } from "../world/location-loader.js";
 import { addToInventory } from "../world/item-registry.js";
+import { normalizeObjectDefs } from "../world/world-objects.js";
 import type { CharacterCard } from "../character/types.js";
 import type { Location } from "../world/types.js";
 import { lintBeats, parseBeatsConfig, type BeatDefinition } from "./beat-engine.js";
@@ -485,6 +486,7 @@ function loadLocationsBySelector(
         workerTools: c.worker_tools,
         careerTrack: c.career_track,
         shop: c.shop,
+        objects: normalizeObjectDefs(c.objects),
       } as Location);
       seen.add(c.id);
     }

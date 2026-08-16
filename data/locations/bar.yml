@@ -31,3 +31,25 @@ atmosphere:
   rainy: |
     雨夜的酒吧人特别多，都是不想淋雨回家的人。窗户上全是水雾，
     里面的灯光模模糊糊地透出来。推门进去，一股温暖的酒气扑面而来。
+
+# 器物层（PLAN-grounding M0）
+objects:
+  - id: counter
+    name: 吧台
+    summary: 擦得发亮的木吧台，酒渍浸出深色的年轮
+    keywords: [吧台]
+    canon:
+      - 台面靠里一侧有一道刀刻的正字，没人说得清在数什么
+  - id: bottle_shelf
+    name: 酒架
+    summary: 背墙的酒架，瓶子按度数从低到高排
+    keywords: [酒架, 酒瓶]
+    canon:
+      - 最高层有一瓶从来不卖的酒，老板说那是压店的
+  - id: register
+    name: 收银台
+    summary: 吧台角落的收银台，夜里生意好的时候最乱
+    keywords: [收银, 钱盒]
+    canon:
+      - 夜里收的钱总比账面乱得多，老板懒得细对
+    tamperable: true

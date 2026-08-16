@@ -3,6 +3,37 @@
 > 每次有实质进展时更新。记录当前进度和下次继续的入口，不是日志。
 > （旧 STATUS.md 因 gitignore 未入仓而丢失，本文件 2026-07-03 重建，开发文档已全部入仓）
 
+## 当前状态（2026-08-16）
+
+### 世界接地 M0+M1 落地：器物层 + 四通道触发 + examine · 954 单测全绿 · 规格 [PLAN-grounding.md](./PLAN-grounding.md)
+
+**范式定调（用户 08-16 两连拍板）**：复盘 default-verify 的"证据竞赛"发现调查线不接地——借阅台账/
+锁具图鉴/147页折痕在 src/data **零命中**（=共享虚构，靠对话记忆互相接话），且 verify_d1_crime 明令
+永不破案（调查线是跑步机）。**本质不是模型幻觉，是世界本体贫瘠**（模型在页码级叙事，世界只有地点级）
++ 注入不够 + 触发缺失；总帧=**AI 是这个游戏世界的玩家**（prompt=屏幕/工具=手柄/世界=系统非布景；
+玩家体质：不会掷骰/无屏幕外记忆/无多巴胺/信息隔离靠物理）。规格全文 PLAN-grounding.md（懒实体化正典
+三裁决规则 + 三带注入四通道触发 + PbtA 骰子 + 信息经济 + 环境叙事钩子；revive 分支已合 main 并推远端）。
+
+**落了什么（M0+M1，931→954 单测全绿）**：
+- **器物层** [src/world/world-objects.ts](./src/world/world-objects.ts)：WorldObjectStore——canonFacts
+  （正典：authored=YAML 预埋钩子/运行期追加）+ traces（当下物理痕迹，可清可篡）+ flags + lastSeen
+  （per 角色重访 diff 基线）；随档（world_state 表 `world_objects` 键，读档逐字段规范化+孤儿丢弃）；
+  location YAML 新增 `objects:` 声明（normalizeObjectDefs 显式映射）；**11 个 default 地点 38 件招牌
+  器物已作者**（每件带环境叙事正典钩子：台账字迹认人/船屋锁一拽就开/树桩洞是不成文信箱…）
+- **触发四通道**：①入场=骨架行（只有名字零状态）随氛围块进 user prompt 稳定区 ②意图/执念词面匹配→
+  指路行进此刻区（**指路不给真相**——真相必须 examine 换，保住看见→行动→反馈的玩家回路）③主动=
+  examine 工具（地点有器物即浮现，返回 ground truth 落记忆+lastSeen，`🔍` 日志）④重访 diff
+  （digest 变了→"和你记忆里不太一样"）
+- **罪案接地**：applyTheftWithPerp 在发现地点的钱盒类器物落撬痕 trace（作案即存在早于发现；导演工具
+  与 crime-supply npc 投放两路共用一处接线；无匹配器物静默跳过——增强不是硬依赖）
+- **缓存纪律**：器物集/examine 描述/骨架行随「角色×地点」静态（有单测锁定逐字节一致）；动态全走此刻区；
+  `ANIMA_GROUNDING=0` 整层退场逐字节回退（off 档 A/B）；prompt-cache-discipline 回归绿
+
+**下次入口**：① halfday live 验收（看点：examine 真被调用/意图指路命中率/骨架行不挤爆 token）
+② M2 懒实体化正典裁决（三规则+史料推导——PLAN §2 M2，核心新范式件）③ M3 tamper 灰工具+PbtA
+三段掷骰 ④ 遗留：fate 类 beat 的罪案 trace 接线（beats.yml schema 扩展；default-verify 的
+verify_d1_crime 目前仍纯文本注入，杂货店钱盒不会自动带撬痕）⑤ Bartle 玩法人格夹带（PLAN 附录）。
+
 ## 当前状态（2026-08-09）
 
 ### 复活调优收口：压力图谱 + 第二幕机器 + 活人感质感 · live 验收 PASS · 判决 [logs/sim-default-verify-VERDICT.md](./logs/sim-default-verify-VERDICT.md)

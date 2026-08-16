@@ -33,3 +33,26 @@ atmosphere:
   rainy: |
     雨中的广场空荡荡的，石板被雨水冲得发亮。喷泉的水花和雨滴混在一起，
     分不清哪个是哪个。长椅上积了一层水，没有人坐。
+
+# 器物层（PLAN-grounding M0）
+objects:
+  - id: fountain
+    name: 石喷泉
+    summary: 广场中央的石喷泉，海鸥爱停在沿上
+    keywords: [喷泉]
+    canon:
+      - 池底沉着不少许愿的硬币，捞不捞得看良心
+    tamperable: true
+  - id: notice_board
+    name: 公告板
+    summary: 镇公告板，集会、寻物、卖船的启事都贴这里
+    keywords: [公告板, 启事, 告示, 寻物]
+    canon:
+      - 图钉永远不够用，新启事总压着旧启事的角
+    tamperable: true
+  - id: bench
+    name: 长椅
+    summary: 喷泉边的两条旧长椅，木条被坐得发白
+    keywords: [长椅]
+    canon:
+      - 其中一条的第三根木条松了，坐下去另一头会翘起来

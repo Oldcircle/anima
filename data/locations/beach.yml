@@ -37,3 +37,25 @@ atmosphere:
   rainy: |
     雨天的海边灰蒙蒙的，海面和天空连成一片，分不清哪里是水哪里是云。
     浪比平时大，拍在岩石上溅起白沫。雨点打在沙滩上留下密密麻麻的小坑。
+
+# 器物层（PLAN-grounding M0）
+objects:
+  - id: tide_line
+    name: 潮线
+    summary: 昨夜潮水留下的痕迹，贝壳和海草搁在一条线上
+    keywords: [潮线, 贝壳, 海草]
+    canon:
+      - 每天潮线的位置都不一样，赶海的人看一眼就知道今天运气如何
+  - id: old_boat
+    name: 废旧小船
+    summary: 半埋在沙里的废木船，漆皮剥落
+    keywords: [小船, 木船, 船底]
+    canon:
+      - 船底破了个洞，倒扣着反而成了藏小东西的好地方
+    tamperable: true
+  - id: reef_rocks
+    name: 礁石堆
+    summary: 沙滩尽头的礁石堆，退潮时露出一汪汪水洼
+    keywords: [礁石, 水洼]
+    canon:
+      - 水洼里困住的小鱼小蟹，是耐心人的零嘴
