@@ -89,8 +89,39 @@ export function runCrimeSupply(deps: CrimeSupplyDeps, mode: CrimeSupplyMode | un
     amplifyCastDebts(deps);
   } else if (mode === "npc") {
     ensureCrimeNpc(deps.world);
+    refreshStaticNpcPresence(deps);
     maybeInjectNpcCrime(deps);
   }
+}
+
+/**
+ * v2③ 前置——**浮现层**：静态 NPC 没有 agent 循环，`currentAction` 恒空，在别人的
+ * "你现在看见了谁"里只会渲染成「赵三 ——此刻没有明显动作」，等于一件会呼吸的家具：
+ * 没人有理由跟家具搭话，`replyAsStaticNpc` 那条通路就永远不会被走到。
+ *
+ * 这里每 tick 刷一条**站桩式可观察状态**（走 world.observableState，与真人的 observable 同一条渲染路），
+ * 按 tick 在小集合里轮换、确定性无 rng。只写"他在做什么"，不写"他可疑"——
+ * 判断归看见的人（同 M1 骨架行：只给存在感，真相要用行动换）。
+ */
+function refreshStaticNpcPresence(deps: CrimeSupplyDeps): void {
+  const { world, tick } = deps;
+  const npc = world.getCharacter(CRIME_NPC.id);
+  if (!npc || !world.narrative.isStaticNpc(CRIME_NPC.id)) return;
+  const idles = [
+    "靠在墙边，不点东西也不走，眼睛跟着进出的人转。",
+    "把手插在兜里来回踱了两步，又停下，像在等什么人。",
+    "低头数着手里的几枚零钱，数完又塞回兜里。",
+    "眯着眼往柜台那边看了一会儿，见有人注意到就移开视线。",
+  ];
+  // 每 4 tick（游戏 1 小时）换一条：够稳定不刷屏，也不至于整天一个姿势
+  const idle = idles[Math.floor(tick / 4) % idles.length]!;
+  world.setObservableState(CRIME_NPC.id, {
+    actionName: "loiter",
+    summary: idle,
+    source: "action",
+    createdTick: tick,
+    expiresAt: tick + 4,
+  });
 }
 
 // ── cast 放大器 ──

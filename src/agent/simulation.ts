@@ -757,6 +757,24 @@ export class Simulation {
     this.memory.add(target.id, { tick, type: "event", content: desc, importance: event.importance });
     this.longTerm.add(target.id, { tick, type: "event", importance: event.importance, content: desc });
 
+    // 器物层留痕（PLAN-grounding）：事件在世界本体留下物理痕迹，不只活在记忆文本里——
+    // 两条通路共用这一处（随机命运层 + beat auto_events）。解析不到器物静默跳过（增强不是硬依赖）。
+    // 意义：当时不在场的人，过后 examine 或重访 diff 也能看出这里出过事
+    if (groundingEnabled() && event.objectTrace) {
+      const obj = event.objectTrace.objects
+        .map((name) => this.world.objects.resolveByName(target.locationId, name))
+        .find((o) => o !== undefined);
+      if (obj) {
+        this.world.objects.addTrace(obj.key, {
+          id: `fate_${event.id}_${tick}`,
+          text: event.objectTrace.text,
+          addedTick: tick,
+          source: "event",
+        });
+        console.log(`🎲 [命运] 器物留痕：${obj.name} ← ${event.objectTrace.text}`);
+      }
+    }
+
     const affected = [target.id];
     if (event.witnessTemplate) {
       const witnessDesc = event.witnessTemplate.replace("{character}", target.name);

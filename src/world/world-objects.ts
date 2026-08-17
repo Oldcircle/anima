@@ -80,7 +80,8 @@ export const TAMPER_COOLDOWN_TICKS = 48;
 /**
  * M2 断言账本条目：谁对哪件器物说了什么、世界怎么裁决的。
  * canonized=首述即正典 / verified=史料推导为真 / false=史料推导为伪（与世界不符）/
- * rumor=推不出（传闻死胡同）/ contradict=与既成正典矛盾（正典不动，说法挂账）
+ * rumor=推不出（传闻死胡同）/ contradict=与既成正典矛盾（正典不动，说法挂账）/
+ * restate=既有正典的措辞变体复述（M2.5：正典在流通，不是新断言——不新增正典也不挂传闻账）
  */
 export interface WorldClaim {
   id: string;
@@ -88,7 +89,7 @@ export interface WorldClaim {
   speakerId: string;
   objectKey: string;
   claim: string;
-  verdict: "canonized" | "verified" | "false" | "rumor" | "contradict";
+  verdict: "canonized" | "verified" | "false" | "rumor" | "contradict" | "restate";
   witnesses?: string[];
 }
 
@@ -449,7 +450,7 @@ export class WorldObjectStore {
             typeof c.id === "string" && typeof c.speakerId === "string" &&
             typeof c.objectKey === "string" && typeof c.claim === "string" &&
             typeof c.tick === "number" && Number.isFinite(c.tick) &&
-            ["canonized", "verified", "false", "rumor", "contradict"].includes(c.verdict as string),
+            ["canonized", "verified", "false", "rumor", "contradict", "restate"].includes(c.verdict as string),
         )
         .slice(-MAX_CLAIMS);
     }

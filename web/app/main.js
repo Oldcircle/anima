@@ -146,6 +146,7 @@ function App() {
           <div class="group-title">观察</div>
           <${NavLink} href="/live" route=${route}>实时</${NavLink}>
           <${NavLink} href="/narrative" route=${route}>叙事</${NavLink}>
+          <${NavLink} href="/grounding" route=${route}>世界</${NavLink}>
           <div class="group-title">配置</div>
           <${NavLink} href="/characters" route=${route}>角色</${NavLink}>
           <${NavLink} href="/locations" route=${route}>地点</${NavLink}>
@@ -188,6 +189,7 @@ function renderRoute(route) {
   if (route === "/locations") return html`<${LocationsPage} />`;
   if (route === "/settings") return html`<${SettingsPage} />`;
   if (route === "/narrative") return html`<${NarrativePage} />`;
+  if (route === "/grounding") return html`<${GroundingPage} />`;
   return html`<${LivePage} />`;
 }
 
@@ -699,6 +701,154 @@ function NarrativePage() {
           </div>
           <button class="primary" onClick=${submitObs}>投递</button>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+// ===== 世界（接地层）页：器物 / 正典 / 痕迹 / 断言账本 / 案件 / 线索执念 =====
+// 这是观看者通道（对齐 🎭 motive）：真凶等剧透字段后端给得出来，前端默认折叠。
+
+const VERDICT_LABEL = {
+  canonized: "首述即正典", verified: "史料为真", false: "与世界不符",
+  rumor: "推不出（传闻）", contradict: "顶撞正典", restate: "复述既成正典",
+};
+
+function GroundingPage() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [spoil, setSpoil] = useState(false);
+  const [q, setQ] = useState("");
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try { setData(await api("/api/grounding")); }
+    catch (e) { toast("加载失败：" + e.message, "error"); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    const id = setInterval(reload, 5000);
+    return () => clearInterval(id);
+  }, [reload]);
+
+  const objects = data?.objects ?? [];
+  const filtered = useMemo(() => {
+    const needle = q.trim();
+    if (!needle) return objects;
+    return objects.filter((o) =>
+      [o.name, o.locationName, o.summary ?? "", ...o.canonFacts.map((f) => f.text), ...o.traces.map((t) => t.text)]
+        .join(" ").includes(needle));
+  }, [objects, q]);
+
+  const byLocation = useMemo(() => {
+    const m = new Map();
+    for (const o of filtered) {
+      if (!m.has(o.locationName)) m.set(o.locationName, []);
+      m.get(o.locationName).push(o);
+    }
+    return [...m.entries()];
+  }, [filtered]);
+
+  const traced = objects.filter((o) => o.traces.length > 0);
+  const claims = data?.claims ?? [];
+  const cases = data?.cases ?? [];
+  const leads = data?.leads ?? [];
+
+  return html`
+    <h1>世界（接地层）</h1>
+    <div class="subtitle">器物是这个世界的本体：正典是"确证的事"，痕迹是"当下的物理状态"。角色用 examine 换真相、用 tamper 改痕迹，断言账本记着谁说过什么、世界怎么裁决的。</div>
+
+    <div class="toolbar">
+      <button style="flex:none;white-space:nowrap;" onClick=${reload}>${loading ? "刷新中…" : "刷新"}</button>
+      <input placeholder="搜器物/正典/痕迹…" value=${q} onInput=${(e) => setQ(e.target.value)} style="min-width:220px;max-width:320px;" />
+      <div class="spacer"></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8b949e;white-space:nowrap;flex:none;">
+        <input type="checkbox" checked=${spoil} onChange=${(e) => setSpoil(e.target.checked)} />
+        显示剧透（真凶）
+      </label>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;">
+      <div class="card"><div class="title">器物</div><div style="font-size:28px;font-weight:600;">${objects.length}</div></div>
+      <div class="card"><div class="title">带痕迹的器物</div><div style="font-size:28px;font-weight:600;">${traced.length}</div></div>
+      <div class="card"><div class="title">断言账本</div><div style="font-size:28px;font-weight:600;">${claims.length}</div></div>
+      <div class="card"><div class="title">案件</div><div style="font-size:28px;font-weight:600;">${cases.length}</div></div>
+      <div class="card"><div class="title">线索执念</div><div style="font-size:28px;font-weight:600;">${leads.length}</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+      <div>
+        <h2 style="font-size:16px;margin-top:0;">器物层</h2>
+        ${byLocation.length === 0 && html`<div class="empty">（没有器物——ANIMA_GROUNDING=0 或该剧本地点未声明 objects）</div>`}
+        ${byLocation.map(([locName, objs]) => html`
+          <div style="margin-bottom:14px;">
+            <div class="muted" style="font-size:11px;margin-bottom:6px;">${locName}</div>
+            ${objs.map((o) => html`
+              <div class="card" style="margin-bottom:8px;">
+                <div class="title">${o.name}${o.tamperable ? " · 可动手脚" : ""}</div>
+                ${o.summary && html`<div class="muted" style="font-size:12px;">${o.summary}</div>`}
+                ${o.canonFacts.map((f) => html`
+                  <div style="font-size:12px;margin-top:4px;">📜 ${f.text}
+                    <span class="muted" style="font-size:10px;"> (${f.source === "authored" ? "预埋" : f.source === "canonized" ? "对话生成" : "事件"})</span>
+                  </div>
+                `)}
+                ${o.traces.map((t) => html`
+                  <div style="font-size:12px;margin-top:4px;color:#d29922;">🩸 ${t.text}
+                    <span class="muted" style="font-size:10px;"> (tick ${t.addedTick})</span>
+                  </div>
+                `)}
+                ${o.seenBy.length > 0 && html`<div class="muted" style="font-size:10px;margin-top:4px;">查看过：${o.seenBy.join("、")}</div>`}
+              </div>
+            `)}
+          </div>
+        `)}
+      </div>
+
+      <div>
+        <h2 style="font-size:16px;margin-top:0;">案件账本</h2>
+        ${cases.length === 0 && html`<div class="empty">（没有立案）</div>`}
+        ${cases.map((c) => html`
+          <div class="card" style="margin-bottom:8px;">
+            <div class="title">[${c.status}] ${c.victimId} 丢了 ${c.amount} 金币</div>
+            <div class="muted" style="font-size:11px;margin-top:4px;">
+              立案 tick ${c.createdTick} ·
+              ${c.publicSinceTick !== undefined ? `已公开 @ ${c.publicSinceTick}` : "尚未公开（只有引擎知道）"}
+              ${c.closedTick !== undefined ? ` · 结案 @ ${c.closedTick}` : ""}
+            </div>
+            <div style="font-size:12px;margin-top:4px;">
+              指控：${Object.entries(c.accusations).length === 0
+                ? "（无人指控）"
+                : Object.entries(c.accusations).map(([a, b]) => `${a}→${b}`).join("、")}
+            </div>
+            <div style="font-size:12px;margin-top:4px;color:#f85149;">
+              真凶：${spoil ? c.perpId : "（勾选「显示剧透」查看）"}
+            </div>
+          </div>
+        `)}
+
+        <h2 style="font-size:16px;margin-top:18px;">线索执念（谁心里还挂着）</h2>
+        ${leads.length === 0 && html`<div class="empty">（没有活着的线索执念）</div>`}
+        ${leads.map((l) => html`
+          <div class="card" style="margin-bottom:6px;">
+            <div class="title">${l.characterName}</div>
+            <div style="font-size:12px;">${l.summary}</div>
+            <div class="muted" style="font-size:10px;margin-top:4px;">第 ${l.createdDay} 天起 · 保温 ${l.decayDays} 天 · 关联 ${l.relatedId ?? "—"}</div>
+          </div>
+        `)}
+
+        <h2 style="font-size:16px;margin-top:18px;">断言账本（谁说了什么，世界怎么判的）</h2>
+        ${claims.length === 0 && html`<div class="empty">（还没有断言被裁决）</div>`}
+        ${[...claims].reverse().slice(0, 30).map((c) => html`
+          <div class="card" style="margin-bottom:6px;">
+            <div class="title">${c.speakerId} · ${VERDICT_LABEL[c.verdict] ?? c.verdict}</div>
+            <div style="font-size:12px;">${c.claim}</div>
+            <div class="muted" style="font-size:10px;margin-top:4px;">
+              ${c.objectKey} · tick ${c.tick}${c.witnesses?.length ? ` · 旁听：${c.witnesses.join("、")}` : ""}
+            </div>
+          </div>
+        `)}
       </div>
     </div>
   `;

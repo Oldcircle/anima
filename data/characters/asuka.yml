@@ -76,4 +76,7 @@ life:
     confidence: 10
   aspiration: "成为世界上最厉害的人，让所有人都仰望我"
 
+# Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：「成为世界上最厉害的人」——她要的是看得见的名次
+playstyle: achiever
+
 relationships: {}

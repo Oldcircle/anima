@@ -130,3 +130,63 @@ describe("命运事件调度（simulation）", () => {
     expect((sim as any)._nextFateAt).toBe(8); // 顺延，白天再落
   });
 });
+
+/**
+ * fate/beat 事件 → 器物 trace 接线（PLAN-grounding）：
+ * 事件要在**世界本体**留痕，不能只活在记忆文本里——留下的 trace 由 examine 与
+ * 重访 diff 接住，当时不在场的人过后也能看出这里出过事。
+ * 接线点 = `_applyFateOutcome`（随机命运层与 beat auto_events 共用的那一处）。
+ */
+function makeTestCard(id: string, name: string): CharacterCard {
+  return {
+    id, name, age: 20, occupation: "镇民", home: "home_tomori",
+    personality: { traits: [], interests: [], dislikes: [], speechStyle: "" },
+    background: "", relationships: {},
+  };
+}
+
+describe("命运事件 → 器物留痕", () => {
+  function setup() {
+    setBreakLevel("mild");
+    const world = new World(TEST_LOCATIONS, 40);
+    world.addCharacter("tomori", "高松灯", "shop");
+    world.objects.registerLocation({
+      id: "shop",
+      objects: [{ id: "shelves", name: "货架", keywords: ["货架", "存货"] }],
+    });
+    const sim = new Simulation(world, new EventBus(), {
+      characters: [makeTestCard("tomori", "高松灯")],
+      actions: ALL_BASIC_ACTIONS,
+      provider: new MockLLMProvider(),
+      modelId: "test",
+    });
+    return { world, sim };
+  }
+
+  it("声明了 objectTrace 的事件在当事人所在地点的器物上留下痕迹", () => {
+    const { world, sim } = setup();
+    const mishap = FATE_EVENTS.find((e) => e.id === "shop_mishap")!;
+    expect(mishap.objectTrace).toBeTruthy();
+    (sim as any)._applyFateOutcome(world.getCharacter("tomori")!, mishap, 40);
+    const shelves = world.objects.get("shop.shelves")!;
+    expect(shelves.traces.some((t) => t.text.includes("碎渣") && t.source === "event")).toBe(true);
+  });
+
+  it("候选名逐个解析：地点没有任何一件候选器物 → 静默跳过（增强不是硬依赖）", () => {
+    const { world, sim } = setup();
+    world.moveCharacter("tomori", "plaza"); // plaza 没注册器物
+    const mishap = FATE_EVENTS.find((e) => e.id === "shop_mishap")!;
+    expect(() => (sim as any)._applyFateOutcome(world.getCharacter("tomori")!, mishap, 40)).not.toThrow();
+    expect(world.objects.get("shop.shelves")!.traces).toHaveLength(0);
+  });
+
+  it("私事不留痕：丢钱/着凉不声明 objectTrace，货架干干净净", () => {
+    const { world, sim } = setup();
+    for (const id of ["wallet_hole", "caught_cold", "windfall_purse"]) {
+      const e = FATE_EVENTS.find((x) => x.id === id)!;
+      expect(e.objectTrace).toBeUndefined();
+      (sim as any)._applyFateOutcome(world.getCharacter("tomori")!, e, 40);
+    }
+    expect(world.objects.get("shop.shelves")!.traces).toHaveLength(0);
+  });
+});

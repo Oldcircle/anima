@@ -81,4 +81,7 @@ life:
     physical: 1
   aspiration: "重塑这个腐烂的世界，让娜娜莉能在阳光下笑出来"
 
+# Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：同为支配型，手法是借人之手
+playstyle: killer
+
 relationships: {}

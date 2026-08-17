@@ -85,4 +85,7 @@ life:
     weapon: 6
   aspiration: "再次找到那个能让我感到自己存在的'重量'"
 
+# Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：她的模式是把人拉进交锋，不是躲开人
+playstyle: socializer
+
 relationships: {}

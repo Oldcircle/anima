@@ -94,10 +94,31 @@ r2 的定性课题（指控 0 = 证据供给不足，非机制缺陷）三条通
 - 判读基建：runner `⛓️ [chain]` 新增 `线索执念=` / `NPC试探=` 两格；干跑彩排复验
   （`case=theft_72_asuka 撬痕器物=cafe.register 线索执念=2`）
 
+**不花钱的存量一次做完（同日，986→1002 单测全绿）**——r3 之前能离线做的四件 + 一个前置：
+- **NPC 浮现层**（v2③ 前置）：静态 NPC 无 agent 循环 → `currentAction` 恒空 → 在别人的"你现在
+  看见了谁"里渲染成「此刻没有明显动作」= 一件会呼吸的家具。现在每 tick 刷一条站桩式
+  observableState（4 tick 换一条，确定性无 rng，只写他在做什么不写他可疑）。
+  **不接这一下，v2③ 那条通路永远不会被走到**
+- **M2.5 语义复述判定**（r2 halfday 观察项）：新增 `restate` 裁决——LLM 侧给正典行号（+字面重合
+  校验，防借复述夹带私货），**机械网** `looksLikeRestatement`（字符集合覆盖率 ≥0.8）兜住
+  LLM 漏报。判为复述 → 不新增正典也不挂传闻账（挂 rumor 会把已确证的事记成死胡同，正是 r2 的错判）。
+  阈值取高：宁可漏判退回 r2 现状，也不误吞真线索
+- **fate/beat → 器物 trace 接线**：`FateEvent.objectTrace`（候选名逐个解析，全不命中静默跳过），
+  接在 `_applyFateOutcome` 这**一处**——随机命运层与 beat auto_events 两条通路共用。
+  店里失手打碎东西现在会在货架/展示柜/酒架上留碎渣，当时不在场的人过后 examine 或重访 diff 也看得出
+- **Bartle 玩法人格**（`src/agent/playstyle.ts`）：四型文本进 system prompt 稳定区（per 角色恒定，
+  不抖前缀），**作用面严格限定"先伸手够哪个工具"**，明说不影响说话方式（台词质地已有三层在管，
+  再加一层只会写成标签平均值）。已作者：asuka=achiever / L=explorer / light·lelouch=killer /
+  senjougahara·shinji=socializer；rei 留空当缺省路径活样本。`ANIMA_PLAYSTYLE=0` 逐字节退场
+- **前端消费**：`GET /api/grounding` + 管理面板新页「世界」（器物×地点分组、正典/痕迹分色、
+  断言账本带裁决中文名、案件账本、线索执念）。**观察者通道**：真凶给得出来但默认折叠，
+  勾"显示剧透"才看（对齐 🎭 motive）。浏览器实测通过（39 器物/撬痕/restate/两条线索执念全渲染，
+  零 console 错误）
+
 **下次入口**：① **r3 同弧复验**（需先充值，≈¥2）——看证据供给后指控是否出现、破案/冤案终局首现；
-命令在 r2 VERDICT 尾部，判读新增两格 chain 信号（NPC试探=0 就说明"可交互"没被角色发现，
-下一手是浮现层而非供给层）② M2.5 语义复述判定 ③ fate beat trace 接线 ④ Bartle 玩法人格
-⑤ 前端消费（器物/正典/案件可视化）。余额 ¥1.57（08-16 口径），live 前先确认。
+命令在 r2 VERDICT 尾部，判读新增两格 chain 信号（NPC试探=0 就说明浮现层还不够，不是供给层的问题）；
+同车首验 restate 裁决与玩法人格的行为分化 ② 任务化（约定/执念编译成 quest 对象，PLAN-grounding 附）
+③ Godot 前端消费（web 已做，游戏前端未做）。余额 ¥1.57（08-16 口径），live 前先确认。
 
 ## 当前状态（2026-08-09）
 

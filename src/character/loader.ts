@@ -55,6 +55,7 @@ export function loadCharacterFromYAML(filePath: string): CharacterCard {
     preferences: data.preferences,
     life,
     startingItems: data.starting_items,
+    playstyle: data.playstyle,
     relationships: data.relationships ?? {},
   };
 }

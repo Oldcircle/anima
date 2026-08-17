@@ -173,3 +173,58 @@ describe("narrative routes — POST /api/narrative/nudge", () => {
     });
   });
 });
+
+/**
+ * GET /api/grounding —— 世界接地面板的观察者通道（PLAN-grounding 前端消费）。
+ * 器物/正典/痕迹 + 断言账本 + 案件账本 + 线索执念一次给全；
+ * perpId 在这条路由上是**故意给的**（观看者可见、角色互不可见，对齐 🎭 motive），
+ * 前端默认折叠——引擎侧"真凶不进 prompt"的红线与本路由无关。
+ */
+describe("narrative routes — GET /api/grounding", () => {
+  it("空世界：结构齐全、各段为空", async () => {
+    const { app } = makeFixture();
+    await withServer(app, async (base) => {
+      const body = await (await fetch(`${base}/api/grounding`)).json();
+      expect(body.objects).toEqual([]);
+      expect(body.claims).toEqual([]);
+      expect(body.cases).toEqual([]);
+      expect(body.leads).toEqual([]);
+      expect(typeof body.tick).toBe("number");
+    });
+  });
+
+  it("有器物/痕迹/正典/案件/线索时逐段给出（含 perpId 剧透字段）", async () => {
+    const { app, world } = makeFixture();
+    world.objects.registerLocation({
+      id: "park",
+      objects: [{ id: "bench", name: "长椅", keywords: ["长椅"], canon: ["第三根木条松了"] }],
+    });
+    world.objects.addTrace("park.bench", {
+      id: "t1", text: "椅面上多了一道新划痕", addedTick: 10, source: "event",
+    });
+    world.narrative.registerCase({
+      id: "theft_10_alice", kind: "theft", perpId: "npc_x", victimId: "alice", amount: 30, createdTick: 10,
+    });
+    world.narrative.registerObsession("alice", {
+      id: "obs_theft_10_alice_witness", summary: "那个人在门口转悠的样子你没忘",
+      createdDay: 0, decayDays: 5, source: "crime", relatedId: "theft_10_alice",
+    });
+
+    await withServer(app, async (base) => {
+      const body = await (await fetch(`${base}/api/grounding`)).json();
+      const bench = body.objects.find((o: { key: string }) => o.key === "park.bench");
+      expect(bench.locationName).toBe("Park");
+      expect(bench.canonFacts[0].text).toBe("第三根木条松了");
+      expect(bench.traces[0].text).toContain("新划痕");
+
+      expect(body.cases).toHaveLength(1);
+      expect(body.cases[0].status).toBe("open");
+      expect(body.cases[0].publicSinceTick).toBeUndefined(); // 还没公开，面板照实说
+      expect(body.cases[0].perpId).toBe("npc_x");            // 观看者通道：剧透字段确实给
+
+      expect(body.leads).toHaveLength(1);
+      expect(body.leads[0].characterId).toBe("alice");
+      expect(body.leads[0].relatedId).toBe("theft_10_alice");
+    });
+  });
+});

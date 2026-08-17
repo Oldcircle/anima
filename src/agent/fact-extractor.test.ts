@@ -15,6 +15,7 @@ import {
   mentionedObjects,
   extractFacts,
   settleExtractedFacts,
+  looksLikeRestatement,
   type ExtractedFact,
 } from "./fact-extractor.js";
 import { WorldObjectStore } from "../world/world-objects.js";
@@ -235,5 +236,95 @@ describe("settleExtractedFacts 三规", () => {
     expect(fresh.getClaims()[0]!.verdict).toBe("canonized");
     // 正典也随 objects 部分恢复
     expect(fresh.examine("library.desk", "x", 1)).toContain("褪色");
+  });
+});
+
+// ── M2.5 语义复述判定 ──
+
+describe("M2.5 restate 语义复述判定", () => {
+  it("looksLikeRestatement：措辞变体判是；不同内容判否；太短不判", () => {
+    expect(looksLikeRestatement("台账按月换页", "台账是按月换页的")).toBe(true);
+    expect(looksLikeRestatement("借阅台账上的字迹认得出人", "看借阅台账的字迹就认得出是谁")).toBe(true);
+    // 真新信息不该被吞（这正是阈值取高的理由：宁可漏判也不误吞线索）
+    expect(looksLikeRestatement("夜神月昨晚借走了犯罪心理学", "台账按月换页")).toBe(false);
+    expect(looksLikeRestatement("很旧", "台账按月换页")).toBe(false);
+  });
+
+  it("LLM 报 restate：行号有效 + 字面重合 → 不新增正典也不挂传闻账", async () => {
+    const store = makeStore();
+    const before = store.get("library.ledger")!.canonFacts.length;
+    const { facts } = await runExtract(
+      store,
+      makeHistory("那本借阅台账不是按月换页的吗"),
+      JSON.stringify({
+        claims: [{
+          kind: "restate", object: "借阅台账", speaker: "L",
+          claim: "台账是按月换页的", evidence: "那本借阅台账不是按月换页的吗", restate_index: 0,
+        }],
+      }),
+    );
+    expect(facts).toHaveLength(1);
+    expect(facts[0]!.kind).toBe("restate");
+    expect(facts[0]!.restateText).toBe("台账按月换页");
+
+    const settled = settleExtractedFacts(
+      { store, getCharacter: () => undefined, tick: 20 },
+      facts,
+    );
+    expect(settled[0]!.verdict).toBe("restate");
+    expect(store.get("library.ledger")!.canonFacts).toHaveLength(before); // 正典一条没多
+    expect(store.getClaims({ verdict: "rumor" })).toHaveLength(0);       // 也没被记成死胡同
+  });
+
+  it("借复述夹带私货：行号有效但内容另起炉灶 → 降档 hidden 走裁决", async () => {
+    const store = makeStore();
+    const { facts } = await runExtract(
+      store,
+      makeHistory("台账上记着碇真嗣借走了那本书"),
+      JSON.stringify({
+        claims: [{
+          kind: "restate", object: "借阅台账", speaker: "L",
+          claim: "碇真嗣借走了那本书", evidence: "台账上记着碇真嗣借走了那本书", restate_index: 0,
+        }],
+      }),
+    );
+    expect(facts[0]!.kind).toBe("hidden");
+    expect(facts[0]!.restateText).toBeUndefined();
+  });
+
+  it("机械网：LLM 报 detail 但实为正典措辞变体 → 归复述（r2 那条 rumor 的根）", async () => {
+    const store = makeStore();
+    const before = store.get("library.ledger")!.canonFacts.length;
+    const { facts } = await runExtract(
+      store,
+      makeHistory("这台账是按月换页的吧"),
+      JSON.stringify({
+        claims: [{
+          kind: "detail", object: "借阅台账", speaker: "L",
+          claim: "这台账是按月换页的", evidence: "这台账是按月换页的吧", contradict_index: -1,
+        }],
+      }),
+    );
+    expect(facts[0]!.kind).toBe("restate");
+    settleExtractedFacts({ store, getCharacter: () => undefined, tick: 20 }, facts);
+    expect(store.get("library.ledger")!.canonFacts).toHaveLength(before);
+    expect(store.getClaims({ verdict: "restate" })).toHaveLength(1);
+  });
+
+  it("真新细节不被机械网吞掉（仍走首述即正典）", async () => {
+    const store = makeStore();
+    const { facts } = await runExtract(
+      store,
+      makeHistory("阅览桌底下刻着一行字，像是很久以前的人留的"),
+      JSON.stringify({
+        claims: [{
+          kind: "detail", object: "阅览桌", speaker: "L",
+          claim: "阅览桌底下刻着一行很旧的字", evidence: "阅览桌底下刻着一行字，像是很久以前的人留的", contradict_index: -1,
+        }],
+      }),
+    );
+    expect(facts[0]!.kind).toBe("detail");
+    const settled = settleExtractedFacts({ store, getCharacter: () => undefined, tick: 20 }, facts);
+    expect(settled[0]!.verdict).toBe("canonized");
   });
 });

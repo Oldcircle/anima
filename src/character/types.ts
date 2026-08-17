@@ -72,6 +72,12 @@ export interface CharacterCard {
   /** 角色初始携带的物品 ID 列表 */
   startingItems?: string[];
 
+  /**
+   * Bartle 玩法人格：achiever|explorer|socializer|killer。
+   * 只作用在"先伸手够哪个工具"，不碰台词质地（见 agent/playstyle.ts）。缺省=不注入。
+   */
+  playstyle?: string;
+
   relationships: Record<string, {
     level: number;
     type: string;

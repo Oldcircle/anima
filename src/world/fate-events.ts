@@ -37,6 +37,16 @@ export interface FateEvent {
   intentSummary?: string;
   /** 目击文案（同地点他人的观察记忆），缺省 = 私事没人看见 */
   witnessTemplate?: string;
+  /**
+   * 器物层留痕（PLAN-grounding：事件要在**世界本体**留下痕迹，不能只活在记忆文本里）。
+   * `objects` 是候选名（按优先级在当事人所在地点逐个解析，取第一个命中的——
+   * 各商业地点的"摆货的那件家什"不同名：货架/展示柜/酒架/花艺台/吧台）；
+   * 全不命中静默跳过——器物层是增强不是硬依赖。
+   * 留下的 trace 由 examine 与重访 diff 两条通道接住：**当时不在场的人过后也能看出这里出过事**。
+   * 只对"物理上真的发生在世界里"的事件声明（丢钱/着凉是私事，不该在货架上留痕）。
+   * trace 文案不点器物名（它挂在器物下渲染），这样一条文案能配所有候选。
+   */
+  objectTrace?: { objects: string[]; text: string };
   conditions?: {
     weather?: Weather[];
     season?: Season[];
@@ -72,6 +82,10 @@ export const FATE_EVENTS: FateEvent[] = [
     goldDelta: { kind: "flat", amount: -10 },
     moodlet: { emotion: "embarrassed", intensity: 3, reason: "在店里当众打碎了东西", durationTicks: 16 },
     witnessTemplate: "{character}在店里失手打碎了东西，红着脸掏钱赔——那声脆响半条街都听见了",
+    objectTrace: {
+      objects: ["货架", "展示柜", "酒架", "花艺台", "吧台"],
+      text: "上面空出一块，边角还留着没扫干净的碎渣",
+    },
     conditions: { locationType: ["commercial"] },
   },
   {

@@ -11,6 +11,12 @@
  *    推不出=rumor（真死胡同）。断言者说了不算——世界是裁判
  * ③ 既成正典不可嘴改：与已知正典矛盾的说法 → contradict 挂账，正典一个字不动
  *
+ * M2.5 语义复述判定（r2 halfday 观察项）：substring 双向去重接不住措辞变化——
+ * light 那条挂了 rumor 账的断言，实为 authored 正典的语义变体复述。现在两道判：
+ * LLM 的 `restate` 类（须给有效正典行号 + 字面重合校验）+ **机械网** `looksLikeRestatement`
+ * （字符集合覆盖率 ≥0.8）。判为复述 → 不新增正典也不挂传闻账，只记一条 restate claim：
+ * 正典在流通本身是好信号（共享虚构→共享事实），不该被记成死胡同。
+ *
  * 假阳性防线（对齐 stance-extractor 纪律）：
  * - 预过滤：对话 ≥4 句 且 词面命中某件已知器物的名字/关键词，才烧 LLM（每对话 ≤1 调用）
  * - evidence 逐字命中转录 + 归属校验（复用 stance 的两道闸）
@@ -29,7 +35,7 @@ import type { WorldObjectStore, WorldObjectState, WorldClaim } from "../world/wo
 import { evidenceHits, evidenceSpokenBy } from "./stance-extractor.js";
 import { resolveItem, hasItem } from "../world/item-registry.js";
 
-export type FactKind = "detail" | "hidden" | "contradict";
+export type FactKind = "detail" | "hidden" | "contradict" | "restate";
 
 export interface ExtractedFact {
   kind: FactKind;
@@ -43,6 +49,30 @@ export interface ExtractedFact {
   aboutItem?: string;
   /** contradict：顶撞的正典行（抽取时已校验有效） */
   contradictText?: string;
+  /** restate：被复述的正典行（抽取时已校验有效，M2.5） */
+  restateText?: string;
+}
+
+/**
+ * M2.5 语义复述判定的**机械网**（LLM 判定之外的兜底，零成本确定性）。
+ *
+ * r2 halfday 观察项：light 那条 rumor 实为 authored 正典的语义变体复述——
+ * substring 双向去重接不住措辞变化（"借阅台账上的字迹能认出人" vs "看笔迹就知道是谁借的"）。
+ * 中文没有词边界，这里用**字符集合覆盖率**：短句的去重字符有多大比例出现在长句里。
+ * 阈值取高（0.8）+ 双方去重字符 ≥5，宁可漏判也不误吞真断言——
+ * 漏判只是退回 r2 现状（挂传闻账），误判会吃掉一条真线索。
+ */
+export const RESTATE_CHAR_OVERLAP = 0.8;
+
+export function looksLikeRestatement(claim: string, canonText: string): boolean {
+  const strip = (s: string) => new Set(s.replace(/[\s，。、；：「」『』""''（）()！？!?—…·,.]/g, ""));
+  const a = strip(claim);
+  const b = strip(canonText);
+  if (a.size < 5 || b.size < 5) return false;
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  let hit = 0;
+  for (const ch of small) if (large.has(ch)) hit++;
+  return hit / small.size >= RESTATE_CHAR_OVERLAP;
 }
 
 /** 每场对话最多抽取的断言数 */
@@ -127,6 +157,7 @@ ${objectLines.join("\n")}
 - detail: 关于器物本身、说话人当场可观察的中性细节（"阅览桌下有刻字"）。不涉及任何人、与说话人利害无关
 - hidden: 关于器物但涉及"谁做过什么/里面记着什么内容/东西在谁手上"的宣称——说话人未必能知道真假
 - contradict: 与上面某条已确证事实**直接矛盾**的说法（必须填矛盾事实的编号 contradict_index）
+- restate: 换个说法重复上面某条**已确证事实**、没添任何新信息（必须填被复述事实的编号 restate_index）
 - no_claim: 没有上述断言
 
 不算断言：情绪评价（"这机器真吵"）、比喻、玩笑、疑问句、对未来的猜测。
@@ -135,7 +166,7 @@ hidden 类若断言涉及具体的人和具体物品，填 about_character（人
 最多报 ${MAX_FACTS_PER_CONVERSATION} 条最主要的。
 
 严格输出 JSON（不要 markdown 代码块）：
-{"claims":[{"kind":"detail","object":"器物名","speaker":"说话人名","claim":"一句话断言","evidence":"逐字原话","about_character":"","about_item":"","contradict_index":-1}]}
+{"claims":[{"kind":"detail","object":"器物名","speaker":"说话人名","claim":"一句话断言","evidence":"逐字原话","about_character":"","about_item":"","contradict_index":-1,"restate_index":-1}]}
 没有断言时输出：{"claims":[{"kind":"no_claim"}]}`;
 
   try {
@@ -156,7 +187,7 @@ hidden 类若断言涉及具体的人和具体物品，填 about_character（人
         console.log(`📜 [正典] LLM 判定无断言`);
         continue;
       }
-      if (c.kind !== "detail" && c.kind !== "hidden" && c.kind !== "contradict") continue;
+      if (c.kind !== "detail" && c.kind !== "hidden" && c.kind !== "contradict" && c.kind !== "restate") continue;
       if (typeof c.object !== "string" || typeof c.speaker !== "string") continue;
       if (typeof c.claim !== "string" || !c.claim.trim()) continue;
       if (typeof c.evidence !== "string") continue;
@@ -211,6 +242,30 @@ hidden 类若断言涉及具体的人和具体物品，填 about_character（人
         }
       }
 
+      // M2.5 restate 校验（对齐 contradict 的行号闸）：必须真指向本器物的一条正典，
+      // 且 claim 与那条正典字面高度重合——行号有效但内容另起炉灶 = 借"复述"夹带私货，降档 hidden 走裁决
+      let restateText: string | undefined;
+      if (kind === "restate") {
+        const idx = typeof c.restate_index === "number" ? c.restate_index : -1;
+        const entry = canonIndex[idx];
+        if (entry && entry.objectKey === obj.key && looksLikeRestatement(claim, entry.text)) {
+          restateText = entry.text;
+        } else {
+          kind = "hidden";
+        }
+      }
+
+      // M2.5 机械网：LLM 没报 restate，但断言与某条既有正典高度重合 → 归为复述。
+      // r2 那条 rumor 就是这么漏过去的（substring 双向去重接不住措辞变化）
+      if (kind === "detail" || kind === "hidden") {
+        const echoed = obj.canonFacts.find((cf) => looksLikeRestatement(claim, cf.text));
+        if (echoed) {
+          kind = "restate";
+          restateText = echoed.text;
+          console.log(`📜 [正典] 机械网判复述：「${claim}」≈ 既成「${echoed.text}」`);
+        }
+      }
+
       // hidden 的 about 字段解析（史料推导的输入）
       let aboutCharacterId: string | undefined;
       let aboutItem: string | undefined;
@@ -228,7 +283,7 @@ hidden 类若断言涉及具体的人和具体物品，填 about_character（人
         if (ai) aboutItem = ai;
       }
 
-      out.push({ kind, speakerId: speaker.id, objectKey: obj.key, claim, evidence: c.evidence.trim(), aboutCharacterId, aboutItem, contradictText });
+      out.push({ kind, speakerId: speaker.id, objectKey: obj.key, claim, evidence: c.evidence.trim(), aboutCharacterId, aboutItem, contradictText, restateText });
     }
     return out;
   } catch (err) {
@@ -272,6 +327,11 @@ export function settleExtractedFacts(deps: FactSettleDeps, facts: ExtractedFact[
     } else if (f.kind === "contradict") {
       verdict = "contradict";
       console.log(`📜 [正典] 顶撞正典挂账：${f.speakerId} 称「${f.claim}」× 既成「${f.contradictText}」——正典不动`);
+    } else if (f.kind === "restate") {
+      // M2.5：正典在流通，不是新断言——既不新增正典（内容已经在），也不挂传闻账
+      //（挂 rumor 会把"已确证的事"记成死胡同，正是 r2 抓到的错判）
+      verdict = "restate";
+      console.log(`📜 [正典] 复述既成正典：${f.speakerId} 转述「${f.restateText ?? f.claim}」——共享虚构已成共享事实`);
     } else {
       // hidden：v1 史料推导只做持有（人+物都解析得出才可判）
       const holder = f.aboutCharacterId ? deps.getCharacter(f.aboutCharacterId) : undefined;

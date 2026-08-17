@@ -76,4 +76,7 @@ life:
     deception: 10
   aspiration: "成为新世界的神，并杀死 L"
 
+# Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：他要的是让别人按他的判断动
+playstyle: killer
+
 relationships: {}

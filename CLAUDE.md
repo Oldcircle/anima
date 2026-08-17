@@ -16,6 +16,9 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **Tool-based Agent**：每个角色的行为空间由工具定义（talk/eat/work/go_to 等），LLM 自主选择
 - **零预设关系**：角色卡不包含任何跨角色引用，所有关系从零涌现
 - **五层活人感**：环境感知 + 印象系统 + 内心独白分级 + 对话模式 + 观察推理
+- **Bartle 玩法人格（`src/agent/playstyle.ts`）**：角色卡 `playstyle` 四型（成就/探索/社交/支配）
+  注入 system 稳定区，**只作用在"同样处境下先伸手够哪个工具"**，不碰台词质地（那有人格描写/
+  说话方式/破线三层在管）。缺省不注入；`ANIMA_PLAYSTYLE=0` 逐字节退场
 - **破线提示词（`src/agent/break-config.ts`）**：解锁"下行通道"——让关系会变差、会 argue、印象态度
   会出负，而非只有真善美。核心是**决策前强制 COT 自检脚手架**（态度/旧账/语气/走向），非许可散文。
   三档 `off`(纯和谐)/`mild`(默认,允许摩擦)/`strong`(戏剧化冲突)，经 `ANIMA_BREAK_LEVEL` 或 scenario
@@ -154,6 +157,7 @@ DEEPSEEK_THINKING=disabled        # 思考模式（auto/disabled/enabled），�
 ANIMA_BREAK_LEVEL=mild            # 破线强度 off/mild/strong（下行通道解锁），默认 mild；scenario manifest break_level 优先级更高
 ANIMA_DECISION_POV=first          # 决策视角 first/third，默认 first。third=作者预测框架（深翻顶块+决策指令）+ 私有通道：两层动机行【表面】｜【真心】经 motive-channel.ts 解析，真心层只走观看者通道（WS motive 字段/🎭 日志）、本人记忆只回流表面层。与 BREAK_LEVEL 正交，见 STATUS
 ANIMA_GROUNDING=1                 # 器物层（PLAN-grounding M0/M1）：地点招牌器物+examine+触发通道。默认开；=0 整层退场逐字节回归（A/B）
+ANIMA_PLAYSTYLE=1                 # Bartle 玩法人格（角色卡 playstyle: achiever|explorer|socializer|killer）：只作用在"先伸手够哪个工具"，不碰台词质地。默认开；=0 整层退场逐字节回归
 ANIMA_PROMPT_DUMP=1               # 可选调试：把每次 LLM 请求体落盘 logs/prompt-dumps/<kind>/，供相邻请求 diff 前缀断点
 PORT=3001                         # Web 服务端口，可选
 ```

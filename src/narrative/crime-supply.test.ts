@@ -375,6 +375,20 @@ describe("B3 v2 证据供给", () => {
     }
   });
 
+  it("浮现层：静态 NPC 每 tick 有站桩可观察状态（否则在别人眼里是件家具）", () => {
+    const { world, sim, eventBus } = makeSim(100);
+    runCrimeSupply({ world, memory: sim.memory, eventBus, tick: 100 }, "npc");
+    const at100 = world.getObservableState(CRIME_NPC.id, 100);
+    expect(at100?.summary).toBeTruthy();
+    // 4 tick（游戏 1 小时）换一条，确定性无 rng：同窗内一致，跨窗必变
+    runCrimeSupply({ world, memory: sim.memory, eventBus, tick: 103 }, "npc");
+    expect(world.getObservableState(CRIME_NPC.id, 103)!.summary).toBe(at100!.summary);
+    runCrimeSupply({ world, memory: sim.memory, eventBus, tick: 104 }, "npc");
+    expect(world.getObservableState(CRIME_NPC.id, 104)!.summary).not.toBe(at100!.summary);
+    // 只写"他在做什么"，判断归看见的人
+    expect(at100!.summary).not.toMatch(/可疑|小偷|贼/);
+  });
+
   it("静态 NPC 最小可交互：三档递进；对真人不接管（返回 undefined）", () => {
     const { world, sim, eventBus } = makeSim(100);
     ensureCrimeNpc(world);

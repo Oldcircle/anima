@@ -77,4 +77,7 @@ life:
     endurance: 6
   aspiration: "希望有一天父亲会因为我做的事说一句'做得好'"
 
+# Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：他要的是被接住
+playstyle: socializer
+
 relationships: {}

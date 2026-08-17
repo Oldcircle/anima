@@ -18,6 +18,7 @@ import { filterMatureUnresolved } from "../memory/impressions.js";
 import { formatBodyFeelings } from "../world/need-definitions.js";
 import { formatInventory as _formatInventory } from "../world/item-registry.js";
 import { formatAppointmentReminder } from "../world/appointments.js";
+import { buildPlaystyleBlock } from "./playstyle.js";
 import {
   creativeFrameworkAddendum,
   worldFrictionLine,
@@ -221,6 +222,10 @@ export function buildSystemPrompt(
   if (card.appearance) {
     parts.push(`\n## 你的外貌\n${card.appearance.trim()}`);
   }
+
+  // Bartle 玩法人格（per 角色恒定，稳定区不抖前缀）：只作用在"先伸手够哪个工具"
+  const playstyleBlock = buildPlaystyleBlock(card.playstyle);
+  if (playstyleBlock) parts.push(playstyleBlock);
 
   // 性格 — 优先使用深度描写
   parts.push("\n## 你的性格");
