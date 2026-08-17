@@ -72,6 +72,10 @@ interface RunnerResult {
     caseStatus?: string;
     tillTraced: boolean;
     accusations: number;
+    /** v2 证据供给：活着的线索执念条数（情报/目击/失言），r2 的"指控 0"课题就卡在这一格 */
+    leadObsessions: number;
+    /** v2 试探：cast 主动跟静态 NPC 搭话的总次数（0 = NPC 仍是布景） */
+    npcProbes: number;
   };
 }
 
@@ -126,15 +130,28 @@ async function runGroundingVerify(rawProvider: LLMProvider, modelId: string, opt
   const tillObjects = handle.world.getAllLocations()
     .flatMap((l) => handle.world.objects.getAtLocation(l.id))
     .filter((o) => o.traces.some((t) => t.text.includes("撬痕")));
+  const day = Math.floor(handle.world.tick / 96);
+  const leadObsessions = handle.world
+    .getAllCharacters()
+    .filter((c) => !ns.isNpc(c.id))
+    .reduce(
+      (n, c) => n + ns.getActiveObsessions(c.id, day, 6).filter((o) => o.source === "crime").length,
+      0,
+    );
+  const npcProbes = Object.entries(ns.getCrimeSupplyLedger())
+    .filter(([k]) => k.startsWith("npc_probe_"))
+    .reduce((n, [, v]) => n + v, 0);
   const chain = {
     caseRegistered: cases.length > 0,
     casePublic: Boolean(case_?.publicSinceTick !== undefined),
     caseStatus: case_?.status,
     tillTraced: tillObjects.length > 0,
     accusations: case_ ? Object.keys(case_.accusations).length : 0,
+    leadObsessions,
+    npcProbes,
   };
   console.log(
-    `\n⛓️ [chain] case=${chain.caseRegistered ? case_!.id : "无"} public=${chain.casePublic} status=${chain.caseStatus ?? "-"} 撬痕器物=${tillObjects.map((o) => o.key).join(",") || "无"} 指控数=${chain.accusations}`,
+    `\n⛓️ [chain] case=${chain.caseRegistered ? case_!.id : "无"} public=${chain.casePublic} status=${chain.caseStatus ?? "-"} 撬痕器物=${tillObjects.map((o) => o.key).join(",") || "无"} 指控数=${chain.accusations} 线索执念=${leadObsessions} NPC试探=${npcProbes}`,
   );
   handle.dispose();
   return { ticksRun, llmCalls: handle.llmCalls(), stoppedEarly, breakerTripped: breaker.tripped, logPath, chain };
@@ -150,6 +167,8 @@ describe.skipIf(!DRYRUN)("grounding-verify runner 干跑彩排（零 API）", ()
     // 机械链信号：预热期（48 tick）后 npc 罪案必须已投放
     expect(r.chain.caseRegistered).toBe(true);
     expect(r.chain.tillTraced).toBe(true);
+    // v2 证据供给：投放同时给出两条指向性线索并保温成执念（r2 的"指控 0"就卡在这一格）
+    expect(r.chain.leadObsessions).toBeGreaterThanOrEqual(2);
     const { existsSync } = await import("node:fs");
     expect(existsSync(r.logPath)).toBe(true);
   }, 300_000);

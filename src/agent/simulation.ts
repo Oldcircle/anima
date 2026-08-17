@@ -62,7 +62,7 @@ import {
   applyTheftWithPerp,
   processPendingDiscoveries,
 } from "../narrative/world-events.js";
-import { runCrimeSupply, type CrimeSupplyMode } from "../narrative/crime-supply.js";
+import { runCrimeSupply, replyAsStaticNpc, type CrimeSupplyMode } from "../narrative/crime-supply.js";
 
 export interface SimulationConfig {
   characters: CharacterCard[];
@@ -348,6 +348,18 @@ export class Simulation {
   /** B3/§4.5：世界注入的静态 NPC（生存循环豁免的判定口，narrative.npcs 随档） */
   private _isStaticNpc(id: string): boolean {
     return this.world.narrative.isStaticNpc(id);
+  }
+
+  /**
+   * B3 v2③ 静态 NPC 最小可交互：talk 的对象是静态 NPC 时，世界零 LLM 回一句刻画性台词。
+   * 非静态 NPC 走原路（真人对话由 ConversationTracker/反应轮接管），这里静默返回。
+   */
+  private _maybeStaticNpcReply(speakerId: string, targetId: string, gameTime: GameTime): void {
+    if (!this._isStaticNpc(targetId)) return;
+    replyAsStaticNpc(
+      { world: this.world, memory: this.memory, eventBus: this.eventBus, tick: gameTime.tick },
+      { speakerId, targetId },
+    );
   }
 
   private recordWitnessObservations(event: WorldEvent): void {
@@ -873,6 +885,9 @@ export class Simulation {
             locationId: charState?.locationId,
           },
         );
+        // B3 v2③：对方是静态 NPC 时世界替他回一句（零 LLM）——NPC 无 agent 循环也无卡，
+        // 不接这一下就是对着布景说话，嫌疑永远积累不起来
+        this._maybeStaticNpcReply(r.characterId, targetId, gameTime);
         // 对话产生 happy moodlet
         if (charState) {
           addMoodlet(charState, "happy", 2, "和人聊了天", 8, "social", gameTime.tick);
@@ -1420,6 +1435,7 @@ export class Simulation {
               locationId: charState?.locationId,
             },
           );
+          this._maybeStaticNpcReply(r.characterId, targetId, gameTime);
           // 更新对话对交换计数 + 冷却
           const pk = pairKey(r.characterId, targetId);
           const newCount = (pairExchangeCount.get(pk) ?? 0) + 1;

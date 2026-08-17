@@ -57,6 +57,8 @@ export interface WorldEventOutcome {
   ok: boolean;
   description: string;
   error?: string;
+  /** theft 专用：立案的案件 id（= unresolvedEvent id），供调用方把线索执念挂到同一桩案上 */
+  caseId?: string;
 }
 
 // ── 配额（计数挂 narrative_state.world 随档——导演内存态重启即失控）──
@@ -277,6 +279,7 @@ export function applyTheftWithPerp(deps: WorldEventDeps, params: TheftParams): W
   return {
     ok: true,
     description: `失窃已注入（真凶=${params.perpId}[${eligibility.kind}]，${taken} 金币已真实转移，赃物入包）。受害者 ${victim.name} 将在到达${discoveryLoc.name}时发现`,
+    caseId: `theft_${tick}_${params.victimId}`,
   };
 }
 

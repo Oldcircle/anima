@@ -36,9 +36,12 @@ import { hasItem } from "../world/item-registry.js";
 import {
   runCrimeSupply,
   ensureCrimeNpc,
+  replyAsStaticNpc,
   CRIME_NPC,
   NPC_CRIME_FIRST_DELAY_TICKS,
   DEBT_AMPLIFY_OVERDUE_TICKS,
+  CRIME_LEAD_OBSESSION_DAYS,
+  NPC_PROBE_SLIP_AT,
 } from "./crime-supply.js";
 import { STOLEN_EVIDENCE_ITEM, processPendingDiscoveries } from "./world-events.js";
 import { normalizeNarrativeSnapshot, type NarrativeStateSnapshot } from "./narrative-state.js";
@@ -306,5 +309,128 @@ describe("B3 旧档 normalize", () => {
     world.narrative.getCrimeSupplyLedger()["steal_98_bob"] = 100;
     const roundTrip = normalizeNarrativeSnapshot(JSON.parse(JSON.stringify(world.narrative.getSnapshot())));
     expect(roundTrip.world.crimeSupplyLedger["steal_98_bob"]).toBe(100);
+  });
+});
+
+/**
+ * B3 v2 证据供给（grounding-verify r2 判决：指控 0 是"没人有理由指向任何人"，不是机制缺陷）：
+ * - 投放同时给两位非受害镇民**各一条独立线索**（泛情报 + 案发窗口第二目击），地点用真名
+ * - 两条线索各挂 5 天执念保温（relatedId=caseId），沉底记忆变成晨间打算/此刻区的主动线索
+ * - 立案时案子还没公开 → 线索文本**不提失窃**（信息隔离：引擎不泄露没人知道的罪）
+ * - 案子 settled → 线索执念随 clearObsessionsRelatedTo 一起清账
+ * - 静态 NPC 最小可交互：talk 得到刻画性回应（零 LLM），三档递进
+ * - 失言闸：只有案子**已公开**且真凶正是他，第 3 次试探起才可能撞见失言（+执念）
+ */
+describe("B3 v2 证据供给", () => {
+  function injectNpcCrime(startTick = 100): ReturnType<typeof makeSim> & { injectTick: number } {
+    const s = makeSim(startTick);
+    s.world.getCharacter("alice")!.gold = 200; // 最有钱 → 受害者
+    runCrimeSupply({ world: s.world, memory: s.sim.memory, eventBus: s.eventBus, tick: startTick }, "npc");
+    const injectTick = startTick + NPC_CRIME_FIRST_DELAY_TICKS;
+    runCrimeSupply({ world: s.world, memory: s.sim.memory, eventBus: s.eventBus, tick: injectTick }, "npc");
+    return { ...s, injectTick };
+  }
+
+  it("两位非受害镇民各拿一条独立线索：泛情报 + 案发窗口第二目击（地点真名）", () => {
+    const { world, sim } = injectNpcCrime();
+    // 候选按 id 排序取前两位（alice 是受害者，排除）→ bob=情报 carol=目击
+    const bobMem = sim.memory.getRecent("bob", 5);
+    const carolMem = sim.memory.getRecent("carol", 5);
+    expect(bobMem.some((m) => m.relatedCharacterId === CRIME_NPC.id && m.content.includes("钱袋"))).toBe(true);
+    // 第二目击落在案发/发现地点，且用地点真名（r1 词面教训：文本里的地点必须能被搜到）
+    expect(carolMem.some((m) => m.relatedCharacterId === CRIME_NPC.id && m.content.includes("广场"))).toBe(true);
+    // 受害者不拿线索（她只有延迟发现那条路）
+    expect(sim.memory.getRecent("alice", 5)).toHaveLength(0);
+    // 两条线索是不同的文本，不是同一条复制两份
+    const bobLead = bobMem.find((m) => m.relatedCharacterId === CRIME_NPC.id)!.content;
+    const carolLead = carolMem.find((m) => m.relatedCharacterId === CRIME_NPC.id)!.content;
+    expect(bobLead).not.toBe(carolLead);
+    expect(world.narrative.getCrimeSupplyLedger()["npc_last_crime"]).toBeDefined();
+  });
+
+  it("线索执念保温 5 天并挂到同一桩案（relatedId=caseId）；不泄露还没公开的罪", () => {
+    const { world, injectTick } = injectNpcCrime();
+    const day = Math.floor(injectTick / 96);
+    const caseId = world.narrative.getOpenCases()[0]!.id;
+    for (const id of ["bob", "carol"]) {
+      const obs = world.narrative.getActiveObsessions(id, day, 6).filter((o) => o.source === "crime");
+      expect(obs).toHaveLength(1);
+      expect(obs[0]!.relatedId).toBe(caseId);
+      expect(obs[0]!.decayDays).toBe(CRIME_LEAD_OBSESSION_DAYS);
+      // 信息隔离：立案时案子还没公开，执念只写"这人可疑"，绝不写失窃/被偷
+      expect(obs[0]!.summary).not.toMatch(/偷|失窃|不翼而飞/);
+    }
+    // 保温窗内活着，过窗即衰减
+    expect(world.narrative.getActiveObsessions("bob", day + CRIME_LEAD_OBSESSION_DAYS - 1, 6)).not.toHaveLength(0);
+    expect(world.narrative.getActiveObsessions("bob", day + CRIME_LEAD_OBSESSION_DAYS, 6)).toHaveLength(0);
+  });
+
+  it("案子结案 → 线索执念随 relatedId 一起清账（不留悬着的疑心）", () => {
+    const { world, injectTick } = injectNpcCrime();
+    const day = Math.floor(injectTick / 96);
+    const caseId = world.narrative.getOpenCases()[0]!.id;
+    expect(world.narrative.clearObsessionsRelatedTo(caseId)).toBe(2);
+    for (const id of ["bob", "carol"]) {
+      expect(world.narrative.getActiveObsessions(id, day, 6).filter((o) => o.source === "crime")).toHaveLength(0);
+    }
+  });
+
+  it("静态 NPC 最小可交互：三档递进；对真人不接管（返回 undefined）", () => {
+    const { world, sim, eventBus } = makeSim(100);
+    ensureCrimeNpc(world);
+    const deps = { world, memory: sim.memory, eventBus, tick: 100 };
+    const first = replyAsStaticNpc(deps, { speakerId: "alice", targetId: CRIME_NPC.id });
+    const second = replyAsStaticNpc(deps, { speakerId: "alice", targetId: CRIME_NPC.id });
+    const third = replyAsStaticNpc(deps, { speakerId: "alice", targetId: CRIME_NPC.id });
+    expect(first).toContain("没听清");
+    expect(second).toContain("爱打听");
+    expect(third).toContain("摆了摆手"); // 无公开案件 → 只是打发走，不失言
+    // 台词进说话人记忆（对方无 agent，不接这一下就是对着布景说话）
+    expect(sim.memory.getRecent("alice", 5).filter((m) => m.relatedCharacterId === CRIME_NPC.id)).toHaveLength(3);
+    // 计数 per「角色×NPC」随档，换个人从头来
+    expect(replyAsStaticNpc(deps, { speakerId: "bob", targetId: CRIME_NPC.id })).toContain("没听清");
+    // 真人目标不接管（走原本的对话/反应轮路径）
+    expect(replyAsStaticNpc(deps, { speakerId: "alice", targetId: "bob" })).toBeUndefined();
+  });
+
+  it("失言闸：案子未公开时不失言；公开后第 3 次试探起说漏受害者名字 + 挂执念", () => {
+    const { world, sim, eventBus, injectTick } = injectNpcCrime();
+    const deps = { world, memory: sim.memory, eventBus, tick: injectTick };
+    // 案子还没公开（受害者没发现）→ 试探到阈值也只是被打发走
+    for (let i = 0; i < NPC_PROBE_SLIP_AT; i++) {
+      const line = replyAsStaticNpc(deps, { speakerId: "carol", targetId: CRIME_NPC.id });
+      expect(line).not.toContain("爱丽丝");
+    }
+    // 受害者到场发现 → 案件公开
+    processPendingDiscoveries(world, sim.memory, injectTick + 1);
+    expect(world.narrative.getPublicOpenCases()).toHaveLength(1);
+
+    const slip = replyAsStaticNpc(
+      { ...deps, tick: injectTick + 2 },
+      { speakerId: "carol", targetId: CRIME_NPC.id },
+    );
+    expect(slip).toContain("爱丽丝");
+    expect(slip).toContain("你压根没提过");
+    // 失言挂执念（关联同一桩案，结案即清）
+    const caseId = world.narrative.getOpenCases()[0]!.id;
+    const obs = world.narrative
+      .getActiveObsessions("carol", Math.floor((injectTick + 2) / 96), 6)
+      .filter((o) => o.relatedId === caseId);
+    expect(obs.some((o) => o.id.includes("slip"))).toBe(true);
+    // 受害者自己试探不会撞见"说漏自己的名字"（那不是线索）
+    for (let i = 0; i < NPC_PROBE_SLIP_AT + 1; i++) {
+      const line = replyAsStaticNpc({ ...deps, tick: injectTick + 3 }, { speakerId: "alice", targetId: CRIME_NPC.id });
+      expect(line).not.toContain("你压根没提过");
+    }
+  });
+
+  it("off 档不供给线索（红线②：治愈系基线里没有恶人也没有疑心）", () => {
+    setBreakLevel("off");
+    const { world, sim, eventBus } = makeSim(100);
+    world.getCharacter("alice")!.gold = 200;
+    runCrimeSupply({ world, memory: sim.memory, eventBus, tick: 100 }, "npc");
+    runCrimeSupply({ world, memory: sim.memory, eventBus, tick: 100 + NPC_CRIME_FIRST_DELAY_TICKS }, "npc");
+    expect(sim.memory.getRecent("bob", 5)).toHaveLength(0);
+    expect(world.narrative.getActiveObsessions("bob", 1, 6)).toHaveLength(0);
   });
 });

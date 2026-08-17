@@ -14,7 +14,9 @@
  *   NPC 登记进 narrative_state.world.npcs 随档，读档时由 save-load 重建 addCharacter；
  *   `isStatic` 标志让 needs 衰减/07:00 upkeep/饿倒循环/随机事件抽选全部豁免
  *   （§4.5：否则恶人 NPC 一天内饿倒瘫痪变全镇围观的可怜人）。
- *   NPC 对话不进抽取管线（无 _configs.card）——设计接受的已知限制。
+ *   NPC 对话不进抽取管线（无 _configs.card）——设计接受的已知限制；
+ *   对 NPC 说话由 `replyAsStaticNpc` 零 LLM 回一句（v2③）。
+ *   v2 证据供给（案发窗口第二目击 / 线索执念保温 / 试探失言）见下方分节注释。
  *
  * 产出统一带 status 的 unresolvedEvent（经 pendingDiscoveries 延迟发现落账）。
  * off 档 / mode=off / 未配置：整个模块不动世界（红线②治愈系基线）。
@@ -44,6 +46,19 @@ export const NPC_CRIME_FIRST_DELAY_TICKS = 48;
 export const NPC_CRIME_COOLDOWN_TICKS = 3 * TICKS_PER_DAY;
 /** npc 模式：受害者身上至少这么多金币才够格挨偷 */
 export const NPC_CRIME_MIN_VICTIM_GOLD = 30;
+
+// ── v2 证据供给（grounding-verify r2 判决）──
+// r2 实证：机制层全链 PASS，但**指控 0 次是理性的**——撬痕匿名、赃物在 NPC 背包里无人可见、
+// informant 情报落了记忆却在两天的记忆竞争里沉底、静态 NPC 不社交，没人有理由指向任何人。
+// 结论：破案/冤案终局要可达，世界必须供给**指向性**证据。三条通路（都只给事实不给判词）：
+// ① 案发窗口第二目击（对齐 cast 分支已有的目击窗口，落在情报者之外的第二人身上）
+// ② 情报/目击升执念（5 天保温 → 晨间打算与此刻区，沉底记忆变主动线索）
+// ③ 静态 NPC 最小可交互（试探得到回应，嫌疑才能积累）
+
+/** v2：目击/情报执念的保温天数（与 B5 默认窗口对齐，够覆盖延迟发现到冷案之间的调查窗） */
+export const CRIME_LEAD_OBSESSION_DAYS = 5;
+/** v2：同一人连问静态 NPC 到第几次，才可能撞见失言（前两次只有敷衍与不耐烦） */
+export const NPC_PROBE_SLIP_AT = 3;
 
 /**
  * 内置静态恶人 NPC（探针产品化：KIRA_INJECT_CRIME 用的就是"赵三"人设——
@@ -264,13 +279,38 @@ function maybeInjectNpcCrime(deps: CrimeSupplyDeps): void {
   if (!outcome.ok) return;
   ledger["npc_last_crime"] = tick;
 
-  // visibleTo 情报（探针产品化）：给一位非受害镇民一条指向 NPC 的可观察情报——
-  // 只给事实不给判词，怎么解读、要不要追归角色。
-  const informant = world
+  console.log(`🕵️ [crime-supply] npc 投放：${CRIME_NPC.name} → ${victim.id}（${amount} 金币，延迟发现 @ ${discoveryLocationId}）`);
+  supplyNpcCrimeLeads(deps, {
+    victimId: victim.id,
+    locationName: world.getLocation(discoveryLocationId)?.name ?? discoveryLocationId,
+    caseId: outcome.caseId,
+  });
+}
+
+/**
+ * v2 指向性证据供给：给两位非受害镇民各一条**指向 NPC** 的独立线索，并各挂一条 5 天执念保温。
+ *
+ * - 情报（泛）：这人不做活、眼睛往钱袋瞟——r2 用的就是这条，文本沿用（它不是没用，是沉底了）
+ * - 案发窗口第二目击（具体）：案发那会儿在发现地点门口转悠——地点用**真名**
+ *   （r1 词面教训：文本里的器物/地点必须是能被 resolveByName 搜到的真名，否则调查线在词面上就断）
+ * - 执念只写"这事搁在心里"，**不写"他是小偷"也不提失窃**——立案时案子还没公开，
+ *   引擎泄露没人知道的罪就破了信息隔离；目击者拿到的只是"一个人举止可疑"。
+ *   案子公开后风声自带地点与器物真名，两头能不能对上归角色（只配注意力不写结果）。
+ * - 执念 relatedId = caseId：案子被 accuse 破掉/settled 时随 clearObsessionsRelatedTo 一起清账。
+ */
+function supplyNpcCrimeLeads(
+  deps: CrimeSupplyDeps,
+  params: { victimId: string; locationName: string; caseId?: string },
+): void {
+  const { world, memory, tick } = deps;
+  const ns = world.narrative;
+  const candidates = world
     .getAllCharacters()
-    .filter((c) => !ns.isNpc(c.id) && c.id !== victim.id)
+    .filter((c) => !ns.isNpc(c.id) && c.id !== params.victimId)
     .map((c) => c.id)
-    .sort()[0];
+    .sort();
+  const [informant, witness] = candidates;
+
   if (informant) {
     memory.add(informant, {
       tick,
@@ -279,8 +319,118 @@ function maybeInjectNpcCrime(deps: CrimeSupplyDeps): void {
       importance: 7,
       relatedCharacterId: CRIME_NPC.id,
     });
+    registerLeadObsession(deps, informant, params.caseId, "informant",
+      `${CRIME_NPC.name}这个人不对劲——不做活，眼睛总往别人的钱袋上瞟。这事一直搁在你心里`);
   }
-  console.log(`🕵️ [crime-supply] npc 投放：${CRIME_NPC.name} → ${victim.id}（${amount} 金币，延迟发现 @ ${discoveryLocationId}）`);
+  if (witness) {
+    memory.add(witness, {
+      tick,
+      type: "observation",
+      content: `你路过${params.locationName}的时候，看见${CRIME_NPC.name}贴着门口来回转了两趟，见你朝他看，就低下头往边上走开了`,
+      importance: 7,
+      relatedCharacterId: CRIME_NPC.id,
+    });
+    registerLeadObsession(deps, witness, params.caseId, "witness",
+      `${CRIME_NPC.name}在${params.locationName}门口鬼鬼祟祟转悠的样子，你没忘`);
+  }
+  console.log(
+    `🕵️ [crime-supply] 证据供给 v2：情报=${informant ?? "无"} 目击=${witness ?? "无"}` +
+      `（执念保温 ${CRIME_LEAD_OBSESSION_DAYS} 天，只给事实不给判词）`,
+  );
+}
+
+/** 线索执念登记（obsessions off 档静默跳过——执念是增强不是硬依赖）。 */
+function registerLeadObsession(
+  deps: CrimeSupplyDeps,
+  charId: string,
+  caseId: string | undefined,
+  slot: string,
+  summary: string,
+): void {
+  if (!obsessionsEnabled()) return;
+  const day = Math.floor(deps.tick / TICKS_PER_DAY);
+  deps.world.narrative.registerObsession(charId, {
+    id: `obs_${caseId ?? `lead_${deps.tick}`}_${slot}`,
+    summary,
+    createdDay: day,
+    decayDays: CRIME_LEAD_OBSESSION_DAYS,
+    source: "crime",
+    relatedId: caseId,
+  });
+}
+
+// ── v2③ 静态 NPC 最小可交互 ──
+
+/**
+ * cast 对静态 NPC 说话时，世界替 NPC 回一句刻画性台词（**零 LLM**，确定性）。
+ *
+ * r2 判决：赵三站在酒吧里不社交，嫌疑无从积累——试探不到回应的人不是嫌疑人，是布景。
+ * 世界代写行为仅限无 agent 的 NPC（红线③只保护 cast），所以这里是合法的。
+ *
+ * 三档随试探次数递进（per「角色×NPC」计数随档）：
+ * ①敷衍 ②不耐烦 ③+ 打发走；**只有案子已经公开、且这桩案的真凶正是他**时，
+ * 第三次起才可能撞见**失言**——他否认了一件你压根没提过的事。
+ * 失言前的公开门是信息隔离的闸：案子还没人知道就冒出否认，等于引擎泄底。
+ *
+ * 失言也只落"他说了什么"，不落"所以他是小偷"——要不要顺着这根线走归角色。
+ * 返回 NPC 说出口的话（非静态 NPC / 未知角色返回 undefined，调用方据此判断有没有发生）。
+ */
+export function replyAsStaticNpc(
+  deps: CrimeSupplyDeps,
+  params: { speakerId: string; targetId: string },
+): string | undefined {
+  const { world, memory, tick } = deps;
+  const ns = world.narrative;
+  if (!ns.isStaticNpc(params.targetId)) return undefined;
+  const npc = world.getCharacter(params.targetId);
+  const speaker = world.getCharacter(params.speakerId);
+  if (!npc || !speaker || ns.isNpc(params.speakerId)) return undefined;
+
+  const ledger = ns.getCrimeSupplyLedger();
+  const probeKey = `npc_probe_${params.targetId}_${params.speakerId}`;
+  const probes = (ledger[probeKey] ?? 0) + 1;
+  ledger[probeKey] = probes;
+
+  // 失言资格：已公开的 open 案件里，真凶正是这个 NPC（真凶身份仍只在引擎账本，不进任何 prompt）
+  const slipCase =
+    probes >= NPC_PROBE_SLIP_AT
+      ? ns.getPublicOpenCases().find((c) => c.perpId === params.targetId)
+      : undefined;
+  const slipVictim = slipCase ? world.getCharacter(slipCase.victimId) : undefined;
+
+  let line: string;
+  let importance = 4;
+  if (slipCase && slipVictim && slipVictim.id !== params.speakerId) {
+    line = `「我跟${slipVictim.name}那档子事没关系。」${npc.name}忽然冒出这么一句——你压根没提过${slipVictim.name}`;
+    importance = 8;
+  } else if (probes === 1) {
+    line = `${npc.name}这才抬了下眼皮又低回去：「……啊？没听清。」`;
+  } else if (probes === 2) {
+    line = `「你们镇上的人怎么都爱打听。」${npc.name}把手往口袋里一插，「我找活干，行了吧。」`;
+  } else {
+    line = `${npc.name}冲你摆了摆手，转过身去，摆明了不想再搭话`;
+  }
+
+  memory.add(params.speakerId, {
+    tick,
+    type: "conversation",
+    content: line,
+    importance,
+    relatedCharacterId: params.targetId,
+  });
+
+  if (slipCase && slipVictim && slipVictim.id !== params.speakerId && obsessionsEnabled()) {
+    ns.registerObsession(params.speakerId, {
+      id: `obs_${slipCase.id}_slip_${params.speakerId}`,
+      summary: `${npc.name}自己把${slipVictim.name}的名字说出了口，而你从没提过。这句话你忘不掉`,
+      createdDay: Math.floor(tick / TICKS_PER_DAY),
+      decayDays: CRIME_LEAD_OBSESSION_DAYS,
+      source: "crime",
+      relatedId: slipCase.id,
+    });
+    console.log(`🕵️ [crime-supply] 失言：${npc.name} 对 ${params.speakerId} 说漏了 ${slipVictim.name}（第 ${probes} 次试探）`);
+  }
+  return line;
 }
 
 /** 把 steal 事件的 targetId（可能是 id/名字/"shop"）解析成 cast 角色 id；解析不出返回 undefined。 */
