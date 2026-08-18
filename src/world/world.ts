@@ -18,6 +18,7 @@ import { tickToGameTime, type GameTime } from "../core/tick-engine.js";
 import { getDefaultNeeds, getDecayRates } from "./need-definitions.js";
 import { NarrativeState } from "../narrative/narrative-state.js";
 import { WorldObjectStore } from "./world-objects.js";
+import { Chronicle } from "./chronicle.js";
 
 export class World {
   private _state: WorldState;
@@ -26,6 +27,8 @@ export class World {
   readonly narrative: NarrativeState;
   /** 器物层（PLAN-grounding M0）：地点招牌器物的 ground truth 存储 */
   readonly objects: WorldObjectStore;
+  /** 世界编年史：重大事件与涌现的自动记录（观察者通道，不进角色 prompt） */
+  chronicle: Chronicle;
 
   /**
    * kira-incident 剧本状态（诅咒之册）。瞬态不入档（v1：一次 sim 跑完整个事件，
@@ -51,6 +54,7 @@ export class World {
     this.narrative = new NarrativeState();
     this.objects = new WorldObjectStore();
     for (const l of locations) this.objects.registerLocation(l);
+    this.chronicle = new Chronicle();
   }
 
   get tick(): number {

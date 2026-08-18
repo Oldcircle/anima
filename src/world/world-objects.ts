@@ -195,6 +195,11 @@ export class WorldObjectStore {
     return this.byKey.get(key);
   }
 
+  /** 全部器物（编年史涌现探测器扫描用；只读，别原地改） */
+  all(): WorldObjectState[] {
+    return [...this.byKey.values()];
+  }
+
   getAtLocation(locationId: string): WorldObjectState[] {
     return (this.byLocation.get(locationId) ?? [])
       .map((k) => this.byKey.get(k))

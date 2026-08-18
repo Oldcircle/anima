@@ -145,6 +145,7 @@ function App() {
         <nav class="sidebar">
           <div class="group-title">观察</div>
           <${NavLink} href="/live" route=${route}>实时</${NavLink}>
+          <${NavLink} href="/chronicle" route=${route}>编年史</${NavLink}>
           <${NavLink} href="/narrative" route=${route}>叙事</${NavLink}>
           <${NavLink} href="/grounding" route=${route}>世界</${NavLink}>
           <${NavLink} href="/prompts" route=${route}>提示词</${NavLink}>
@@ -192,6 +193,7 @@ function renderRoute(route) {
   if (route === "/narrative") return html`<${NarrativePage} />`;
   if (route === "/grounding") return html`<${GroundingPage} />`;
   if (route === "/prompts") return html`<${PromptsPage} />`;
+  if (route === "/chronicle") return html`<${ChroniclePage} />`;
   return html`<${LivePage} />`;
 }
 
@@ -853,6 +855,122 @@ function GroundingPage() {
         `)}
       </div>
     </div>
+  `;
+}
+
+// ===== 编年史页：世界自己报上来的重大事件与涌现 =====
+// 设计前提是"我不想盯着看"：默认只给 ≥7 分、按天分组、每天一条头条。
+// 涌现条目一律带机械判据（点开看 evidence）——凭什么说它是涌现，得说得清。
+
+const CHRON_KIND_LABEL = {
+  case: "案件", crime: "罪行", emergence: "涌现", relationship: "关系",
+  survival: "生存", economy: "经济", fate: "命运", beat: "节拍",
+  canon: "正典", milestone: "里程碑",
+};
+const IMPORTANCE_COLOR = (n) => (n >= 10 ? "#f85149" : n >= 9 ? "#d29922" : n >= 8 ? "#58a6ff" : "#8b949e");
+
+function ChroniclePage() {
+  const [data, setData] = useState(null);
+  const [minImportance, setMin] = useState(7);
+  const [kind, setKind] = useState("");
+  const [actor, setActor] = useState("");
+  const [emergenceOnly, setEmergenceOnly] = useState(false);
+  const [openId, setOpenId] = useState(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const qs = new URLSearchParams({ minImportance: String(minImportance), limit: "300" });
+      if (kind) qs.set("kind", kind);
+      if (actor) qs.set("actor", actor);
+      if (emergenceOnly) qs.set("emergenceOnly", "1");
+      setData(await api(`/api/chronicle?${qs}`));
+    } catch (e) { toast("加载失败：" + e.message, "error"); }
+  }, [minImportance, kind, actor, emergenceOnly]);
+
+  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    const id = setInterval(reload, 5000);
+    return () => clearInterval(id);
+  }, [reload]);
+
+  const digests = data?.digests ?? [];
+  const names = data?.names ?? {};
+  const nameOf = (id) => names[id] ?? id;
+  const total = data?.entries?.length ?? 0;
+  const emergenceTotal = (data?.entries ?? []).filter((e) => e.kind === "emergence").length;
+  const open = (data?.entries ?? []).find((e) => e.id === openId);
+
+  return html`
+    <h1>编年史</h1>
+    <div class="subtitle">世界自己报上来的事，不用你盯着看。两类：机械可判的重大事件，和没人编排却发生了的涌现（绿边那些）——每条涌现都带机械判据，点一下能看到凭什么这么判。</div>
+
+    <div class="toolbar">
+      <button style="flex:none;white-space:nowrap;" onClick=${reload}>刷新</button>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8b949e;white-space:nowrap;flex:none;">
+        重要性 ≥
+        <select value=${String(minImportance)} onChange=${(e) => setMin(+e.target.value)} style="width:70px;">
+          ${[9, 8, 7, 5, 1].map((v) => html`<option value=${String(v)}>${v}</option>`)}
+        </select>
+      </label>
+      <select value=${kind} onChange=${(e) => setKind(e.target.value)} style="flex:none;width:120px;">
+        <option value="">全部类型</option>
+        ${(data?.kinds ?? []).map((k) => html`<option value=${k}>${CHRON_KIND_LABEL[k] ?? k}</option>`)}
+      </select>
+      <select value=${actor} onChange=${(e) => setActor(e.target.value)} style="flex:none;width:120px;">
+        <option value="">全部角色</option>
+        ${Object.entries(names).map(([id, n]) => html`<option value=${id}>${n}</option>`)}
+      </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8b949e;white-space:nowrap;flex:none;">
+        <input type="checkbox" checked=${emergenceOnly} onChange=${(e) => setEmergenceOnly(e.target.checked)} /> 只看涌现
+      </label>
+      <div class="spacer"></div>
+      <span class="muted" style="font-size:11px;white-space:nowrap;">共 ${data?.size ?? 0} 条 · 第 ${data?.day ?? 0} 天</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;">
+      <div class="card"><div class="title">当前筛选</div><div style="font-size:28px;font-weight:600;">${total}</div></div>
+      <div class="card"><div class="title">其中涌现</div><div style="font-size:28px;font-weight:600;color:#3fb950;">${emergenceTotal}</div></div>
+      <div class="card"><div class="title">有记录的天数</div><div style="font-size:28px;font-weight:600;">${digests.length}</div></div>
+    </div>
+
+    ${digests.length === 0 && html`<div class="empty">（还没有够格的记录。模拟跑起来、或把重要性阈值拉低试试）</div>`}
+
+    ${digests.map((d) => html`
+      <div style="margin-bottom:22px;">
+        <div style="display:flex;align-items:baseline;gap:10px;border-bottom:1px solid #21262d;padding-bottom:6px;margin-bottom:10px;">
+          <h2 style="font-size:16px;margin:0;">第 ${d.day} 天</h2>
+          <span class="muted" style="font-size:11px;">
+            ${d.entries.length} 条${d.emergenceCount > 0 ? ` · 涌现 ${d.emergenceCount}` : ""}
+            ${d.byKind.length ? " · " + d.byKind.map((b) => `${CHRON_KIND_LABEL[b.kind] ?? b.kind}${b.count}`).join(" ") : ""}
+          </span>
+        </div>
+        ${d.headline && html`
+          <div class="card" style="margin-bottom:10px;border-color:${IMPORTANCE_COLOR(d.headline.importance)};">
+            <div class="title" style="color:${IMPORTANCE_COLOR(d.headline.importance)};">今日头条</div>
+            <div style="font-size:14px;">${d.headline.emoji} ${d.headline.title}</div>
+          </div>
+        `}
+        ${d.entries.map((e) => html`
+          <div class="card" style="margin-bottom:6px;cursor:pointer;border-left:3px solid ${e.kind === "emergence" ? "#3fb950" : IMPORTANCE_COLOR(e.importance)};"
+               onClick=${() => setOpenId(openId === e.id ? null : e.id)}>
+            <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;">
+              <span style="font-size:14px;">${e.emoji}</span>
+              <strong style="font-size:13px;flex:1;">${e.title}</strong>
+              ${e.kind === "emergence" && html`<span style="font-size:10px;color:#3fb950;border:1px solid #3fb950;border-radius:3px;padding:0 4px;">涌现</span>`}
+              <span class="muted" style="font-size:10px;">${e.kind === "emergence" ? "" : (CHRON_KIND_LABEL[e.kind] ?? e.kind) + " · "}${e.importance} 分 · tick ${e.tick}</span>
+            </div>
+            ${e.detail && html`<div style="font-size:12px;margin-top:4px;color:#c9d1d9;">${e.detail}</div>`}
+            <div class="muted" style="font-size:10px;margin-top:3px;">${e.actors.map(nameOf).join("、") || "—"}</div>
+            ${openId === e.id && e.evidence && html`
+              <div style="margin-top:8px;padding:8px;background:#010409;border:1px solid #21262d;border-radius:6px;">
+                <div class="title" style="font-size:10px;">机械判据</div>
+                <div style="font-size:11px;color:#8b949e;font-family:ui-monospace,monospace;word-break:break-all;">${e.evidence}</div>
+              </div>
+            `}
+          </div>
+        `)}
+      </div>
+    `)}
   `;
 }
 

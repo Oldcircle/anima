@@ -26,6 +26,7 @@ import { runAgentTick, describeObservableAction, type AgentConfig, type AgentTic
 import { mentionedObjects, extractFacts, settleExtractedFacts } from "./fact-extractor.js";
 import { groundingEnabled } from "../world/world-objects.js";
 import { promptTrace } from "../providers/prompt-trace.js";
+import { detectEmergence } from "../world/emergence.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest, filterGroupInbox } from "./conversation-mode.js";
 import { extractPromise, mightContainPromise, extractTransaction, mightContainTransaction, type ExtractedTransaction } from "./promise-extractor.js";
@@ -484,6 +485,10 @@ export class Simulation {
     // 4b. 每天 23:00 反思 + 职业晋升
     const reflections = await this._runNightlyReflection(gameTime);
 
+    // 4c. 涌现探测：每 tick 全量重跑，靠条目 id 幂等去重（不维护游标——游标读档会错位）。
+    // 这是"人盯不过来"的解法：世界自己把没人编排却发生了的事举手报上来。
+    this._detectEmergence(gameTime);
+
     const summary: TickSummary = {
       tick: gameTime.tick, gameTime, results, reflections,
       randomEvents: triggeredEvents.length > 0 ? triggeredEvents : undefined,
@@ -549,6 +554,14 @@ export class Simulation {
           importance: 6,
         });
         console.log(`🧊 [case] ${coldCase.id} 冷案搁置（悬 5 天无人破）`);
+        this.world.chronicle.record({
+          id: `chr_cold_${coldCase.id}`,
+          tick: gameTime.tick, day: Math.floor(gameTime.tick / 96),
+          kind: "case", importance: 8, emoji: "🧊",
+          title: `${coldCase.id} 成了悬案——五天过去，没人破得了`,
+          detail: "悬案是合法终局：世界不会为了收尾而塞给谁一个答案。",
+          actors: [coldCase.victimId],
+        });
       }
       // B1.5 阻尼豁免：有 activeOpenStance / 未 settled 事件的对，
       // 暂停 grudge 3 天自动清与 idleDecay——账本要顶得住均值回归（off 档豁免集恒空）
@@ -719,6 +732,14 @@ export class Simulation {
     // ── 结算真实状态后果（与 beat auto_events 共用的 fate 包装应用路径）──
     const { goldChange, affected } = this._applyFateOutcome(target, event, gameTime.tick);
     console.log(`🎲 [命运] ${event.name} → ${target.name}${goldChange !== 0 ? ` (金币 ${goldChange > 0 ? "+" : ""}${goldChange})` : ""}`);
+    this.world.chronicle.record({
+      id: `chr_fate_${event.id}_${gameTime.tick}_${target.id}`,
+      tick: gameTime.tick, day: Math.floor(gameTime.tick / 96),
+      kind: "fate", importance: 8, emoji: "🎲",
+      title: `${target.name}${event.name}`,
+      detail: `${event.template.replace("{character}", target.name)}${goldChange !== 0 ? `（金币 ${goldChange > 0 ? "+" : ""}${goldChange}）` : ""}。世界只造处境，怎么应对归他自己。`,
+      actors: [target.id], locationId: target.locationId,
+    });
 
     // 走 randomEvents 通道下发前端（effects 已在上面结算，这里只带展示字段）
     return {
@@ -728,6 +749,28 @@ export class Simulation {
       },
       affectedCharacters: affected,
     };
+  }
+
+  /**
+   * 涌现探测（编年史第二类来源）。零 LLM、零额外状态——判据全部读现成世界状态，
+   * 新发现打 `✨ [涌现]` 日志并落编年史。探测器本体见 world/emergence.ts。
+   */
+  private _detectEmergence(gameTime: GameTime): void {
+    const ids = this.world.getAllCharacters()
+      .filter((c) => !this._isStaticNpc(c.id))
+      .map((c) => c.id);
+    const found = detectEmergence({
+      chronicle: this.world.chronicle,
+      objects: this.world.objects,
+      narrative: this.world.narrative,
+      tick: gameTime.tick,
+      names: new Map(this.world.getAllCharacters().map((c) => [c.id, c.name])),
+      getRelationLevel: (a, b) => this.relationships.get(a, b).level,
+      characterIds: ids,
+    });
+    for (const e of found) {
+      console.log(`✨ [涌现] ${e.emoji} ${e.title}`);
+    }
   }
 
   /**
@@ -1041,6 +1084,13 @@ export class Simulation {
         }
       }
       console.log(`📓 [kira] 应验：${victim.id} 怪病倒下（第 ${nth} 例）${strike.judgment ? `｜册上小字："${strike.judgment.slice(0, 40)}"` : ""}`);
+      this.world.chronicle.record({
+        id: `chr_kira_${victim.id}_${gameTime.tick}`,
+        tick: gameTime.tick, day: Math.floor(gameTime.tick / 96),
+        kind: "crime", importance: 10, emoji: "📓",
+        title: `${victim.name ?? victim.id}怪病倒下——册上的名字应验了（第 ${nth} 例）`,
+        actors: [victim.id],
+      });
     }
   }
 
@@ -1138,6 +1188,14 @@ export class Simulation {
         }
       }
       console.log(`🥀 [饿倒] ${state.name} 在 ${loc?.name ?? state.locationId} 饿晕了 (hunger=${hunger})`);
+        this.world.chronicle.record({
+          id: `chr_starve_${state.id}_${gameTime.tick}`,
+          tick: gameTime.tick, day: Math.floor(gameTime.tick / 96),
+          kind: "survival", importance: 9, emoji: "🥀",
+          title: `${state.name}在${loc?.name ?? state.locationId}饿晕了`,
+          detail: "挨饿是真的会咬人的——饭钱在这个世界里有分量。",
+          actors: [state.id], locationId: state.locationId,
+        });
     }
   }
 
@@ -1256,6 +1314,14 @@ export class Simulation {
           relatedCharacterId: r.characterId,
         });
         console.log(`💰 [还钱] ${r.characterId} → ${repayOutcome.lenderId}: ${repayOutcome.amount} 金币`);
+          this.world.chronicle.record({
+            id: `chr_repay_${r.characterId}_${repayOutcome.lenderId}_${gameTime.tick}`,
+            tick: gameTime.tick, day: Math.floor(gameTime.tick / 96),
+            kind: "economy", importance: 7, emoji: "💰",
+            title: `${r.characterId} 把欠 ${repayOutcome.lenderId} 的 ${repayOutcome.amount} 金币还了`,
+            detail: "人情账比金币账重——借了又还，这条弧线走完了。",
+            actors: [r.characterId, repayOutcome.lenderId],
+          });
       }
 
       if (r.action.name === "steal" && r.result?.description?.includes("抓住")) {

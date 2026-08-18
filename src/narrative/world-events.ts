@@ -454,6 +454,14 @@ export function processPendingDiscoveries(world: World, memory: ShortTermMemory,
       }
       d.discoveredTick = tick;
       console.log(`🕳️ [发现] ${victim.name} 在 ${d.locationId} 发现了 [${d.id}]`);
+    world.chronicle.record({
+      id: `chr_discover_${d.id}`,
+      tick, day: Math.floor(tick / 96),
+      kind: "case", importance: 9, emoji: "🕵️",
+      title: `${victim.name}发现自己的钱不见了`,
+      detail: "案子从这一刻起对镇上公开——accuse 通道解锁，风声开始走。作案早于发现，痕迹已经在那儿了。",
+      actors: [victim.id], locationId: d.locationId,
+    });
       if (!d.rumor) done.add(d.id);
     } else if (d.rumor && tick >= d.discoveredTick + DISCOVERY_RUMOR_DELAY_TICKS) {
       // 风声晚于发现记忆

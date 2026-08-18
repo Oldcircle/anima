@@ -57,6 +57,8 @@ export interface ToolBuildContext {
   narrative?: import("../narrative/narrative-state.js").NarrativeState;
   /** 按 id 取角色状态（accuse 赃物在身裁决用；agent-loop 传 world.getCharacter） */
   getCharacterById?: (id: string) => CharacterState | undefined;
+  /** 世界编年史（观察者通道）：tamper/accuse 这类"重大节点"在这里留一行给人看 */
+  chronicle?: import("../world/chronicle.js").Chronicle;
 }
 
 /**
@@ -1706,11 +1708,27 @@ function buildTamperTool(ctx: ToolBuildContext): ActionDefinition {
       const bystanders = actionCtx.nearbyCharacters;
       const witnessId = bystanders.length > 0 ? [...bystanders].sort()[0] : undefined;
       console.log(`🕳️ [tamper] ${ctx.card.id} → ${obj.key}（${goal}）roll=${roll.total} ${roll.outcome}`);
+      // 编年史：有人对世界动手脚，是这局里最该被人看见的一类节点
+      ctx.chronicle?.record({
+        id: `chr_tamper_${actionCtx.tick}_${ctx.card.id}_${obj.key}`,
+        tick: actionCtx.tick,
+        day: Math.floor(actionCtx.tick / 96),
+        kind: "crime",
+        importance: 9,
+        emoji: "🕳️",
+        title: `${ctx.card.name}对${obj.name}动了手脚`,
+        detail: `目的：${goal}。掷骰 ${roll.total} → ${
+          roll.outcome === "success" ? "得手，旧痕迹抹干净了" :
+          roll.outcome === "cost" ? "做成了，但留下明眼可见的毛边" : "没得手，还留下一片乱痕"
+        }${witnessId ? "；边上有人。" : "。"}`,
+        actors: [ctx.card.id, ...(witnessId ? [witnessId] : [])],
+        locationId: ctx.location.id,
+      });
 
       if (roll.outcome === "success") {
         store.tamperObject(obj.key, { clearTraces: true });
         store.addTrace(obj.key, {
-          id: `tamper_${actionCtx.tick}_subtle`,
+          id: `tamper_${actionCtx.tick}_${ctx.card.id}_subtle`,
           text: "凑得极近才能看出一点不自然——像被人小心处理过",
           addedTick: actionCtx.tick,
           source: "interaction",
@@ -1725,7 +1743,7 @@ function buildTamperTool(ctx: ToolBuildContext): ActionDefinition {
       if (roll.outcome === "cost") {
         store.tamperObject(obj.key, { clearTraces: true });
         store.addTrace(obj.key, {
-          id: `tamper_${actionCtx.tick}_obvious`,
+          id: `tamper_${actionCtx.tick}_${ctx.card.id}_obvious`,
           text: "有明显被人动过手脚的痕迹——毛边和错位藏不住",
           addedTick: actionCtx.tick,
           source: "interaction",
@@ -1748,7 +1766,7 @@ function buildTamperTool(ctx: ToolBuildContext): ActionDefinition {
       // complication：没得手，fail forward——留乱痕+目击风险最高
       store.tamperObject(obj.key, { clearTraces: false });
       store.addTrace(obj.key, {
-        id: `tamper_${actionCtx.tick}_botched`,
+        id: `tamper_${actionCtx.tick}_${ctx.card.id}_botched`,
         text: "有人慌乱翻动过的乱痕——干得毛毛糙糙，一看就是心里有鬼",
         addedTick: actionCtx.tick,
         source: "interaction",
@@ -1838,7 +1856,23 @@ function buildAccuseTool(ctx: ToolBuildContext): ActionDefinition {
       const holdsPouch = accusedState ? hasItem(accusedState.inventory ?? [], STOLEN_EVIDENCE_ITEM) : false;
       const isPerp = accused.id === case_.perpId;
       const locName = ctx.location.name;
-      console.log(`⚖️ [accuse] ${ctx.card.id} → ${accused.id} @ ${case_.id}（${isPerp ? (holdsPouch ? "破案" : "指对无证") : "冤案"}）`);
+      const verdictLabel = isPerp ? (holdsPouch ? "破案" : "指对无证") : "冤案";
+      console.log(`⚖️ [accuse] ${ctx.card.id} → ${accused.id} @ ${case_.id}（${verdictLabel}）`);
+      // 编年史：当众指控是不可逆的一步，无论指对指错都值得单独记一行
+      ctx.chronicle?.record({
+        id: `chr_accuse_${case_.id}_${ctx.card.id}_${tick}`,
+        tick,
+        day: Math.floor(tick / 96),
+        kind: "case",
+        importance: 10,
+        emoji: holdsPouch && isPerp ? "⚖️" : "😶",
+        title: `${ctx.card.name}当众指认${accused.name}是那桩案子的作案者——${verdictLabel}`,
+        detail: holdsPouch && isPerp
+          ? `人赃俱获，案子当场破了。${accused.name}在全镇人眼里成了贼。`
+          : `拿不出实证，僵住了。${accused.name}和${ctx.card.name}从此结仇——注意：指对无证与冤案，对指控者的反馈逐字一致，引擎不泄露真相。`,
+        actors: [ctx.card.id, accused.id],
+        locationId: ctx.location.id,
+      });
 
       // ── 破案：指对 + 赃物在身（人赃俱获，客观铁证可以确证） ──
       if (isPerp && holdsPouch) {

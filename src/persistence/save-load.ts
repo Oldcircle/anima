@@ -105,6 +105,7 @@ export function saveGame(sim: Simulation, dbPath: string, scenarioId?: string): 
       appointments,
       narrativeJson: JSON.stringify(sim.world.narrative.getSnapshot()),
       worldObjectsJson: JSON.stringify(sim.world.objects.getSnapshot()),
+      chronicleJson: JSON.stringify(sim.world.chronicle.getSnapshot()),
       scenarioId,
       locationStockJson: JSON.stringify(
         Object.fromEntries(
@@ -165,6 +166,14 @@ export function loadGame(sim: Simulation, dbPath: string, scenarioId?: string): 
         sim.world.objects.replaceSnapshot(JSON.parse(worldState.worldObjectsJson));
       } catch (e) {
         console.warn(`⚠️  world_objects 读档失败: ${(e as Error).message}`);
+      }
+    }
+
+    if (worldState.chronicleJson) {
+      try {
+        sim.world.chronicle.replaceSnapshot(JSON.parse(worldState.chronicleJson));
+      } catch (e) {
+        console.warn(`⚠️  chronicle 读档失败: ${(e as Error).message}`);
       }
     }
 

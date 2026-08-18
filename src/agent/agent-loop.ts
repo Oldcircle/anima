@@ -186,6 +186,7 @@ export async function runAgentTick(params: {
     phaseTools: params.phaseTools,
     // 器物层（PLAN-grounding M1）：examine 数据源 + 意图触发匹配源（打算/在身意图/执念）
     objects: world.objects,
+    chronicle: world.chronicle,
     intentTexts: [
       ...(state.todayPlan?.day === gameTime.day ? state.todayPlan.items : []),
       ...(currentIntent ? [currentIntent.summary] : []),

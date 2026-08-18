@@ -20,6 +20,7 @@ import type { CharacterCard } from "../character/types.js";
 import { registerAdminRoutes } from "./admin-routes.js";
 import { registerNarrativeRoutes } from "./narrative-routes.js";
 import { registerPromptRoutes } from "./prompt-routes.js";
+import { registerChronicleRoutes } from "./chronicle-routes.js";
 import { SettingsStore } from "./settings-store.js";
 import type { OpenAICompatibleProvider } from "../providers/openai-compatible.js";
 
@@ -233,6 +234,7 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
   // ── 叙事系统 (N4 + N5) ──
   registerNarrativeRoutes(app, simulation);
   registerPromptRoutes(app);
+  registerChronicleRoutes(app, simulation);
 
   app.get("/api/conversations", (_req, res) => {
     // 返回当前所有活跃对话历史

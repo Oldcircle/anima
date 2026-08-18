@@ -311,6 +311,15 @@ function maybeInjectNpcCrime(deps: CrimeSupplyDeps): void {
   ledger["npc_last_crime"] = tick;
 
   console.log(`🕵️ [crime-supply] npc 投放：${CRIME_NPC.name} → ${victim.id}（${amount} 金币，延迟发现 @ ${discoveryLocationId}）`);
+  // 编年史（观察者通道）：案发本身此刻镇上还没人知道，但看戏的人该知道戏开场了
+  world.chronicle.record({
+    id: `chr_theft_${tick}_${victim.id}`,
+    tick, day: Math.floor(tick / 96),
+    kind: "crime", importance: 9, emoji: "🌑",
+    title: `${CRIME_NPC.name}偷了 ${victim.name} 的 ${amount} 金币`,
+    detail: `镇上还没人知道——要等受害者自己撞见。真凶只在引擎账本里，绝不进任何角色的 prompt。`,
+    actors: [CRIME_NPC.id, victim.id], locationId: discoveryLocationId,
+  });
   supplyNpcCrimeLeads(deps, {
     victimId: victim.id,
     locationName: world.getLocation(discoveryLocationId)?.name ?? discoveryLocationId,
@@ -460,6 +469,14 @@ export function replyAsStaticNpc(
       relatedId: slipCase.id,
     });
     console.log(`🕵️ [crime-supply] 失言：${npc.name} 对 ${params.speakerId} 说漏了 ${slipVictim.name}（第 ${probes} 次试探）`);
+    world.chronicle.record({
+      id: `chr_slip_${params.speakerId}_${tick}`,
+      tick, day: Math.floor(tick / TICKS_PER_DAY),
+      kind: "crime", importance: 10, emoji: "🗝️",
+      title: `${npc.name}对${world.getCharacter(params.speakerId)?.name ?? params.speakerId}说漏了嘴——他否认了一件对方根本没提过的事`,
+      detail: `第 ${probes} 次试探换来的。这是全局唯一一条能把嫌疑指向具体某人的线索。`,
+      actors: [params.speakerId, npc.id],
+    });
   }
   return line;
 }
