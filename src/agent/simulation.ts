@@ -25,6 +25,7 @@ import { LongTermMemoryStore, formatSharedHistory } from "../memory/long-term.js
 import { runAgentTick, describeObservableAction, type AgentConfig, type AgentTickResult } from "./agent-loop.js";
 import { mentionedObjects, extractFacts, settleExtractedFacts } from "./fact-extractor.js";
 import { groundingEnabled } from "../world/world-objects.js";
+import { promptTrace } from "../providers/prompt-trace.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest, filterGroupInbox } from "./conversation-mode.js";
 import { extractPromise, mightContainPromise, extractTransaction, mightContainTransaction, type ExtractedTransaction } from "./promise-extractor.js";
@@ -379,6 +380,9 @@ export class Simulation {
 
   /** 运行单个 tick */
   async runOneTick(gameTime: GameTime): Promise<TickSummary> {
+    // 提示词追踪：告诉观察层现在是第几 tick，本 tick 内的 LLM 调用记录才带得上游戏时间
+    promptTrace.setTick(gameTime.tick);
+
     // -1. 应用 API 层入队的角色/地点/provider 变更（保证 tick 内一致）
     this.drainMutations();
 

@@ -40,6 +40,10 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **社交可视化**：`godot/ui/RelationWeb.gd` 关系网（R 键，圆环 + 关系连线按类型上色 + bond 标注）
 - **思考持久化**：LLM 每次决策的内心独白存入记忆，念头能跨 tick 延续
 - **时间系统**：Tick 驱动（1 tick = 游戏 15 分钟），支持加速/暂停
+- **提示词追踪（`src/providers/prompt-trace.ts`）**：进程内环形缓冲记下每次 LLM 调用的完整
+  输入输出 + usage + 缓存命中，管理面板「提示词」页按 kind/角色回看。核心是**前缀断点**——
+  拿本次的工具表+system 与上一次同「类型×角色×模型」的逐字节比，直接指出断在第几字节、
+  落在工具表还是 system（缓存命中率掉了的归因，此前要落盘手工 diff 两个 JSON）
 - **提示词缓存纪律**：DeepSeek 自动前缀缓存按逐字节匹配——工具表/system prompt 只随「角色×地点」变化，
   每 tick 抖动的状态走 user prompt 末尾"此刻区"（环境快照）；由 `src/agent/prompt-cache-discipline.test.ts`
   回归锁定，命中率按调用类型分桶打印（`[LLM cache]` 日志）
@@ -158,7 +162,8 @@ ANIMA_BREAK_LEVEL=mild            # 破线强度 off/mild/strong（下行通道�
 ANIMA_DECISION_POV=first          # 决策视角 first/third，默认 first。third=作者预测框架（深翻顶块+决策指令）+ 私有通道：两层动机行【表面】｜【真心】经 motive-channel.ts 解析，真心层只走观看者通道（WS motive 字段/🎭 日志）、本人记忆只回流表面层。与 BREAK_LEVEL 正交，见 STATUS
 ANIMA_GROUNDING=1                 # 器物层（PLAN-grounding M0/M1）：地点招牌器物+examine+触发通道。默认开；=0 整层退场逐字节回归（A/B）
 ANIMA_PLAYSTYLE=1                 # Bartle 玩法人格（角色卡 playstyle: achiever|explorer|socializer|killer）：只作用在"先伸手够哪个工具"，不碰台词质地。默认开；=0 整层退场逐字节回归
-ANIMA_PROMPT_DUMP=1               # 可选调试：把每次 LLM 请求体落盘 logs/prompt-dumps/<kind>/，供相邻请求 diff 前缀断点
+ANIMA_PROMPT_DUMP=1               # 可选调试：把每次 LLM 请求体落盘 logs/prompt-dumps/<kind>/，供相邻请求 diff 前缀断点（离线版；在线版见管理面板「提示词」页）
+ANIMA_PROMPT_TRACE_KEEP=200       # 提示词追踪环形缓冲条数（管理面板「提示词」页的数据源）。默认 200；=0 整层关闭不占内存
 PORT=3001                         # Web 服务端口，可选
 ```
 

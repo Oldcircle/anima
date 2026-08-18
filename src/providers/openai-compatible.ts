@@ -5,6 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LLMProvider, LLMRequest, LLMResponse, ToolCall } from "./types.js";
+import { promptTrace } from "./prompt-trace.js";
 
 /** ANIMA_PROMPT_DUMP=1 时把每次请求体落盘到 logs/prompt-dumps/<kind>/<tag>-<seq>.json，供相邻请求 diff 定位前缀断点 */
 const PROMPT_DUMP_DIR = process.env.ANIMA_PROMPT_DUMP
@@ -94,7 +95,28 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
   }
 
-  async chat(request: LLMRequest, modelId?: string, _isEmptyRetry = false): Promise<LLMResponse> {
+  /**
+   * 提示词追踪包装层（观察者通道）：计时 + 成功/失败两路都写进 promptTrace 环形缓冲，
+   * 供管理面板「提示词」页按 kind/角色回看完整输入输出与前缀断点。
+   * 记录失败绝不影响调用本身（record 内部吞异常）。
+   */
+  async chat(request: LLMRequest, modelId?: string): Promise<LLMResponse> {
+    const model = modelId ?? this._defaultModel;
+    const started = Date.now();
+    try {
+      const response = await this._chat(request, modelId);
+      promptTrace.record({ request, model, durationMs: Date.now() - started, response });
+      return response;
+    } catch (err) {
+      promptTrace.record({
+        request, model, durationMs: Date.now() - started,
+        error: (err as Error)?.message?.slice(0, 200) ?? "unknown",
+      });
+      throw err;
+    }
+  }
+
+  private async _chat(request: LLMRequest, modelId?: string, _isEmptyRetry = false): Promise<LLMResponse> {
     const model = modelId ?? this._defaultModel;
 
     // request.system 为空时不前置空 system 消息——酒馆模式把 system 块内联在 request.messages 里，
@@ -237,7 +259,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     // 避免真机跑对话时"角色一句话不说、这个 tick 白费"。_isEmptyRetry 锁死递归深度为 1。
     if (content.trim() === "" && toolCalls.length === 0 && choice.finish_reason !== "length" && !_isEmptyRetry) {
       console.warn(`[LLM retry] 空返回（200 但 content 空 + 无工具调用），重试一次`);
-      return this.chat(request, modelId, true);
+      return this._chat(request, modelId, true);
     }
 
     return {

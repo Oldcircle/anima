@@ -147,6 +147,7 @@ function App() {
           <${NavLink} href="/live" route=${route}>实时</${NavLink}>
           <${NavLink} href="/narrative" route=${route}>叙事</${NavLink}>
           <${NavLink} href="/grounding" route=${route}>世界</${NavLink}>
+          <${NavLink} href="/prompts" route=${route}>提示词</${NavLink}>
           <div class="group-title">配置</div>
           <${NavLink} href="/characters" route=${route}>角色</${NavLink}>
           <${NavLink} href="/locations" route=${route}>地点</${NavLink}>
@@ -190,6 +191,7 @@ function renderRoute(route) {
   if (route === "/settings") return html`<${SettingsPage} />`;
   if (route === "/narrative") return html`<${NarrativePage} />`;
   if (route === "/grounding") return html`<${GroundingPage} />`;
+  if (route === "/prompts") return html`<${PromptsPage} />`;
   return html`<${LivePage} />`;
 }
 
@@ -852,6 +854,261 @@ function GroundingPage() {
       </div>
     </div>
   `;
+}
+
+// ===== 提示词页：每次 LLM 调用的完整输入输出 + 缓存纪律归因 =====
+// 项目本身是 agent 系统，"这一次到底喂了什么进去"此前只能翻控制台或落盘手工 diff。
+// 这里在线看：按 kind/角色筛，点开看 system/工具表/messages/响应，
+// 以及**前缀断点**——DeepSeek 前缀缓存按字节匹配，命中率掉了就是有动态内容回流进了前缀。
+
+const KIND_LABEL = {
+  decision: "决策", conversation: "对话", reflection: "反思",
+  "morning-plan": "晨间打算", impression: "印象", observation: "观察推理",
+  "fact-extract": "正典抽取", "stance-extract": "立场抽取",
+  "transaction-extract": "交易抽取", director: "导演", unknown: "未标注",
+};
+const kindLabel = (k) => KIND_LABEL[k] ?? k;
+const pct = (v) => (v === undefined || v === null ? "—" : `${(v * 100).toFixed(1)}%`);
+const kb = (n) => (n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`);
+
+function PromptsPage() {
+  const [data, setData] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [kind, setKind] = useState("");
+  const [tag, setTag] = useState("");
+  const [auto, setAuto] = useState(true);
+  const [openId, setOpenId] = useState(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const qs = new URLSearchParams();
+      if (kind) qs.set("kind", kind);
+      if (tag) qs.set("tag", tag);
+      qs.set("limit", "200");
+      const [list, st] = await Promise.all([
+        api(`/api/prompts?${qs}`),
+        api("/api/prompts/stats"),
+      ]);
+      setData(list);
+      setStats(st);
+    } catch (e) { toast("加载失败：" + e.message, "error"); }
+  }, [kind, tag]);
+
+  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    if (!auto) return;
+    const id = setInterval(reload, 4000);
+    return () => clearInterval(id);
+  }, [auto, reload]);
+
+  const clearAll = async () => {
+    try {
+      await api("/api/prompts", { method: "DELETE" });
+      toast("已清空追踪缓冲");
+      setOpenId(null);
+      reload();
+    } catch (e) { toast("失败：" + e.message, "error"); }
+  };
+
+  const items = data?.items ?? [];
+  const total = stats?.total;
+
+  if (data && !data.enabled) {
+    return html`
+      <h1>提示词</h1>
+      <div class="empty">追踪已关闭（ANIMA_PROMPT_TRACE_KEEP=0）。去掉这个环境变量重启即可开启。</div>
+    `;
+  }
+
+  return html`
+    <h1>提示词</h1>
+    <div class="subtitle">每次 LLM 调用的完整输入输出。DeepSeek 前缀缓存按逐字节匹配——命中率掉了就是有动态内容回流进了前缀，「前缀断点」直接指出断在第几字节、在工具表还是 system。</div>
+
+    <div class="toolbar">
+      <button style="flex:none;white-space:nowrap;" onClick=${reload}>刷新</button>
+      <select value=${kind} onChange=${(e) => setKind(e.target.value)} style="flex:none;width:130px;">
+        <option value="">全部类型</option>
+        ${(stats?.kinds ?? []).map((k) => html`<option value=${k}>${kindLabel(k)}</option>`)}
+      </select>
+      <select value=${tag} onChange=${(e) => setTag(e.target.value)} style="flex:none;width:130px;">
+        <option value="">全部角色</option>
+        ${(stats?.tags ?? []).map((t) => html`<option value=${t}>${t}</option>`)}
+      </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8b949e;white-space:nowrap;flex:none;">
+        <input type="checkbox" checked=${auto} onChange=${(e) => setAuto(e.target.checked)} /> 自动刷新
+      </label>
+      <div class="spacer"></div>
+      <span class="muted" style="font-size:11px;white-space:nowrap;">缓冲 ${data?.size ?? 0} 条</span>
+      <button style="flex:none;white-space:nowrap;" onClick=${clearAll}>清空</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;">
+      <div class="card"><div class="title">调用</div><div style="font-size:28px;font-weight:600;">${total?.calls ?? 0}</div></div>
+      <div class="card"><div class="title">输入 token</div><div style="font-size:28px;font-weight:600;">${(total?.inputTokens ?? 0).toLocaleString()}</div></div>
+      <div class="card"><div class="title">输出 token</div><div style="font-size:28px;font-weight:600;">${(total?.outputTokens ?? 0).toLocaleString()}</div></div>
+      <div class="card"><div class="title">缓存命中</div><div style="font-size:28px;font-weight:600;color:${(total?.cacheHitRate ?? 0) >= 0.6 ? "#3fb950" : "#d29922"};">${pct(total?.cacheHitRate)}</div></div>
+      <div class="card"><div class="title">前缀断点</div><div style="font-size:28px;font-weight:600;color:${(total?.prefixBreaks ?? 0) > 0 ? "#d29922" : "#3fb950"};">${total?.prefixBreaks ?? 0}</div></div>
+      <div class="card"><div class="title">失败</div><div style="font-size:28px;font-weight:600;color:${(total?.errors ?? 0) > 0 ? "#f85149" : "#8b949e"};">${total?.errors ?? 0}</div></div>
+    </div>
+
+    <h2 style="font-size:16px;">按调用类型</h2>
+    <div class="card" style="padding:0;overflow-x:auto;margin-bottom:18px;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="color:#8b949e;text-align:left;">
+          <th style="padding:8px 12px;">类型</th><th>调用</th><th>输入</th><th>输出</th>
+          <th>缓存命中</th><th>断点</th><th>均耗时</th><th>失败</th>
+        </tr></thead>
+        <tbody>
+          ${(stats?.byKind ?? []).map((b) => html`
+            <tr style="border-top:1px solid #21262d;">
+              <td style="padding:8px 12px;">${kindLabel(b.kind)}</td>
+              <td>${b.calls}</td>
+              <td>${b.inputTokens.toLocaleString()}</td>
+              <td>${b.outputTokens.toLocaleString()}</td>
+              <td style="color:${b.cacheHitRate >= 0.6 ? "#3fb950" : b.cacheHitRate > 0 ? "#d29922" : "#8b949e"};">${pct(b.cacheHitRate)}</td>
+              <td style="color:${b.prefixBreaks > 0 ? "#d29922" : "#8b949e"};">${b.prefixBreaks}</td>
+              <td>${b.avgDurationMs} ms</td>
+              <td style="color:${b.errors > 0 ? "#f85149" : "#8b949e"};">${b.errors}</td>
+            </tr>
+          `)}
+          ${(stats?.byKind ?? []).length === 0 && html`<tr><td colspan="8" style="padding:20px;text-align:center;color:#484f58;">（还没有调用被记录）</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <h2 style="font-size:16px;">调用记录</h2>
+    ${items.length === 0 && html`<div class="empty">（空。模拟跑起来后这里会实时进条目）</div>`}
+    ${items.map((r) => html`
+      <div class="card" style="margin-bottom:6px;cursor:pointer;" onClick=${() => setOpenId(r.id)}>
+        <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;">
+          <span class="muted" style="font-size:11px;">#${r.seq}</span>
+          <strong style="font-size:13px;">${kindLabel(r.kind)}</strong>
+          ${r.tag && html`<span style="font-size:12px;color:#58a6ff;">${r.tag}</span>`}
+          ${r.tick !== undefined && html`<span class="muted" style="font-size:11px;">tick ${r.tick}</span>`}
+          <div style="flex:1;"></div>
+          ${r.error
+            ? html`<span style="font-size:11px;color:#f85149;">失败</span>`
+            : html`<span style="font-size:11px;color:${(r.cacheHitRate ?? 0) >= 0.6 ? "#3fb950" : "#d29922"};">缓存 ${pct(r.cacheHitRate)}</span>`}
+          ${r.prefixIdentical
+            ? html`<span style="font-size:11px;color:#3fb950;" title="前缀与上一次同类调用逐字节一致">前缀稳定</span>`
+            : html`<span style="font-size:11px;color:#d29922;" title=${"首个分歧字节 " + r.prefixBreakAt}>${r.prefixBreakAt > 0 ? `断点 @${r.prefixBreakAt}` : "首次"}</span>`}
+          <span class="muted" style="font-size:11px;">${r.durationMs} ms</span>
+        </div>
+        <div style="font-size:12px;margin-top:4px;color:#c9d1d9;">${r.preview || "（空响应）"}</div>
+        <div class="muted" style="font-size:10px;margin-top:2px;">
+          ${r.model} · 工具 ${r.toolCount} · 消息 ${r.messageCount} · 前缀 ${kb(r.prefixBytes)}
+          ${r.inputTokens !== undefined ? ` · in ${r.inputTokens} / out ${r.outputTokens}` : ""}
+        </div>
+      </div>
+    `)}
+
+    ${openId && html`<${PromptDrawer} id=${openId} onClose=${() => setOpenId(null)} />`}
+  `;
+}
+
+function PromptDrawer({ id, onClose }) {
+  const [rec, setRec] = useState(null);
+  const [tab, setTab] = useState("overview");
+
+  useEffect(() => {
+    let alive = true;
+    api(`/api/prompts/${id}`)
+      .then((r) => { if (alive) setRec(r); })
+      .catch((e) => toast("加载失败：" + e.message, "error"));
+    return () => { alive = false; };
+  }, [id]);
+
+  const tabs = [
+    ["overview", "概览"],
+    ["prefix", "前缀断点"],
+    ["system", "System"],
+    ["tools", "工具表"],
+    ["messages", "消息"],
+    ["response", "响应"],
+  ];
+  const pre = "background:#010409;border:1px solid #21262d;border-radius:6px;padding:12px;font-size:11px;color:#c9d1d9;white-space:pre-wrap;word-break:break-word;max-height:none;";
+
+  return html`
+    <div class="drawer-mask" onClick=${onClose}>
+      <div class="drawer" style="width:min(900px,100vw);" onClick=${(e) => e.stopPropagation()}>
+        <div class="drawer-header">
+          <h2>${rec ? `#${rec.seq} ${kindLabel(rec.kind)}${rec.tag ? " · " + rec.tag : ""}` : "加载中…"}</h2>
+          <button onClick=${onClose}>关闭</button>
+        </div>
+        <div class="drawer-tabs">
+          ${tabs.map(([k, label]) => html`<button class=${tab === k ? "active" : ""} onClick=${() => setTab(k)}>${label}</button>`)}
+        </div>
+        <div class="drawer-body">
+          ${!rec && html`<div class="empty">加载中…</div>`}
+          ${rec && tab === "overview" && html`
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px;">
+              <div class="card"><div class="title">模型</div><div style="font-size:13px;">${rec.model}</div></div>
+              <div class="card"><div class="title">耗时</div><div style="font-size:13px;">${rec.durationMs} ms</div></div>
+              <div class="card"><div class="title">tick</div><div style="font-size:13px;">${rec.tick ?? "—"}</div></div>
+              <div class="card"><div class="title">输入 token</div><div style="font-size:13px;">${rec.usage?.inputTokens ?? "—"}</div></div>
+              <div class="card"><div class="title">输出 token</div><div style="font-size:13px;">${rec.usage?.outputTokens ?? "—"}</div></div>
+              <div class="card"><div class="title">缓存命中</div><div style="font-size:13px;">${pct(rec.cacheHitRate)}</div></div>
+            </div>
+            ${rec.error && html`<div class="card" style="border-color:#f85149;color:#f85149;margin-bottom:12px;"><div class="title">调用失败</div>${rec.error}</div>`}
+            <div class="card" style="margin-bottom:10px;">
+              <div class="title">采样参数</div>
+              <div style="font-size:12px;">max_tokens ${rec.maxTokens ?? "默认"} · temperature ${rec.temperature ?? "默认"} · finish ${rec.finishReason ?? "—"}</div>
+              ${rec.prefill && html`<div style="font-size:12px;margin-top:4px;">prefill：${rec.prefill}</div>`}
+            </div>
+            <div class="card">
+              <div class="title">工具表（${rec.toolNames.length}）</div>
+              <div style="font-size:12px;">${rec.toolNames.join("、") || "（无）"}</div>
+            </div>
+          `}
+          ${rec && tab === "prefix" && html`
+            ${rec.prefixBreak.identical
+              ? html`<div class="card" style="border-color:#3fb950;">
+                  <div class="title" style="color:#3fb950;">前缀逐字节一致</div>
+                  <div style="font-size:12px;">与 ${rec.prefixBreak.comparedToId} 相比，工具表 + system 共 ${kb(rec.prefixBytes)} 一字节没动——这一次能吃到完整前缀缓存。</div>
+                </div>`
+              : !rec.prefixBreak.comparedToId
+                ? html`<div class="card"><div class="title">首次调用</div><div style="font-size:12px;">这是该「类型 × 角色 × 模型」组合的第一次调用，没有前驱可比。</div></div>`
+                : html`
+                  <div class="card" style="border-color:#d29922;margin-bottom:12px;">
+                    <div class="title" style="color:#d29922;">前缀在第 ${rec.prefixBreak.atByte} 字节断开（共 ${kb(rec.prefixBytes)}）</div>
+                    <div style="font-size:12px;">分歧落在 <strong>${rec.prefixBreak.section === "tools" ? "工具表" : "system"}</strong>，与 ${rec.prefixBreak.comparedToId} 相比。断点之后的内容全部拿不到缓存。</div>
+                  </div>
+                  <div class="title">上一次（${rec.prefixBreak.comparedToId}）</div>
+                  <pre style=${pre}>${rec.prefixBreak.prevSnippet}</pre>
+                  <div class="title" style="margin-top:10px;">这一次</div>
+                  <pre style=${pre}>${rec.prefixBreak.nextSnippet}</pre>
+                `}
+          `}
+          ${rec && tab === "system" && html`
+            <div class="muted" style="font-size:11px;margin-bottom:6px;">${kb(new Blob([rec.system]).size)}${rec.systemTruncated ? " · 已截断" : ""}</div>
+            <pre style=${pre}>${rec.system || "（空——酒馆模式把 system 块内联在 messages 里）"}</pre>
+          `}
+          ${rec && tab === "tools" && html`
+            <div class="muted" style="font-size:11px;margin-bottom:6px;">${rec.toolNames.length} 个工具${rec.toolsTruncated ? " · 已截断" : ""}</div>
+            <pre style=${pre}>${rec.toolsJson ? JSON.stringify(safeParse(rec.toolsJson), null, 2) : "（本次调用没带工具表）"}</pre>
+          `}
+          ${rec && tab === "messages" && html`
+            ${rec.messages.map((m, i) => html`
+              <div style="margin-bottom:12px;">
+                <div class="title">${i + 1}. ${m.role}${m.toolCallNames?.length ? ` → ${m.toolCallNames.join("、")}` : ""}${m.truncated ? "（已截断）" : ""}</div>
+                <pre style=${pre}>${m.content || "（无正文）"}</pre>
+              </div>
+            `)}
+          `}
+          ${rec && tab === "response" && html`
+            <div class="title">正文${rec.contentTruncated ? "（已截断）" : ""}</div>
+            <pre style=${pre}>${rec.content || "（空）"}</pre>
+            <div class="title" style="margin-top:12px;">工具调用</div>
+            <pre style=${pre}>${rec.toolCalls.length ? JSON.stringify(rec.toolCalls, null, 2) : "（无）"}</pre>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function safeParse(s) {
+  try { return JSON.parse(s); } catch { return s; }
 }
 
 function SettingsPage() {
