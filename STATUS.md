@@ -207,7 +207,24 @@ restate 裁决、tamper/命运/accuse。观察项：3 次 impression 截断是**
 M2.5 restate 0 样本（13 次进抽取 11 次判无断言，抽取器过于保守）。
 新观察项：模型偶发吐非法 JSON 6 次（中文值没加引号），有重试兜底没崩但白烧 0.7%。
 
-**下次入口**：① **失言阈值 3→2**（一行改动，最便宜的一枪）+ 同弧复跑，看失言→实证→指控
+**cast-culprit r1 已烧（349 调用/33 tick/¥0.96）：机制通了，角色不走** · 判决
+[logs/sim-cast-culprit-r1-VERDICT.md](./logs/sim-cast-culprit-r1-VERDICT.md) ·
+归档 `data/runs/cast-culprit-deepseek-v4-flash-20260820-182107.db`
+
+**关键数字：steal 被端上桌 28 次，一次没被拿**（用归档世界重建菜单逐项验过：
+shinji=debt 门开、light=grudge→lelouch 门开且金币归零、对照 rei 灰工具一个没有；
+三条依赖在 agent-loop 接线齐全）。**这是行为发现不是 bug。**
+行为分布：talk 71 / go_to 37 / examine 25 / **do_nothing 24（12%）** / steal 0。
+读法（按可信度）：①窗口太短——33 tick≈8 游戏小时，债务与怨恨是慢性压力
+②绝境阶梯顺序是对的——beg/borrow/sell_blood 都排在 steal 前且也没被选，
+说明离 steal 还隔两级 ③break_level 还是 mild。**别调 steal 阈值，门已经开了。**
+
+**顺带验证 v4-flash 换对了**：单价 ¥0.00876→**¥0.00275**（1/3），
+缓存 69.8%→**74.4%**（历史最高）。sim runner 默认已换，`ANIMA_SIM_MODEL` 可覆盖。
+
+**下次入口**：① **拉长窗口**（同剧本 END_TICK=300+，≈¥2.5）——这条线的正解，
+债务/怨恨要几天才发酵 ② `break_level: strong` 对照 ③ 补 do_nothing 的洞
+④ 失言阈值 3→2（一行改动，最便宜的一枪）+ 同弧复跑，看失言→实证→指控
 这最后一跳能不能接上 ② 赃物可见性（让"人赃俱获"不再是唯一实证来源）③ 涌现探测器降噪
 （同对每天 1 条上限 + 器物相关性门槛）④ 三天以上的弧才验得动 restate/执念长跑/关系翻向。
 **余额 ¥1.98；长跑预算按 ≈¥0.0088/调用 估，别再用 halfday 单价外推。**
