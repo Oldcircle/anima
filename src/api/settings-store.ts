@@ -16,6 +16,14 @@ export interface PersistedLLMSettings {
   maxTokens?: number;
   /** 思考模式开关（仅 deepseek-v4-* 生效）；未设置等价 "auto" */
   thinking?: "enabled" | "disabled" | "auto";
+  /**
+   * 分层模型的便宜档（省钱主杠杆，见 providers/model-router.ts）：
+   * 印象/观察/反思/晨间打算/三个抽取器走这档。只给 model = 同一家换便宜模型；
+   * 连 baseUrl+apiKey 一起给 = 换一家便宜 provider。留空则整层不启用。
+   */
+  cheapModel?: string;
+  cheapBaseUrl?: string;
+  cheapApiKey?: string;
 }
 
 export interface PersistedSettings {

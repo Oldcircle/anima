@@ -112,6 +112,43 @@ export interface PromptTraceSummary {
   preview: string;
 }
 
+/**
+ * 成本估算表（元/百万 token，输入/输出/缓存命中输入）。
+ *
+ * **这是估算不是账单**：价格随时会变，各家计费口径也不同。DeepSeek 还有**峰谷价**
+ * （低谷是峰时的一半），本表按低谷价填——峰时跑实际会翻倍。
+ * 用途是"哪一类调用在烧钱"的相对量级，别拿它对账。
+ * r3 实测校准：902 次 deepseek-chat ≈ ¥7.9 → 与本表同量级。
+ * 模型名前缀匹配，认不出的按 `default` 估。
+ */
+export const PRICE_TABLE: Record<string, { in: number; out: number; cachedIn: number }> = {
+  // DeepSeek 官方价（2026-08 查证，USD→CNY 按 7.1 折算，取**低谷价**；峰时翻倍）
+  // 缓存命中比未命中便宜约 97%——这就是这个项目死磕缓存纪律的经济理由
+  "deepseek-v4-flash": { in: 1.56, out: 4.69, cachedIn: 0.05 },
+  "deepseek-v4-pro":   { in: 4.69, out: 14.06, cachedIn: 0.16 },
+  "deepseek-v4":       { in: 1.56, out: 4.69, cachedIn: 0.05 },
+  // 老口径模型（sim runner 目前钉死这个，比 v4-flash 贵得多）
+  "deepseek-chat":     { in: 2, out: 8, cachedIn: 0.2 },
+  "deepseek-reasoner": { in: 4, out: 16, cachedIn: 0.4 },
+  default:             { in: 2, out: 8, cachedIn: 0.2 },
+};
+
+export function priceFor(model: string): { in: number; out: number; cachedIn: number } {
+  for (const [k, v] of Object.entries(PRICE_TABLE)) {
+    if (k !== "default" && model.startsWith(k)) return v;
+  }
+  return PRICE_TABLE.default!;
+}
+
+/** 单次调用的估算成本（元）。缓存命中部分按折扣价算。 */
+export function estimateCost(model: string, usage?: PromptTraceRecord["usage"]): number {
+  if (!usage) return 0;
+  const p = priceFor(model);
+  const hit = usage.cacheHitTokens ?? 0;
+  const miss = Math.max(0, usage.inputTokens - hit);
+  return (miss * p.in + hit * p.cachedIn + usage.outputTokens * p.out) / 1_000_000;
+}
+
 export interface KindStats {
   kind: string;
   calls: number;
@@ -124,6 +161,10 @@ export interface KindStats {
   errors: number;
   /** 该桶里前缀与前一次不一致的次数——缓存纪律的直接体检项 */
   prefixBreaks: number;
+  /** 估算花费（元）；见 PRICE_TABLE 的免责说明 */
+  cost: number;
+  /** 这一桶实际用到的模型（分层路由后同一个 kind 只会有一个） */
+  models: string[];
 }
 
 function utf8Bytes(s: string): number {
@@ -328,7 +369,7 @@ export class PromptTraceStore {
     const acc = new Map<string, KindStats>();
     const blank = (kind: string): KindStats => ({
       kind, calls: 0, inputTokens: 0, outputTokens: 0, cacheHitTokens: 0,
-      cacheHitRate: 0, avgDurationMs: 0, errors: 0, prefixBreaks: 0,
+      cacheHitRate: 0, avgDurationMs: 0, errors: 0, prefixBreaks: 0, cost: 0, models: [],
     });
     const total = blank("（全部）");
     let totalDuration = 0;
@@ -343,6 +384,10 @@ export class PromptTraceStore {
       s.cacheHitTokens += r.usage?.cacheHitTokens ?? 0; total.cacheHitTokens += r.usage?.cacheHitTokens ?? 0;
       if (r.error) { s.errors++; total.errors++; }
       if (r.prefixBreak.comparedToId && !r.prefixBreak.identical) { s.prefixBreaks++; total.prefixBreaks++; }
+      const c = estimateCost(r.model, r.usage);
+      s.cost += c; total.cost += c;
+      if (!s.models.includes(r.model)) s.models.push(r.model);
+      if (!total.models.includes(r.model)) total.models.push(r.model);
       durationByKind.set(r.kind, (durationByKind.get(r.kind) ?? 0) + r.durationMs);
       totalDuration += r.durationMs;
     }

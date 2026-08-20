@@ -253,6 +253,8 @@ export function registerAdminRoutes(config: AdminRoutesConfig): void {
           apiKey: next.apiKey,
           defaultModel: next.model,
           thinking: next.thinking,
+          // 分层模型：空 model 会在 updateConfig 里被解读成"关掉整层"
+          cheap: { model: next.cheapModel ?? "", baseUrl: next.cheapBaseUrl, apiKey: next.cheapApiKey },
         });
         simulation.setProvider(provider, next.model);
       });

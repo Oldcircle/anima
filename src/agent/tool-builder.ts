@@ -266,7 +266,8 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
     if (desperate && hunger < 30) {
       tools.push(buildScavengeTool());
     }
-    if (band === "destitute" && hunger < 20) {
+    // steal：三条动机路径（饿 / 债务压顶 / 怨恨+贫富差），见 stealMotive
+    if (stealMotive(ctx)) {
       tools.push(buildStealTool(ctx));
     }
     // 陪酒：成年 + 在酒吧 + 晚间 + 走投无路 + 破线档（off 档的治愈小镇没有这条路）
@@ -963,11 +964,59 @@ function buildHostessTool(): ActionDefinition {
   };
 }
 
+/**
+ * steal 的**动机门**（原本只有一条：快饿死了）。
+ *
+ * 旧门槛 `destitute && hunger<20` 在 07-07 经济调参后几乎不可达（勤快角色日入 26-35 有盈余），
+ * 于是 `crime_supply: cast`（放大器：只放大角色真选过的灰行为）长期空转，
+ * 案子只好由静态 NPC 兜底——**真凶永远不是镇上的人，戏就没了分量**。
+ *
+ * 红线不动：世界**仍然绝不指派 cast 当真凶**（world-events 的 perpEligibility 一个字没改）。
+ * 这里只是把"偷"这个选项在**说得通的处境下**摆到桌上，选不选仍归角色。
+ * 故事里的偷从来不只因为饿——还因为被债追、因为凭什么他有我没有。
+ *
+ * 三条路径（任一成立即浮现）：
+ * - `hunger`：赤贫 + 饿到 20 以下（原路径，生理绝境）
+ * - `debt`：欠着逾期 2 天以上的账 + 手头还不上 —— 被追的人会铤而走险
+ * - `grudge`：对在场某人有未解的疙瘩/深仇 + 对方明显比自己富 —— 嫉妒与报复
+ *
+ * 返回动机与（若有）指向的对象，供 handler 选受害者：
+ * **因怨恨而偷的人不会随机挑目标**，他偷的就是他恨的那个。
+ */
+/** 债务逾期门槛（与讨债 nudge / cast 放大器同口径：欠满 2 游戏天） */
+export const DEBT_OVERDUE_TICKS = 192;
+
+export function stealMotive(ctx: ToolBuildContext): { kind: "hunger" | "debt" | "grudge"; targetId?: string } | undefined {
+  const band = financeBand(ctx.gold, dailyUpkeep(ctx.state.life?.income));
+  const hunger = ctx.state.needs.hunger ?? 100;
+
+  if (band === "destitute" && hunger < 20) return { kind: "hunger" };
+
+  // 债务压顶：逾期 2 游戏天且手头不够还（讨债 nudge 也用同一个逾期口径）
+  const tick = ctx.tick ?? 0;
+  const overdue = (ctx.state.debts ?? []).find(
+    (d) => tick - d.borrowedTick >= DEBT_OVERDUE_TICKS && ctx.gold < d.amount,
+  );
+  if (overdue && (band === "destitute" || band === "broke")) return { kind: "debt" };
+
+  // 怨恨 + 贫富差：对方钱是自己的 2 倍以上且至少 30（差距要看得见，不是穷鬼互相偷）
+  if (ctx.relationships && getBreakLevel() !== "off") {
+    for (const other of ctx.nearbyCharacters) {
+      const rel = ctx.relationships.get(ctx.card.id, other.id);
+      const resents = !!rel.grudge || rel.level <= -30;
+      if (!resents) continue;
+      const theirGold = ctx.getCharacterById?.(other.id)?.gold ?? 0;
+      if (theirGold >= 30 && theirGold >= ctx.gold * 2) return { kind: "grudge", targetId: other.id };
+    }
+  }
+  return undefined;
+}
+
 function buildStealTool(ctx: ToolBuildContext): ActionDefinition {
   return {
     tool: {
       name: "steal",
-      description: "偷东西。你饿到不行了。可能会被抓——被抓到的话，对方不会轻易忘记。",
+      description: "伸手拿走不属于你的东西。可能会被当场抓住——被抓到的话，对方不会轻易忘记。",
       parameters: {
         type: "object",
         properties: {
@@ -980,7 +1029,11 @@ function buildStealTool(ctx: ToolBuildContext): ActionDefinition {
       const caught = Math.random() < 0.4;
       // 附近有人时偷的是具体的人（真实转移），没人时偷店里的东西
       const victims = actx.nearbyCharacters;
-      const victimId = victims.length > 0 ? victims[Math.floor(Math.random() * victims.length)]! : undefined;
+      // 因怨恨而偷的人不会随机挑目标——他偷的就是他恨的那个（案子才有指向性）
+      const motive = stealMotive(ctx);
+      const victimId = motive?.targetId && victims.includes(motive.targetId)
+        ? motive.targetId
+        : victims.length > 0 ? victims[Math.floor(Math.random() * victims.length)]! : undefined;
       const selfName = ctx.card.name;
       if (caught) {
         if (victimId) {

@@ -108,6 +108,10 @@ export interface LLMSettingsPayload {
   temperature?: number;
   maxTokens?: number;
   thinking?: "enabled" | "disabled" | "auto";
+  /** 分层模型便宜档：印象/观察/抽取走这里（见 providers/model-router.ts） */
+  cheapModel?: string;
+  cheapBaseUrl?: string;
+  cheapApiKey?: string;
 }
 
 export function validateLLMSettings(input: unknown): ValidationResult<LLMSettingsPayload> {
@@ -141,6 +145,11 @@ export function validateLLMSettings(input: unknown): ValidationResult<LLMSetting
       temperature: typeof input.temperature === "number" ? input.temperature : undefined,
       maxTokens: typeof input.maxTokens === "number" ? input.maxTokens : undefined,
       thinking,
+      // 分层模型的便宜档（省钱）：空 model = 关掉整层，逐字节回退单模型
+      cheapModel: isString(input.cheapModel) && input.cheapModel.length > 0 ? input.cheapModel : undefined,
+      cheapBaseUrl: isString(input.cheapBaseUrl) && /^https?:\/\//.test(input.cheapBaseUrl)
+        ? input.cheapBaseUrl.replace(/\/+$/, "") : undefined,
+      cheapApiKey: isString(input.cheapApiKey) && input.cheapApiKey.length > 0 ? input.cheapApiKey : undefined,
     },
   };
 }

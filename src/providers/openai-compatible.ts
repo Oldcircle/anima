@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LLMProvider, LLMRequest, LLMResponse, ToolCall } from "./types.js";
 import { promptTrace } from "./prompt-trace.js";
+import { resolveCheapKinds, tierFor } from "./model-router.js";
 
 /** ANIMA_PROMPT_DUMP=1 时把每次请求体落盘到 logs/prompt-dumps/<kind>/<tag>-<seq>.json，供相邻请求 diff 定位前缀断点 */
 const PROMPT_DUMP_DIR = process.env.ANIMA_PROMPT_DUMP
@@ -27,6 +28,12 @@ export interface OpenAICompatibleConfig {
   defaultModel?: string;
   /** 思考模式控制；默认 "auto" */
   thinking?: ThinkingMode;
+  /**
+   * 便宜档（省钱主杠杆，见 model-router.ts）：印象/观察/抽取这类结构化小任务甩到这里。
+   * 只给 model = 同一家换便宜模型；连 baseUrl/apiKey 一起给 = 换一家便宜 provider。
+   * 不配则整层不启用，所有调用逐字节回退到单模型行为。
+   */
+  cheap?: { model: string; baseUrl?: string; apiKey?: string };
 }
 
 export class OpenAICompatibleProvider implements LLMProvider {
@@ -35,6 +42,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private _apiKey: string;
   private _defaultModel: string;
   private _thinking: ThinkingMode;
+  private _cheap?: { model: string; baseUrl?: string; apiKey?: string };
+  private _cheapKinds = resolveCheapKinds();
   /** 前缀缓存累计统计（DeepSeek 自动缓存），每 25 次调用输出一行摘要；按 kind 分桶定位谁在拖命中率 */
   private _cacheStats = { calls: 0, promptTokens: 0, hitTokens: 0 };
   private _cacheStatsByKind = new Map<string, { calls: number; promptTokens: number; hitTokens: number }>();
@@ -46,6 +55,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
     this._apiKey = config.apiKey;
     this._defaultModel = config.defaultModel ?? "deepseek-v4-flash";
     this._thinking = config.thinking ?? "auto";
+    this._cheap = config.cheap;
+    if (this._cheap) {
+      console.log(`💰 [分层模型] 便宜档 ${this._cheap.model}${this._cheap.baseUrl ? ` @ ${this._cheap.baseUrl}` : ""}｜承接: ${[...this._cheapKinds].join(",")}`);
+    }
   }
 
   /** 热更新 provider 配置（前端 Settings 页面用）。 */
@@ -54,11 +67,14 @@ export class OpenAICompatibleProvider implements LLMProvider {
     if (patch.apiKey !== undefined) this._apiKey = patch.apiKey;
     if (patch.defaultModel !== undefined) this._defaultModel = patch.defaultModel;
     if (patch.thinking !== undefined) this._thinking = patch.thinking;
+    // 分层模型热更新：cheap 传 undefined 不动，传 null 语义由调用方用 {model:""} 表达（空 model = 关掉整层）
+    if (patch.cheap !== undefined) this._cheap = patch.cheap.model ? patch.cheap : undefined;
   }
 
   /** 当前生效的配置（apiKey 不脱敏，调用方负责脱敏）。 */
   getConfig(): OpenAICompatibleConfig {
     return {
+      cheap: this._cheap,
       id: this.id,
       baseUrl: this._baseUrl,
       apiKey: this._apiKey,
@@ -101,10 +117,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
    * 记录失败绝不影响调用本身（record 内部吞异常）。
    */
   async chat(request: LLMRequest, modelId?: string): Promise<LLMResponse> {
-    const model = modelId ?? this._defaultModel;
+    // 分层路由（省钱）：这一处解析，覆盖所有调用点。
+    // 每类固定走一档，不随 tick 变 → `(kind, 角色, 模型)` 的缓存前缀仍然稳定。
+    const useCheap = this._cheap && tierFor(request.kind, this._cheapKinds) === "cheap";
+    const model = useCheap ? this._cheap!.model : (modelId ?? this._defaultModel);
     const started = Date.now();
     try {
-      const response = await this._chat(request, modelId);
+      const response = await this._chat(request, model, false, useCheap ? this._cheap : undefined);
       promptTrace.record({ request, model, durationMs: Date.now() - started, response });
       return response;
     } catch (err) {
@@ -116,8 +135,16 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
   }
 
-  private async _chat(request: LLMRequest, modelId?: string, _isEmptyRetry = false): Promise<LLMResponse> {
+  private async _chat(
+    request: LLMRequest,
+    modelId?: string,
+    _isEmptyRetry = false,
+    override?: { baseUrl?: string; apiKey?: string },
+  ): Promise<LLMResponse> {
     const model = modelId ?? this._defaultModel;
+    // 便宜档换了家：endpoint 与 key 一并切过去（只给 model 就还走本家）
+    const baseUrl = override?.baseUrl?.replace(/\/+$/, "") ?? this._baseUrl;
+    const apiKey = override?.apiKey ?? this._apiKey;
 
     // request.system 为空时不前置空 system 消息——酒馆模式把 system 块内联在 request.messages 里，
     // system 字段留空，避免污染前缀。legacy 路径 system 恒非空，行为不变。
@@ -177,16 +204,16 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
 
     // 兼容两种 baseUrl 写法：带 /v1 后缀（OpenAI / Together / OpenRouter 等）和不带（DeepSeek 默认）
-    const endpoint = /\/v\d+$/.test(this._baseUrl)
-      ? `${this._baseUrl}/chat/completions`
-      : `${this._baseUrl}/v1/chat/completions`;
+    const endpoint = /\/v\d+$/.test(baseUrl)
+      ? `${baseUrl}/chat/completions`
+      : `${baseUrl}/v1/chat/completions`;
     // 网络级重试：7 天长跑实测 undici 闪断（fetch failed）+ 偶发 429/5xx 会白丢 tick
     // （kira 7 天 r2 损失 1950 次调用）。网络错误与可重试状态码退避重试 2 次；4xx 业务错误不重试。
     const response = await this._fetchWithRetry(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this._apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
     });
@@ -259,7 +286,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     // 避免真机跑对话时"角色一句话不说、这个 tick 白费"。_isEmptyRetry 锁死递归深度为 1。
     if (content.trim() === "" && toolCalls.length === 0 && choice.finish_reason !== "length" && !_isEmptyRetry) {
       console.warn(`[LLM retry] 空返回（200 但 content 空 + 无工具调用），重试一次`);
-      return this._chat(request, modelId, true);
+      return this._chat(request, modelId, true, override);
     }
 
     return {

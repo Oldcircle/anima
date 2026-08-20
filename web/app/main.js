@@ -1065,6 +1065,8 @@ function PromptsPage() {
       <div class="card"><div class="title">输入 token</div><div style="font-size:28px;font-weight:600;">${(total?.inputTokens ?? 0).toLocaleString()}</div></div>
       <div class="card"><div class="title">输出 token</div><div style="font-size:28px;font-weight:600;">${(total?.outputTokens ?? 0).toLocaleString()}</div></div>
       <div class="card"><div class="title">缓存命中</div><div style="font-size:28px;font-weight:600;color:${(total?.cacheHitRate ?? 0) >= 0.6 ? "#3fb950" : "#d29922"};">${pct(total?.cacheHitRate)}</div></div>
+      <div class="card"><div class="title">估算花费</div><div style="font-size:28px;font-weight:600;">¥${(total?.cost ?? 0).toFixed(2)}</div>
+        <div class="muted" style="font-size:10px;">按内置价目表估，不是账单</div></div>
       <div class="card"><div class="title">前缀断点</div><div style="font-size:28px;font-weight:600;color:${(total?.prefixBreaks ?? 0) > 0 ? "#d29922" : "#3fb950"};">${total?.prefixBreaks ?? 0}</div></div>
       <div class="card"><div class="title">失败</div><div style="font-size:28px;font-weight:600;color:${(total?.errors ?? 0) > 0 ? "#f85149" : "#8b949e"};">${total?.errors ?? 0}</div></div>
     </div>
@@ -1073,23 +1075,25 @@ function PromptsPage() {
     <div class="card" style="padding:0;overflow-x:auto;margin-bottom:18px;">
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead><tr style="color:#8b949e;text-align:left;">
-          <th style="padding:8px 12px;">类型</th><th>调用</th><th>输入</th><th>输出</th>
-          <th>缓存命中</th><th>断点</th><th>均耗时</th><th>失败</th>
+          <th style="padding:8px 12px;">类型</th><th>模型</th><th>调用</th><th>输入</th><th>输出</th>
+          <th>缓存命中</th><th>估算花费</th><th>断点</th><th>均耗时</th><th>失败</th>
         </tr></thead>
         <tbody>
           ${(stats?.byKind ?? []).map((b) => html`
             <tr style="border-top:1px solid #21262d;">
               <td style="padding:8px 12px;">${kindLabel(b.kind)}</td>
+              <td class="muted" style="font-size:11px;">${(b.models ?? []).join(",") || "—"}</td>
               <td>${b.calls}</td>
               <td>${b.inputTokens.toLocaleString()}</td>
               <td>${b.outputTokens.toLocaleString()}</td>
               <td style="color:${b.cacheHitRate >= 0.6 ? "#3fb950" : b.cacheHitRate > 0 ? "#d29922" : "#8b949e"};">${pct(b.cacheHitRate)}</td>
+              <td>¥${(b.cost ?? 0).toFixed(3)}</td>
               <td style="color:${b.prefixBreaks > 0 ? "#d29922" : "#8b949e"};">${b.prefixBreaks}</td>
               <td>${b.avgDurationMs} ms</td>
               <td style="color:${b.errors > 0 ? "#f85149" : "#8b949e"};">${b.errors}</td>
             </tr>
           `)}
-          ${(stats?.byKind ?? []).length === 0 && html`<tr><td colspan="8" style="padding:20px;text-align:center;color:#484f58;">（还没有调用被记录）</td></tr>`}
+          ${(stats?.byKind ?? []).length === 0 && html`<tr><td colspan="10" style="padding:20px;text-align:center;color:#484f58;">（还没有调用被记录）</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -1392,7 +1396,7 @@ function SaveSection() {
 }
 
 function SettingsPage() {
-  const [form, setForm] = useState({ provider: "deepseek", baseUrl: "https://api.deepseek.com", apiKey: "", model: "deepseek-chat" });
+  const [form, setForm] = useState({ provider: "deepseek", baseUrl: "https://api.deepseek.com", apiKey: "", model: "deepseek-chat", cheapModel: "", cheapBaseUrl: "", cheapApiKey: "" });
   const [maskedKey, setMaskedKey] = useState("");
   const [source, setSource] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1400,7 +1404,7 @@ function SettingsPage() {
 
   useEffect(() => {
     api("/api/admin/settings/llm").then((r) => {
-      setForm((f) => ({ ...f, provider: r.provider || f.provider, baseUrl: r.baseUrl || f.baseUrl, model: r.model || f.model }));
+      setForm((f) => ({ ...f, provider: r.provider || f.provider, baseUrl: r.baseUrl || f.baseUrl, model: r.model || f.model, cheapModel: r.cheapModel || "", cheapBaseUrl: r.cheapBaseUrl || "" }));
       setMaskedKey(r.apiKey || "");
       setSource(r.source || "");
     }).catch((e) => toast(e.message, "error"));
@@ -1459,6 +1463,26 @@ function SettingsPage() {
       <div class="field"><label>API Key ${maskedKey && html`<span class="muted">（当前：${maskedKey}）</span>`}</label>
         <input type="password" value=${form.apiKey} onInput=${(e) => patch("apiKey", e.target.value)} placeholder="sk-... 留空保留当前 key" />
       </div>
+      <div style="border:1px solid #30363d;border-radius:6px;padding:12px;margin:14px 0;">
+        <div class="title" style="margin-bottom:4px;">分层模型（省钱）</div>
+        <div class="muted" style="font-size:11px;margin-bottom:8px;">
+          印象 / 观察 / 反思 / 晨间打算 / 三个抽取器走便宜档——这些是结构化小任务，不吃文采，
+          且几乎吃不到前缀缓存（实测抽取器命中率 ~0%）＝每次全价。决策与对话仍走上面的主模型。
+          <strong>留空 = 整层关掉</strong>，所有调用回到单模型。
+        </div>
+        <div class="field"><label>便宜档 Model</label>
+          <input value=${form.cheapModel} onInput=${(e) => patch("cheapModel", e.target.value)} placeholder="留空则不启用，如 deepseek-chat / gemini-2.5-flash" />
+        </div>
+        <div class="row">
+          <div class="field"><label>便宜档 Base URL（换一家才填）</label>
+            <input value=${form.cheapBaseUrl} onInput=${(e) => patch("cheapBaseUrl", e.target.value)} placeholder="不填 = 用上面同一家" />
+          </div>
+          <div class="field"><label>便宜档 API Key（换一家才填）</label>
+            <input type="password" value=${form.cheapApiKey} onInput=${(e) => patch("cheapApiKey", e.target.value)} placeholder="不填 = 用上面同一个 key" />
+          </div>
+        </div>
+      </div>
+
       <div class="field"><label>Model</label>
         ${knownModels.length > 0 && html`
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">

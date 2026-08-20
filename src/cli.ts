@@ -138,6 +138,16 @@ const provider = new OpenAICompatibleProvider({
   apiKey: persistedLLM?.apiKey ?? process.env.DEEPSEEK_API_KEY ?? "",
   defaultModel: persistedLLM?.model ?? "deepseek-v4-flash",
   thinking: persistedLLM?.thinking ?? thinkingMode,
+  // 分层模型（省钱）：印象/观察/抽取这类小任务甩给便宜档。
+  // 只给 model = 同一家换便宜模型；给了 baseUrl/apiKey = 换一家便宜 provider。
+  // 不配则整层不启用，逐字节回退单模型行为。
+  cheap: (persistedLLM?.cheapModel ?? process.env.ANIMA_CHEAP_MODEL)
+    ? {
+        model: (persistedLLM?.cheapModel ?? process.env.ANIMA_CHEAP_MODEL)!,
+        baseUrl: persistedLLM?.cheapBaseUrl ?? process.env.ANIMA_CHEAP_BASE_URL,
+        apiKey: persistedLLM?.cheapApiKey ?? process.env.ANIMA_CHEAP_API_KEY,
+      }
+    : undefined,
 });
 
 // --- 角色已由 scenario 加载 ---
