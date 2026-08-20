@@ -1145,7 +1145,11 @@ async function executeAction(
     tick: gameTime.tick,
     type: `action.${toolCall.name}`,
     actorId: card.id,
-    targetId: toolCall.arguments.target as string | undefined,
+    // targetId 优先取工具参数；steal 这类**受害者由 handler 内部选定**（工具没有 target 参数）
+    // 的行为，用结果里的 `_stealVictimId` 补上——否则事件史里永远查不到"偷了谁"，
+    // cast 罪行放大器就永远立不了案，真凶只能由 NPC 兜底。
+    targetId: (toolCall.arguments.target as string | undefined)
+      ?? ((result as { _stealVictimId?: string })._stealVictimId),
     locationId: state.locationId,
     description: `${card.name} ${result.description}`,
     effects: result.effects.map((e) => ({

@@ -375,6 +375,39 @@ describe("B3 v2 证据供给", () => {
     }
   });
 
+  it("cast 放大器要立案，事件史必须记得住「偷了谁」（真凶是镇上的人的前提）", () => {
+    const { world, sim, eventBus } = makeSim(100);
+    world.addCharacter("thief", "小偷", "cafe");
+    world.addCharacter("victim", "受害者", "cafe");
+    // steal 工具没有 target 参数（受害者由 handler 内部选），事件的 targetId 靠
+    // agent-loop 从 _stealVictimId 补——补不上就永远是"无具名受害者"，立不了案
+    eventBus.history.push({
+      id: "e1", tick: 96, type: "action.steal", actorId: "thief", targetId: "victim",
+      locationId: "cafe", description: "小偷 摸走了受害者的钱袋", effects: [], witnesses: [],
+    } as never);
+
+    runCrimeSupply({ world, memory: sim.memory, eventBus, tick: 100 }, "cast");
+
+    // 立案链：赃物入真凶背包 + 延迟发现挂上（受害者撞见才公开）
+    const pending = world.narrative.getSnapshot().world.pendingDiscoveries ?? [];
+    expect(pending.some((p: { victimId: string }) => p.victimId === "victim")).toBe(true);
+    const thief = world.getCharacter("thief")!;
+    expect(thief.inventory.length).toBeGreaterThan(0); // 赃物=持久物证
+  });
+
+  it("targetId 缺失（偷店/身边没人）→ 只起风声不立案，不硬凑受害者", () => {
+    const { world, sim, eventBus } = makeSim(100);
+    world.addCharacter("thief", "小偷", "cafe");
+    eventBus.history.push({
+      id: "e2", tick: 96, type: "action.steal", actorId: "thief", targetId: undefined,
+      locationId: "shop", description: "小偷 顺走了货架上的东西", effects: [], witnesses: [],
+    } as never);
+
+    runCrimeSupply({ world, memory: sim.memory, eventBus, tick: 100 }, "cast");
+    expect(world.narrative.getSnapshot().world.pendingDiscoveries ?? []).toHaveLength(0);
+    expect(world.narrative.getWorld().rumors.length).toBeGreaterThan(0);
+  });
+
   it("浮现层：静态 NPC 每 tick 有站桩可观察状态（否则在别人眼里是件家具）", () => {
     const { world, sim, eventBus } = makeSim(100);
     runCrimeSupply({ world, memory: sim.memory, eventBus, tick: 100 }, "npc");

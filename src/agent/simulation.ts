@@ -2335,6 +2335,7 @@ export class Simulation {
     characterRelationships?: Array<{ a: string; b: string; level?: number; type?: string; bond?: string }>;
     initialRumors?: Array<{ content: string; sourceCharId?: string | null; spreadTo?: string[] }>;
     frictions?: Array<{ observer: string; target: string; entries: string[]; summary?: string; mentalLabel?: string }>;
+    initialGold?: Array<{ character: string; gold: number }>;
     debts?: Array<{ debtor: string; lender: string; amount: number; borrowedDaysAgo?: number }>;
     openStances?: Array<{ id?: string; kind: OpenStanceKind; holder: string; target: string; summary: string; evidence?: string; daysAgo?: number; witnesses?: string[] }>;
   }): void {
@@ -2398,6 +2399,19 @@ export class Simulation {
         frictionCount++;
       }
     }
+
+    // 起始金币：验收剧本造贫富差/绝境用（默认全员 100 ≈"够用"档，短跑里不会自然变穷）
+    let goldCount = 0;
+    for (const g of seeds.initialGold ?? []) {
+      const who = this.world.getCharacter(g.character);
+      if (!who) {
+        console.warn(`🌱 [seeds] initial_gold 跳过未知角色 ${g.character}`);
+        continue;
+      }
+      who.gold = g.gold;
+      goldCount++;
+    }
+    if (goldCount > 0) console.log(`🌱 [seeds] 起始金币预热 ${goldCount} 人`);
 
     let debtCount = 0;
     for (const d of seeds.debts ?? []) {

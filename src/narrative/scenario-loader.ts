@@ -113,6 +113,11 @@ export interface ScenarioSeeds {
     summary?: string;
     mentalLabel?: string;
   }>;
+  /**
+   * 起始金币预热：默认全员 100（≈"够用"档），验收剧本要造贫富差或绝境时用。
+   * 只在**新档**应用（读档跳过整个 applySeeds），不会覆盖玩家进度。
+   */
+  initialGold?: Array<{ character: string; gold: number }>;
   /** 欠账预热：borrowedDaysAgo 把 borrowedTick 设到过去（>宽限 2 天即制造逾期压力） */
   debts?: Array<{
     debtor: string;
@@ -368,6 +373,13 @@ function loadSeeds(scenariosRoot: string, scenarioId: string): ScenarioSeeds | u
             summary: typeof f.summary === "string" ? f.summary : undefined,
             mentalLabel: typeof f.mental_label === "string" ? (f.mental_label as string) : undefined,
           }))
+      : undefined,
+    // 起始金币（逐字段显式映射，对齐 visible_to 泄漏教训：绝不整体 cast）
+    initialGold: Array.isArray(parsed.initial_gold)
+      ? (parsed.initial_gold as Array<Record<string, unknown>>)
+          .filter((g) => g && typeof g === "object" && typeof g.character === "string"
+            && typeof g.gold === "number" && Number.isFinite(g.gold) && (g.gold as number) >= 0)
+          .map((g) => ({ character: g.character as string, gold: Math.floor(g.gold as number) }))
       : undefined,
     debts: Array.isArray(parsed.debts)
       ? (parsed.debts as Array<Record<string, unknown>>)

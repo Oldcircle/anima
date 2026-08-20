@@ -1,0 +1,33 @@
+id: cast-culprit
+name: 真凶是镇上的人（cast 供罪验收）
+description: |
+  验「凶手能不能是 cast 自己」的剧本（≠ 日常剧本）。
+
+  背景：grounding-verify 用 npc 模式，真凶永远是外来的静态 NPC 赵三——
+  戏没有分量，因为倒霉的不是熟人。而 `crime_supply: cast` 是**放大器不是供罪器**：
+  只放大角色**自己真选过**的 steal，世界绝不指派谁当真凶（红线，r4 实证：
+  给无辜角色塞罪会让他全天陷入道歉螺旋，人设背不动世界替他写的罪）。
+
+  卡点一直在**可达性**：steal 旧门槛 destitute && hunger<20，经济调参后几乎不可达。
+  现在 steal 有三条动机路径（饿 / 债务压顶 / 怨恨+贫富差），这个剧本把后两条
+  的**起始条件**摆好，然后**放手**——偷不偷、偷谁，全归角色。
+
+  验收链：有人真的选了 steal → cast 放大器补被发现链（物证入背包+目击窗口+延迟发现）
+  → 立案（真凶是熟人）→ 受害者发现 → accuse。
+  关键区别：这次真凶就在饭桌上，指控他要付社交代价。
+
+characters:
+  - asuka
+  - l_lawliet
+  - lelouch
+  - light
+  - rei
+  - senjougahara
+  - shinji
+
+locations: "*"
+
+break_level: mild
+decision_pov: third
+# 放大器：只放大角色真选过的灰行为，绝不替谁作案
+crime_supply: cast

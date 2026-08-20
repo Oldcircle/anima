@@ -1,0 +1,39 @@
+# cast-culprit — 只摆起始处境，不摆结果
+#
+# 纪律：种的是**动机门的开启条件**，不是"让谁去偷"。
+# steal 出现在菜单里 ≠ 会被选中——选不选仍归角色，这正是要验的东西。
+#
+# 两条新路径各配一个人（互不干扰，看哪条先被走通）：
+#   shinji  → 债务压顶：欠 asuka 60、逾期 3 天、手头只剩 12（"拮据"档，还不上）
+#   light   → 怨恨+贫富差：对 lelouch 关系 -35（≤-30 触发 resents）、
+#             自己 20 vs lelouch 200（≥2 倍且 ≥30）
+# 其余五人金币不动（默认 100），作为对照——他们三条路径全关，菜单里没有 steal。
+
+initial_gold:
+  - { character: shinji, gold: 12 }
+  - { character: asuka, gold: 180 }
+  - { character: light, gold: 20 }
+  - { character: lelouch, gold: 200 }
+
+debts:
+  - { debtor: shinji, lender: asuka, amount: 60, borrowed_days_ago: 3 }
+
+character_relationships:
+  - { a: shinji, b: asuka, level: -8, type: "催着还钱的债主" }
+  - { a: light, b: lelouch, level: -35, type: "彼此都想压过对方一头" }
+
+frictions:
+  - observer: shinji
+    target: asuka
+    summary: "催债催得一次比一次不留情面——她知道我还不上还要当着人问"
+    mental_label: "拿钱当鞭子的人"
+    entries:
+      - "第三次当着别人的面问我什么时候还钱"
+      - "说'算了反正你也拿不出来'时那个表情"
+  - observer: light
+    target: lelouch
+    summary: "凭什么他张口就有、我算计半天还差一截"
+    mental_label: "什么都不缺的那个"
+    entries:
+      - "掏钱时那种不用看价格的随意"
+      - "被他当着人绕过话头，像我不值得他认真"
