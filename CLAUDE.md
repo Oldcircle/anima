@@ -40,6 +40,11 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **社交可视化**：`godot/ui/RelationWeb.gd` 关系网（R 键，圆环 + 关系连线按类型上色 + bond 标注）
 - **思考持久化**：LLM 每次决策的内心独白存入记忆，念头能跨 tick 延续
 - **时间系统**：Tick 驱动（1 tick = 游戏 15 分钟），支持加速/暂停
+- **存档（`src/persistence/`）**：SQLite 单事务写入 + 启动自动读档 + 按剧本归属档案文件
+  （`save.db` / `save-<scenario>.db`，绝不跨剧本覆盖）。调度在 `save-manager.ts`：
+  **退出信号全覆盖**（SIGINT/SIGTERM/SIGHUP/SIGQUIT + 未捕获异常——长跑靠 screen/nohup 脱管，
+  被杀时来的是 SIGTERM）、覆盖前轮转 `.bak`、命名快照进 `data/snapshots/`。
+  **手动存档排到 tick 边界执行**（tick 内部有 await，中途存会存出"一半角色已决策"的世界）
 - **世界编年史（`src/world/chronicle.ts` + `emergence.ts`）**：世界自己把"值得知道的事"报上来，
   人不用盯着 log 洪水。两类来源——**重大事件**（在既有 emoji 日志同处补一条 record：案件/篡改/
   指控/命运/饿倒/债务闭环/应验）与**涌现**（每 tick 全量重跑的机械探测器：证据竞赛/正典被非首述者
@@ -169,6 +174,7 @@ ANIMA_GROUNDING=1                 # 器物层（PLAN-grounding M0/M1）：地点
 ANIMA_PLAYSTYLE=1                 # Bartle 玩法人格（角色卡 playstyle: achiever|explorer|socializer|killer）：只作用在"先伸手够哪个工具"，不碰台词质地。默认开；=0 整层退场逐字节回归
 ANIMA_PROMPT_DUMP=1               # 可选调试：把每次 LLM 请求体落盘 logs/prompt-dumps/<kind>/，供相邻请求 diff 前缀断点（离线版；在线版见管理面板「提示词」页）
 ANIMA_PROMPT_TRACE_KEEP=200       # 提示词追踪环形缓冲条数（管理面板「提示词」页的数据源）。默认 200；=0 整层关闭不占内存
+ANIMA_AUTOSAVE_TICKS=24           # 自动存档间隔（tick）。默认 24 = 6 游戏小时；=0 关掉周期存档（退出信号存档仍在岗）
 PORT=3001                         # Web 服务端口，可选
 ```
 

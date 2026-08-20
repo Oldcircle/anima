@@ -1229,6 +1229,102 @@ function safeParse(s) {
   try { return JSON.parse(s); } catch { return s; }
 }
 
+// ===== 存档区块（设置页顶部）=====
+// 主档是自动的（每 N tick + 退出信号全覆盖），这里给的是"我现在就想存一下"
+// 和"跑长程实验前留一手"两件手动的事。快照只建不删——删存档不可逆，留给文件系统。
+
+function fmtBytes(n) {
+  if (!n) return "—";
+  return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`;
+}
+function fmtAgo(ts) {
+  if (!ts) return "还没存过";
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 60) return `${s} 秒前`;
+  if (s < 3600) return `${Math.round(s / 60)} 分钟前`;
+  return `${Math.round(s / 3600)} 小时前`;
+}
+
+function SaveSection() {
+  const [info, setInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [snapName, setSnapName] = useState("");
+
+  const reload = useCallback(async () => {
+    try { setInfo(await api("/api/save")); }
+    catch { setInfo({ unavailable: true }); }   // headless/测试服务不挂这组路由
+  }, []);
+
+  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    const id = setInterval(reload, 5000);
+    return () => clearInterval(id);
+  }, [reload]);
+
+  const saveNow = async () => {
+    setBusy(true);
+    try {
+      const r = await api("/api/save", { method: "POST", body: JSON.stringify({ reason: "手动" }) });
+      toast(r.message);
+      reload();
+    } catch (e) { toast("存档失败：" + e.message, "error"); }
+    finally { setBusy(false); }
+  };
+
+  const makeSnapshot = async () => {
+    setBusy(true);
+    try {
+      const r = await api("/api/save/snapshot", { method: "POST", body: JSON.stringify({ name: snapName }) });
+      toast(`快照已建：${r.snapshot.name}`);
+      setSnapName("");
+      reload();
+    } catch (e) { toast("快照失败：" + e.message, "error"); }
+    finally { setBusy(false); }
+  };
+
+  if (info?.unavailable) return null;
+
+  return html`
+    <h2 style="font-size:16px;margin-top:0;">存档</h2>
+    <div class="subtitle" style="margin-bottom:12px;">
+      主档是自动的：每 ${info?.autosaveTicks ?? "—"} tick 存一次，退出（Ctrl+C / kill / 关终端 / 崩溃）都会先存。
+      关掉进程再启动会自动接着上次的进度跑。
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;">
+      <div class="card"><div class="title">上次存档</div><div style="font-size:14px;">${fmtAgo(info?.lastSaveAt)}</div>
+        <div class="muted" style="font-size:10px;">${info?.lastSaveTick !== undefined ? `tick ${info.lastSaveTick} · ${info.lastReason ?? ""}` : ""}</div></div>
+      <div class="card"><div class="title">存档大小</div><div style="font-size:14px;">${fmtBytes(info?.sizeBytes)}</div></div>
+      <div class="card"><div class="title">本次运行已存</div><div style="font-size:14px;">${info?.saveCount ?? 0} 次</div>
+        ${info?.failCount > 0 && html`<div style="font-size:10px;color:#f85149;">失败 ${info.failCount}</div>`}</div>
+    </div>
+    ${info?.lastError && html`<div class="card" style="border-color:#f85149;color:#f85149;margin-bottom:12px;"><div class="title">上次存档报错</div>${info.lastError}</div>`}
+    ${info?.pending && html`<div class="card" style="border-color:#d29922;color:#d29922;margin-bottom:12px;">已排队，将在当前 tick 结束时保存</div>`}
+
+    <div class="toolbar">
+      <button class="primary" style="flex:none;white-space:nowrap;" disabled=${busy} onClick=${saveNow}>立即存档</button>
+      <input placeholder="快照名（可留空）" value=${snapName} onInput=${(e) => setSnapName(e.target.value)} style="flex:none;width:190px;" />
+      <button style="flex:none;white-space:nowrap;" disabled=${busy} onClick=${makeSnapshot}>建快照</button>
+      <div class="spacer"></div>
+      <span class="muted" style="font-size:11px;white-space:nowrap;">${info?.path ?? ""}</span>
+    </div>
+
+    ${(info?.snapshots ?? []).length > 0 && html`
+      <div style="margin-bottom:8px;">
+        <div class="title">快照（另存，不影响主档；要删请到 data/snapshots/ 自行删除）</div>
+        ${info.snapshots.map((s) => html`
+          <div class="card" style="margin-bottom:4px;padding:8px 12px;">
+            <div style="display:flex;gap:10px;align-items:baseline;">
+              <strong style="font-size:12px;flex:1;">${s.name}</strong>
+              <span class="muted" style="font-size:10px;">${fmtBytes(s.sizeBytes)} · ${fmtAgo(s.savedAt)}</span>
+            </div>
+          </div>
+        `)}
+      </div>
+    `}
+    <div style="border-bottom:1px solid #21262d;margin:18px 0;"></div>
+  `;
+}
+
 function SettingsPage() {
   const [form, setForm] = useState({ provider: "deepseek", baseUrl: "https://api.deepseek.com", apiKey: "", model: "deepseek-chat" });
   const [maskedKey, setMaskedKey] = useState("");
@@ -1283,6 +1379,7 @@ function SettingsPage() {
 
   return html`
     <h1>设置</h1>
+    <div style="max-width:620px;"><${SaveSection} /></div>
     <div class="subtitle">LLM Provider 配置（参考 fable 项目，全部走 OpenAI 兼容协议）。修改后会在下一个 tick 间隙生效。</div>
     <div style="max-width:620px;">
       <div class="field"><label>Provider</label>

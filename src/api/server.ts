@@ -21,6 +21,7 @@ import { registerAdminRoutes } from "./admin-routes.js";
 import { registerNarrativeRoutes } from "./narrative-routes.js";
 import { registerPromptRoutes } from "./prompt-routes.js";
 import { registerChronicleRoutes } from "./chronicle-routes.js";
+import { registerSaveRoutes } from "./save-routes.js";
 import { SettingsStore } from "./settings-store.js";
 import type { OpenAICompatibleProvider } from "../providers/openai-compatible.js";
 
@@ -31,6 +32,8 @@ export interface ServerConfig {
   staticDir?: string;
   /** 角色卡映射（id → CharacterCard），用于前端展示角色身份信息 */
   characterCards?: Map<string, CharacterCard>;
+  /** 存档管理（CLI 起的服务才有；缺省时整组 /api/save 路由不挂） */
+  saves?: import("../persistence/save-manager.js").SaveManager;
   /** 管理面板用：角色/地点 YAML 目录与设置文件路径 */
   admin?: {
     charactersDir: string;
@@ -235,6 +238,7 @@ export function createApiServer(config: ServerConfig): { app: ReturnType<typeof 
   registerNarrativeRoutes(app, simulation);
   registerPromptRoutes(app);
   registerChronicleRoutes(app, simulation);
+  if (config.saves) registerSaveRoutes(app, config.saves, config.engine);
 
   app.get("/api/conversations", (_req, res) => {
     // 返回当前所有活跃对话历史

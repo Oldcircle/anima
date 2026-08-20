@@ -16,7 +16,8 @@ import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { createApiServer } from "./api/server.js";
 import { loadScenario, applyInitialItems, applyKiraProtections } from "./narrative/scenario-loader.js";
 import { setBreakLevel, getBreakLevel, setDecisionPov, getDecisionPov, setEnabledWorldEvents } from "./agent/break-config.js";
-import { saveGame, loadGame } from "./persistence/save-load.js";
+import { loadGame } from "./persistence/save-load.js";
+import { SaveManager } from "./persistence/save-manager.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { addToInventory } from "./world/item-registry.js";
@@ -25,7 +26,6 @@ import { addToInventory } from "./world/item-registry.js";
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const PROJECT_ROOT = join(import.meta.dirname, "..");
 const DATA_DIR = join(PROJECT_ROOT, "data");
-const AUTO_SAVE_INTERVAL = 96; // 每游戏日自动存档
 
 // --- 解析 --scenario 参数 ---
 function parseScenarioArg(argv: string[]): string {
@@ -176,6 +176,15 @@ if (existsSync(SAVE_FILE)) {
   }
 }
 
+// --- 存档管理（信号全覆盖 + 备份轮转 + 快照）---
+const saves = new SaveManager({
+  simulation,
+  savePath: SAVE_FILE,
+  scenarioId: SCENARIO_ID,
+  snapshotDir: join(DATA_DIR, "snapshots"),
+});
+console.log(`💾 存档: ${SAVE_FILE}（自动存档每 ${saves.autosaveTicks || "—"} tick${saves.autosaveTicks ? "" : "，已关闭"}）`);
+
 // --- 启动 Tick 循环 ---
 const engine = new TickEngine({
   startTick,
@@ -191,20 +200,15 @@ const engine = new TickEngine({
       `[${formatGameTime(gameTime)}] tick=${tick} active=${active}/${chars.length} ${elapsed}ms`,
     );
 
-    // 自动存档（每游戏日）
-    if (tick % AUTO_SAVE_INTERVAL === 0) {
-      try { saveGame(simulation, SAVE_FILE, SCENARIO_ID); } catch (e) { console.error("存档失败:", e); }
-    }
+    // 存档：tick 边界统一入口——消化排队的手动请求 + 到点自动存档
+    // （手动存档不能在 tick 中途执行，否则存出"一半角色已决策"的世界，见 save-manager.ts）
+    saves.onTickBoundary(tick);
   },
 });
 
-// 退出时存档
-process.on("SIGINT", () => {
-  console.log("\n正在保存...");
-  try { saveGame(simulation, SAVE_FILE, SCENARIO_ID); } catch {}
-  engine.stop();
-  process.exit(0);
-});
+// 退出兜底：SIGINT/SIGTERM/SIGHUP/SIGQUIT + 崩溃都存档
+// （长跑靠 screen/nohup 脱管，被杀时来的是 SIGTERM 不是 SIGINT——只认 SIGINT 等于没保护）
+saves.installExitHandlers(() => engine.stop());
 
 // --- 启动 API 服务器 ---
 const api = createApiServer({
@@ -213,6 +217,7 @@ const api = createApiServer({
   engine,
   staticDir: join(import.meta.dirname, "..", "web"),
   characterCards: new Map(characters.map((c) => [c.id, c])),
+  saves,
   admin: {
     charactersDir: join(PROJECT_ROOT, scenario.manifest.characterDir),
     locationsDir: join(PROJECT_ROOT, scenario.manifest.locationDir),

@@ -9,6 +9,10 @@ dist/
 data/save.db
 data/save.db-wal
 data/save.db-shm
+data/save.db.bak
+data/save-*.db
+data/save-*.db.bak
+data/snapshots/
 data/settings.json
 logs/
 sim-*-log.txt
