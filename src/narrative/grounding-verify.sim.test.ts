@@ -99,6 +99,25 @@ async function runGroundingVerify(rawProvider: LLMProvider, modelId: string, opt
     director: { dailyBudget: 5 },
   });
 
+  // 实时面板（可选）：sim runner 本身没有 web 服务，另起 `pnpm dev` 看到的是**另一个世界**。
+  // `ANIMA_SIM_SERVE=1` 时就地给这趟跑起一个服务，编年史/世界/提示词三页读的就是它。
+  // 跑完在 finally 里关掉（否则 vitest 句柄不释放挂住不退）；跑完想继续看走归档。
+  let liveServer: { close: () => void } | undefined;
+  if (process.env.ANIMA_SIM_SERVE === "1") {
+    const port = Number(process.env.ANIMA_SIM_PORT ?? 3002);
+    const { createApiServer } = await import("../api/server.js");
+    const { join } = await import("node:path");
+    const api = createApiServer({
+      port,
+      simulation: handle.sim,
+      staticDir: join(import.meta.dirname, "..", "..", "web"),
+      characterCards: new Map(handle.scenario.characters.map((c) => [c.id, c])),
+    });
+    api.start();
+    liveServer = { close: () => api.server.close() };
+    console.log(`\n👀 实时面板：http://localhost:${port}/#/chronicle （这趟跑的世界，跑完即关）\n`);
+  }
+
   const reporter = new SimReporter(handle.world, handle.sim, {
     totalTicks: endTick - START_TICK,
     label: `grounding-verify 全链验收（tick ${START_TICK}→${endTick}，模型 ${modelId}，硬顶 ${maxCalls} 调用）`,
@@ -128,6 +147,11 @@ async function runGroundingVerify(rawProvider: LLMProvider, modelId: string, opt
     // 归档后可 `pnpm dev --save <file>` 打开面板看，或直接续跑。
     savePath = archiveRun(handle.sim, `grounding-verify-${modelId}`, "grounding-verify");
     reporter.dispose();
+    // 关掉实时面板：不关 vitest 会因为句柄没释放挂住不退。跑完想继续看 → 打开归档
+    if (liveServer) {
+      liveServer.close();
+      console.log(`👀 实时面板已关。继续看这趟跑： pnpm dev --load ${savePath ?? "<归档>"}`);
+    }
   }
 
   // 全链机械信号收口（dispose 前读世界状态）
