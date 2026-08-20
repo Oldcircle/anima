@@ -13,7 +13,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SaveManager, sanitizeSnapshotName, resolveAutosaveTicks, DEFAULT_AUTOSAVE_TICKS } from "./save-manager.js";
+import { SaveManager, sanitizeSnapshotName, sanitizeSaveName, resolveAutosaveTicks, DEFAULT_AUTOSAVE_TICKS } from "./save-manager.js";
+import { archiveRun } from "./run-archive.js";
 import { World } from "../world/world.js";
 import { EventBus } from "../core/event-bus.js";
 import { Simulation } from "../agent/simulation.js";
@@ -42,6 +43,8 @@ function makeManager(over?: { autosaveTicks?: number; savePath?: string }) {
     savePath: over?.savePath ?? join(dir, "save.db"),
     scenarioId: "default",
     snapshotDir: join(dir, "snapshots"),
+    runsDir: join(dir, "data", "runs"),
+    savesDir: join(dir, "saves"),
     autosaveTicks: over?.autosaveTicks ?? 24,
   });
   return { world, sim, saves };
@@ -155,6 +158,84 @@ describe("SaveManager 快照", () => {
   it("没有 snapshots 目录时列表为空数组（不抛）", () => {
     const { saves } = makeManager();
     expect(saves.listSnapshots()).toEqual([]);
+  });
+});
+
+describe("SaveManager 命名存档（像游戏那样）", () => {
+  it("另存为：写命名档 + 切换当前档 + 旧档原样留着", () => {
+    const { saves } = makeManager();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    saves.saveNow("主档");
+    const mainPath = saves.path;
+    const mainBytes = readFileSync(mainPath).length;
+
+    const info = saves.saveAs("小镇第一周")!;
+    expect(info.name).toBe("小镇第一周");
+    expect(existsSync(info.file)).toBe(true);
+    expect(saves.path).toBe(info.file);            // 已切换：以后往新档写
+    expect(saves.displayName).toBe("小镇第一周");
+    expect(readFileSync(mainPath).length).toBe(mainBytes); // 旧档一个字节没动
+
+    // 切换后的自动存档落在新档上
+    saves.onTickBoundary(24);
+    expect(saves.status().lastReason).toBe("自动");
+    expect(saves.path).toBe(info.file);
+  });
+
+  it("存档名消毒：路径穿越挡掉、空格转连字符、空名拒绝", () => {
+    expect(sanitizeSaveName("../../etc/passwd")).not.toContain("/");
+    expect(sanitizeSaveName("../../etc/passwd")).not.toContain("..");
+    expect(sanitizeSaveName("小镇 第一周")).toBe("小镇-第一周");
+    expect(sanitizeSaveName("  !!!  ")).toBe("");
+
+    const { saves } = makeManager();
+    expect(saves.saveAs("")).toBeUndefined();
+    expect(saves.saveAs("///")).toBeUndefined();   // 消毒后为空 → 拒绝，不写盘
+  });
+
+  it("命名档在清单里归 named 类，打开命令用名字不用路径", () => {
+    const { saves } = makeManager();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    saves.saveAs("存档甲");
+    const named = saves.listSlots().find((s) => s.kind === "named")!;
+    expect(named.name).toBe("存档甲");
+    expect(named.openWith).toBe("pnpm dev --load 存档甲");  // 好记，不是一长条路径
+  });
+});
+
+describe("SaveManager 档案清单", () => {
+  it("主档/快照/长跑归档各归各类，带 tick+剧本+打开命令，最新在前", () => {
+    const { saves, sim } = makeManager();
+    saves.saveNow("主档");
+    saves.snapshot("跑前留一手");
+    // 真跑一次归档：sim 长跑跑完就是走这条路
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const runFile = archiveRun(sim, "grounding-verify-r3", "default", { projectRoot: dir })!;
+    expect(runFile).toBeTruthy();
+
+    const slots = saves.listSlots();
+    const main = slots.find((s) => s.kind === "main")!;
+    const snap = slots.find((s) => s.kind === "snapshot")!;
+    const run = slots.find((s) => s.kind === "run")!;
+    expect(run.name).toContain("grounding-verify-r3");
+    expect(run.tick).toBe(sim.world.tick);
+    expect(main.tick).toBe(sim.world.tick);      // 探针读得出进度，不用装世界
+    expect(main.scenarioId).toBe("default");
+    expect(main.openWith).toContain("pnpm dev --load");
+    expect(snap.name).toContain("跑前留一手");
+    expect(slots.every((s) => s.sizeBytes > 0)).toBe(true);
+  });
+
+  it("目录不存在 / 档读不动 → 返回能读的那些，不整张挂掉", () => {
+    const { saves } = makeManager();
+    expect(saves.listSlots()).toEqual([]);        // 一个档都还没有
+    saves.saveNow("主档");
+    writeFileSync(join(dir, "save-坏档.db"), "这不是 sqlite");
+    const slots = saves.listSlots();
+    expect(slots.some((s) => s.name === "save")).toBe(true);
+    // 坏档进得了清单但没有 tick（探针读不出来），不影响别的
+    const bad = slots.find((s) => s.name === "save-坏档");
+    expect(bad?.tick).toBeUndefined();
   });
 });
 

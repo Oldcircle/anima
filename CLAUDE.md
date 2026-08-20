@@ -40,11 +40,15 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **社交可视化**：`godot/ui/RelationWeb.gd` 关系网（R 键，圆环 + 关系连线按类型上色 + bond 标注）
 - **思考持久化**：LLM 每次决策的内心独白存入记忆，念头能跨 tick 延续
 - **时间系统**：Tick 驱动（1 tick = 游戏 15 分钟），支持加速/暂停
-- **存档（`src/persistence/`）**：SQLite 单事务写入 + 启动自动读档 + 按剧本归属档案文件
-  （`save.db` / `save-<scenario>.db`，绝不跨剧本覆盖）。调度在 `save-manager.ts`：
-  **退出信号全覆盖**（SIGINT/SIGTERM/SIGHUP/SIGQUIT + 未捕获异常——长跑靠 screen/nohup 脱管，
-  被杀时来的是 SIGTERM）、覆盖前轮转 `.bak`、命名快照进 `data/snapshots/`。
-  **手动存档排到 tick 边界执行**（tick 内部有 await，中途存会存出"一半角色已决策"的世界）
+- **存档（`src/persistence/`）**：SQLite 单事务写入 + 启动自动读档 + 跨剧本护栏。
+  **命名存档**（像游戏那样）：`data/saves/<名字>.db`，`pnpm dev --load <名字>` 打开、
+  `--new <名字>` 新建、面板「另存为并切换」；四类档案并存——主档 / 命名档 /
+  快照 `data/snapshots/` / **sim 长跑归档 `data/runs/`**（runner 跑完自动归档，
+  否则一趟长跑的编年史/器物/案件跑完就蒸发，也没法续跑）。
+  调度在 `save-manager.ts`：**退出信号全覆盖**（SIGINT/SIGTERM/SIGHUP/SIGQUIT + 未捕获异常——
+  长跑靠 screen/nohup 脱管，被杀时来的是 SIGTERM）、覆盖前轮转 `.bak`、
+  **手动存档排到 tick 边界执行**（tick 内部有 await，中途存会存出"一半角色已决策"的世界）。
+  面板只列档案与打开命令，**不做运行中热加载**（切世界要重建一堆内存态，风险大于收益）
 - **世界编年史（`src/world/chronicle.ts` + `emergence.ts`）**：世界自己把"值得知道的事"报上来，
   人不用盯着 log 洪水。两类来源——**重大事件**（在既有 emoji 日志同处补一条 record：案件/篡改/
   指控/命运/饿倒/债务闭环/应验）与**涌现**（每 tick 全量重跑的机械探测器：证据竞赛/正典被非首述者
@@ -98,7 +102,9 @@ anima/
 ## 开发命令
 
 ```bash
-pnpm dev              # 启动模拟 + Web 服务 (http://localhost:3001)
+pnpm dev              # 启动模拟 + Web 服务 (http://localhost:3001)，自动接上次进度
+pnpm dev --load 小镇第一周      # 打开命名存档继续跑（也接受 data/runs/*.db 这类路径）
+pnpm dev --new 第二条线         # 新建一个命名存档，现有档一个都不动
 pnpm build            # TypeScript 编译
 pnpm test             # 单元测试（几秒完成）
 pnpm test:watch       # 开发时 watch 模式

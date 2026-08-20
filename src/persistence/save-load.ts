@@ -27,6 +27,25 @@ export function peekSaveScenario(dbPath: string): string | undefined | null {
   }
 }
 
+/**
+ * 档案探针：不加载世界，只读出"这个档是哪个剧本、跑到第几 tick"。
+ * 档案列表用——列 20 个档不该把 20 个世界都装进内存。
+ */
+export function peekSave(dbPath: string): { scenarioId?: string; tick: number; weather?: string } | null {
+  try {
+    const db = new AnimaDB(dbPath);
+    try {
+      const ws = db.loadWorldState();
+      if (!ws) return null;
+      return { scenarioId: ws.scenarioId, tick: ws.tick, weather: ws.weather };
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
 /** 保存当前世界状态到 SQLite */
 export function saveGame(sim: Simulation, dbPath: string, scenarioId?: string): void {
   // 入队未 drain 的 mutation（beat auto_events / 导演硬事件）先落地再快照：

@@ -20,6 +20,7 @@
 
 import { describe, it, expect } from "vitest";
 import { OpenAICompatibleProvider } from "../providers/openai-compatible.js";
+import { archiveRun } from "../persistence/run-archive.js";
 import { SmartMockLLM } from "../../test/helpers/smart-mock-llm.js";
 import { SimReporter } from "../../test/helpers/sim-reporter.js";
 import { createScenarioSim } from "../../test/helpers/scenario-sim.js";
@@ -65,6 +66,8 @@ interface RunnerResult {
   stoppedEarly: boolean;
   breakerTripped: boolean;
   logPath: string;
+  /** 世界归档路径（data/runs/…db）；归档失败为 undefined */
+  savePath?: string;
   /** 全链机械信号（判读辅助；剧情质量走 VERDICT） */
   chain: {
     caseRegistered: boolean;
@@ -104,6 +107,7 @@ async function runGroundingVerify(rawProvider: LLMProvider, modelId: string, opt
   let ticksRun = 0;
   let stoppedEarly = false;
   let logPath = "";
+  let savePath: string | undefined;
   try {
     while (START_TICK + ticksRun < endTick) {
       if (breaker.tripped) {
@@ -120,6 +124,9 @@ async function runGroundingVerify(rawProvider: LLMProvider, modelId: string, opt
   } finally {
     reporter.printSummary();
     logPath = reporter.writeLog("sim-grounding-verify");
+    // 世界归档：跑完/达顶/熔断都走这里——一趟长跑的编年史/器物/案件不该跑完就蒸发。
+    // 归档后可 `pnpm dev --save <file>` 打开面板看，或直接续跑。
+    savePath = archiveRun(handle.sim, `grounding-verify-${modelId}`, "grounding-verify");
     reporter.dispose();
   }
 
@@ -154,7 +161,7 @@ async function runGroundingVerify(rawProvider: LLMProvider, modelId: string, opt
     `\n⛓️ [chain] case=${chain.caseRegistered ? case_!.id : "无"} public=${chain.casePublic} status=${chain.caseStatus ?? "-"} 撬痕器物=${tillObjects.map((o) => o.key).join(",") || "无"} 指控数=${chain.accusations} 线索执念=${leadObsessions} NPC试探=${npcProbes}`,
   );
   handle.dispose();
-  return { ticksRun, llmCalls: handle.llmCalls(), stoppedEarly, breakerTripped: breaker.tripped, logPath, chain };
+  return { ticksRun, llmCalls: handle.llmCalls(), stoppedEarly, breakerTripped: breaker.tripped, logPath, savePath, chain };
 }
 
 // ── 干跑：机械链彩排（零 API）——npc 投放/立案/撬痕/公开门全走引擎侧，SmartMock 只填行为 ──
@@ -191,7 +198,7 @@ describe.skipIf(!LIVE || !process.env.DEEPSEEK_API_KEY)("grounding-verify Live �
     });
     const r = await runGroundingVerify(provider, "deepseek-chat");
     console.log(
-      `\n🏁 [runner] ticks=${r.ticksRun} calls=${r.llmCalls} stoppedEarly=${r.stoppedEarly} breaker=${r.breakerTripped}\n📄 日志：${r.logPath}`,
+      `\n🏁 [runner] ticks=${r.ticksRun} calls=${r.llmCalls} stoppedEarly=${r.stoppedEarly} breaker=${r.breakerTripped}\n📄 战报：${r.logPath}\n💾 世界：${r.savePath ?? "(归档失败)"}`,
     );
     // 数据面基础断言（判读走 VERDICT）：跑出可判读的数据量 + 机械链至少走到立案
     expect(r.ticksRun).toBeGreaterThan(8);

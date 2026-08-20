@@ -18,8 +18,10 @@ import { loadScenario, applyInitialItems, applyKiraProtections } from "./narrati
 import { setBreakLevel, getBreakLevel, setDecisionPov, getDecisionPov, setEnabledWorldEvents } from "./agent/break-config.js";
 import { loadGame } from "./persistence/save-load.js";
 import { SaveManager } from "./persistence/save-manager.js";
+import { runStamp } from "./persistence/run-archive.js";
+import { SAVES_DIR_NAME, sanitizeSaveName } from "./persistence/save-manager.js";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
 import { addToInventory } from "./world/item-registry.js";
 
 // --- 配置 ---
@@ -37,11 +39,57 @@ function parseScenarioArg(argv: string[]): string {
 }
 const SCENARIO_ID = parseScenarioArg(process.argv.slice(2));
 
+// --- 档案选择 ---
+// `--save <path>`：打开指定档继续跑（sim 长跑归档 data/runs/*.db、快照、别的存档都行）
+// `--new`：新开一档，存到 data/save-new-<时间戳>.db，**绝不覆盖**现有档
+function parseArgValue(argv: string[], long: string, short?: string): string | undefined {
+  const i = argv.findIndex((a) => a === long || (short !== undefined && a === short));
+  if (i >= 0 && argv[i + 1]) return argv[i + 1];
+  const eq = argv.find((a) => a.startsWith(`${long}=`));
+  return eq ? eq.slice(long.length + 1) : undefined;
+}
+const ARGV = process.argv.slice(2);
+const EXPLICIT_SAVE = parseArgValue(ARGV, "--load") ?? parseArgValue(ARGV, "--save");
+const NEW_NAME = parseArgValue(ARGV, "--new");
+const WANT_NEW = NEW_NAME !== undefined || ARGV.includes("--new");
+
 // --- 存档文件按剧本归属 ---
 // data/save.db 属于"它里面存的那个剧本"（老档无标识时视为当前剧本，向后兼容）；
 // 剧本不匹配时改用 data/save-<scenario>.db，绝不让新世界的自动存档覆盖别的剧本的档。
 import { peekSaveScenario } from "./persistence/save-load.js";
 function resolveSaveFile(): string {
+  // 显式指定优先：打开哪个档就跑哪个档，不做剧本归属改写（跨剧本护栏在 loadGame 里）。
+  // 先按**存档名**解析（data/saves/<名字>.db），名字对不上再当路径处理。
+  if (EXPLICIT_SAVE) {
+    const named = join(DATA_DIR, SAVES_DIR_NAME, `${sanitizeSaveName(EXPLICIT_SAVE)}.db`);
+    if (existsSync(named)) {
+      console.log(`📂 打开存档「${sanitizeSaveName(EXPLICIT_SAVE)}」：${named}`);
+      return named;
+    }
+    const asPath = isAbsolute(EXPLICIT_SAVE) ? EXPLICIT_SAVE : join(PROJECT_ROOT, EXPLICIT_SAVE);
+    if (!existsSync(asPath)) {
+      console.log(`⚠️  没有叫「${EXPLICIT_SAVE}」的存档，也不是现有文件——将按这个路径新建：${asPath}`);
+    } else {
+      console.log(`📂 打开指定档：${asPath}`);
+    }
+    return asPath;
+  }
+  // --new [名字]：新建一档，绝不覆盖现有档
+  if (WANT_NEW) {
+    const safe = NEW_NAME ? sanitizeSaveName(NEW_NAME) : "";
+    if (safe) {
+      const named = join(DATA_DIR, SAVES_DIR_NAME, `${safe}.db`);
+      if (existsSync(named)) {
+        console.error(`❌ 存档「${safe}」已存在，换个名字，或用 --load ${safe} 打开它`);
+        process.exit(1);
+      }
+      console.log(`📂 新建存档「${safe}」：${named}（现有档一个都没动）`);
+      return named;
+    }
+    const fresh = join(DATA_DIR, SAVES_DIR_NAME, `未命名-${runStamp()}.db`);
+    console.log(`📂 新建存档：${fresh}（没给名字，用时间戳；现有档一个都没动）`);
+    return fresh;
+  }
   const legacy = join(DATA_DIR, "save.db");
   const saved = peekSaveScenario(legacy);
   if (saved === null || saved === undefined || saved === SCENARIO_ID) return legacy;
@@ -182,8 +230,10 @@ const saves = new SaveManager({
   savePath: SAVE_FILE,
   scenarioId: SCENARIO_ID,
   snapshotDir: join(DATA_DIR, "snapshots"),
+  runsDir: join(DATA_DIR, "runs"),
+  savesDir: join(DATA_DIR, SAVES_DIR_NAME),
 });
-console.log(`💾 存档: ${SAVE_FILE}（自动存档每 ${saves.autosaveTicks || "—"} tick${saves.autosaveTicks ? "" : "，已关闭"}）`);
+console.log(`💾 存档「${saves.displayName}」: ${SAVE_FILE}（自动每 ${saves.autosaveTicks || "—"} tick${saves.autosaveTicks ? "" : "，已关闭"}）`);
 
 // --- 启动 Tick 循环 ---
 const engine = new TickEngine({

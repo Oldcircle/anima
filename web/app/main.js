@@ -1245,10 +1245,59 @@ function fmtAgo(ts) {
   return `${Math.round(s / 3600)} 小时前`;
 }
 
+const SLOT_KIND = { main: "主档", snapshot: "快照", run: "长跑归档" };
+
+// 档案清单：主档 / 快照 / sim 长跑归档。面板**不做运行中热加载**——
+// 切世界要重建 Simulation 里一堆内存态（对话追踪/导演/脉冲），半路换掉风险远大于收益。
+// 这里只列出有哪些档，以及打开它的那条命令。
+function SlotList() {
+  const [slots, setSlots] = useState(null);
+  const [current, setCurrent] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const r = await api("/api/save/slots");
+      setSlots(r.slots ?? []);
+      setCurrent(r.current ?? "");
+    } catch { setSlots([]); }
+  }, []);
+  useEffect(() => { if (open) reload(); }, [open, reload]);
+
+  return html`
+    <div style="margin:10px 0 14px;">
+      <button style="flex:none;" onClick=${() => setOpen(!open)}>${open ? "收起档案清单" : `档案清单${slots ? `（${slots.length}）` : ""}`}</button>
+      ${open && html`
+        <div style="margin-top:10px;">
+          <div class="muted" style="font-size:11px;margin-bottom:6px;">
+            要打开哪个档，复制它的命令到终端重启即可。面板不做运行中热切换——半路换世界风险太大。
+          </div>
+          ${(slots ?? []).length === 0 && html`<div class="empty">（还没有别的档）</div>`}
+          ${(slots ?? []).map((s) => html`
+            <div class="card" style="margin-bottom:6px;${s.file === current ? "border-color:#3fb950;" : ""}">
+              <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;">
+                <strong style="font-size:12px;">${s.name}</strong>
+                <span style="font-size:10px;color:#8b949e;border:1px solid #30363d;border-radius:3px;padding:0 4px;">${SLOT_KIND[s.kind] ?? s.kind}</span>
+                ${s.file === current && html`<span style="font-size:10px;color:#3fb950;">当前</span>`}
+                <div style="flex:1;"></div>
+                <span class="muted" style="font-size:10px;">
+                  ${s.tick !== undefined ? `第 ${s.day} 天 · tick ${s.tick} · ` : ""}${s.scenarioId ?? "?"} · ${fmtBytes(s.sizeBytes)} · ${fmtAgo(s.savedAt)}
+                </span>
+              </div>
+              <div style="font-size:11px;margin-top:4px;font-family:ui-monospace,monospace;color:#58a6ff;word-break:break-all;">${s.openWith}</div>
+            </div>
+          `)}
+        </div>
+      `}
+    </div>
+  `;
+}
+
 function SaveSection() {
   const [info, setInfo] = useState(null);
   const [busy, setBusy] = useState(false);
   const [snapName, setSnapName] = useState("");
+  const [saveName, setSaveName] = useState("");
 
   const reload = useCallback(async () => {
     try { setInfo(await api("/api/save")); }
@@ -1282,13 +1331,25 @@ function SaveSection() {
     finally { setBusy(false); }
   };
 
+  const saveAs = async () => {
+    if (!saveName.trim()) return toast("先起个存档名", "error");
+    setBusy(true);
+    try {
+      const r = await api("/api/save/as", { method: "POST", body: JSON.stringify({ name: saveName }) });
+      toast(`已另存为「${r.saved.name}」并切换过去`);
+      setSaveName("");
+      reload();
+    } catch (e) { toast("另存为失败：" + e.message, "error"); }
+    finally { setBusy(false); }
+  };
+
   if (info?.unavailable) return null;
 
   return html`
     <h2 style="font-size:16px;margin-top:0;">存档</h2>
     <div class="subtitle" style="margin-bottom:12px;">
-      主档是自动的：每 ${info?.autosaveTicks ?? "—"} tick 存一次，退出（Ctrl+C / kill / 关终端 / 崩溃）都会先存。
-      关掉进程再启动会自动接着上次的进度跑。
+      当前存档 <strong style="color:#58a6ff;">${info?.name ?? "—"}</strong>：每 ${info?.autosaveTicks ?? "—"} tick 自动存一次，
+      退出（Ctrl+C / kill / 关终端 / 崩溃）都会先存。关掉进程再启动会自动接着上次的进度跑。
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;">
       <div class="card"><div class="title">上次存档</div><div style="font-size:14px;">${fmtAgo(info?.lastSaveAt)}</div>
@@ -1302,11 +1363,16 @@ function SaveSection() {
 
     <div class="toolbar">
       <button class="primary" style="flex:none;white-space:nowrap;" disabled=${busy} onClick=${saveNow}>立即存档</button>
-      <input placeholder="快照名（可留空）" value=${snapName} onInput=${(e) => setSnapName(e.target.value)} style="flex:none;width:190px;" />
+      <input placeholder="快照名（可留空）" value=${snapName} onInput=${(e) => setSnapName(e.target.value)} style="flex:none;width:170px;" />
       <button style="flex:none;white-space:nowrap;" disabled=${busy} onClick=${makeSnapshot}>建快照</button>
-      <div class="spacer"></div>
-      <span class="muted" style="font-size:11px;white-space:nowrap;">${info?.path ?? ""}</span>
     </div>
+    <div class="toolbar">
+      <input placeholder="新存档名，如「小镇第一周」" value=${saveName} onInput=${(e) => setSaveName(e.target.value)} style="flex:none;width:220px;" />
+      <button style="flex:none;white-space:nowrap;" disabled=${busy} onClick=${saveAs}>另存为并切换</button>
+      <span class="muted" style="font-size:11px;">另存为会把"以后往哪写"改到新档，旧档原样留着，随时 <code>--load</code> 回去</span>
+    </div>
+
+    <${SlotList} />
 
     ${(info?.snapshots ?? []).length > 0 && html`
       <div style="margin-bottom:8px;">

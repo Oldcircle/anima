@@ -14,7 +14,7 @@ import type { TickEngine } from "../core/tick-engine.js";
 
 export function registerSaveRoutes(app: Express, saves: SaveManager, engine?: TickEngine): void {
   app.get("/api/save", (_req: Request, res: Response) => {
-    res.json({ ...saves.status(), snapshots: saves.listSnapshots() });
+    res.json({ ...saves.status(), name: saves.displayName, snapshots: saves.listSnapshots() });
   });
 
   /** 立即/排队存主档 */
@@ -28,6 +28,27 @@ export function registerSaveRoutes(app: Express, saves: SaveManager, engine?: Ti
       message: applied ? "已保存" : "已排队，将在当前 tick 结束时保存",
       status: saves.status(),
     });
+  });
+
+  /**
+   * 另存为一个**命名存档**并切换过去（像游戏的"另存为"）。
+   * 不动世界、不重载——只把"以后往哪写"改到新档；旧档原样留着随时可回。
+   */
+  app.post("/api/save/as", (req: Request, res: Response) => {
+    const name = typeof req.body?.name === "string" ? req.body.name : "";
+    if (!name.trim()) return res.status(400).json({ error: "存档名必填" });
+    const info = saves.saveAs(name);
+    if (!info) return res.status(400).json({ error: "存档名非法或写盘失败（名字只保留中英文数字和 - _）" });
+    res.json({ ok: true, saved: info, status: saves.status(), slots: saves.listSlots() });
+  });
+
+  /**
+   * 档案列表：主档 / 快照 / sim 长跑归档，各带剧本与 tick（探针只读元信息不装世界）。
+   * 面板**不做运行中热加载**——切世界要重建 Simulation 里一堆内存态（对话追踪/导演/脉冲），
+   * 半路换掉风险远大于收益。这里只告诉你有哪些档、以及打开它的那条命令。
+   */
+  app.get("/api/save/slots", (_req: Request, res: Response) => {
+    res.json({ current: saves.status().path, slots: saves.listSlots() });
   });
 
   /**

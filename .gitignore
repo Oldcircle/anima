@@ -13,6 +13,8 @@ data/save.db.bak
 data/save-*.db
 data/save-*.db.bak
 data/snapshots/
+data/saves/
+data/runs/
 data/settings.json
 logs/
 sim-*-log.txt
