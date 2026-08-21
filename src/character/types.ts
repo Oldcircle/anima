@@ -25,6 +25,8 @@ export interface LifeState {
   attendedToday?: boolean;
   /** 连续缺勤天数（≥2 带话警告，≥3 辞退；见 world/employment.ts） */
   absentDays?: number;
+  /** 追求的运行期状态（从角色卡 pursuit 初始化；见 world/pursuit.ts） */
+  pursuit?: import("../world/pursuit.js").PursuitState;
   /** 当前担忧（从反思中涌现） */
   currentConcern?: string;
 }
@@ -75,6 +77,12 @@ export interface CharacterCard {
 
   /** 角色初始携带的物品 ID 列表 */
   startingItems?: string[];
+
+  /**
+   * 追求（世界的「方向」）：aspiration 的可测版本——绑真实状态的进度 + 期限 + 失败态。
+   * 缺省 = 这个人没有在追什么（合法，但戏会淡）。见 world/pursuit.ts
+   */
+  pursuit?: import("../world/pursuit.js").PursuitDef;
 
   /**
    * Bartle 玩法人格：achiever|explorer|socializer|killer。

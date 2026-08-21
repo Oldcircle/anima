@@ -79,4 +79,15 @@ life:
 # Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：「成为世界上最厉害的人」——她要的是看得见的名次
 playstyle: achiever
 
+# 追求：aspiration「成为世界上最厉害的人」的可测版本——
+# 对一个 14 岁咖啡馆店员来说，"最厉害"最近的落点是把手艺练到没人比得过
+pursuit:
+  id: asuka_barista
+  summary: 把咖啡手艺练出个样子来——至少不能再是个新手
+  metric: { kind: skill, skill: barista }
+  target: 3
+  deadline_day: 6
+  on_achieved: 你终于摸熟了那台机器。算不上「最厉害」，但没人能再说你是来混的。
+  on_failed: 六天过去了，你连入门都算不上。你最恨的就是这个。
+
 relationships: {}

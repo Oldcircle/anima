@@ -76,4 +76,14 @@ life:
 # Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：查案的人先是个翻东西的人
 playstyle: explorer
 
+# 追求：aspiration「抓到 Kira」的可测版本——查案先得有人肯跟你说话
+pursuit:
+  id: l_trust_light
+  summary: 让夜神月放下戒心，说点真话
+  metric: { kind: relationship, target: light }
+  target: 40
+  deadline_day: 6
+  on_achieved: 他终于松口了。不是因为他信你——是因为他觉得赢定了。这更好。
+  on_failed: 六天，他一寸都没让。你连他哪句是真的都还分不出来。
+
 relationships: {}

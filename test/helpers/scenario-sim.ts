@@ -159,6 +159,11 @@ export function createScenarioSim(options: ScenarioSimOptions): ScenarioSimHandl
   let cursor = startTick;
   let disposed = false;
 
+  // 追求：角色卡的 pursuit 进运行期（与 cli 同款装配）
+
+  sim.initPursuits();
+
+
   return {
     sim,
     world,

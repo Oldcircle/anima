@@ -12,6 +12,7 @@
  */
 
 import type { ToolDefinition } from "../providers/types.js";
+import { describePursuit } from "../world/pursuit.js";
 import type { ActionDefinition, ActionResult, ActionContext } from "../actions/types.js";
 import type { CharacterState, Location, LocationTool } from "../world/types.js";
 import type { CharacterCard } from "../character/types.js";
@@ -2086,6 +2087,16 @@ export function buildEnvironmentSnapshot(ctx: ToolBuildContext): string {
       const remainHours = Math.ceil((g.matureTicks - (ctx.tick - g.plantedTick)) / 4);
       lines.push(`你在农田种着一块菜地，大约还要${remainHours}小时成熟（去照看照看能熟得快点）。`);
     }
+  }
+
+  // 追求（世界的「方向」）：只报进度与剩余时间，怎么去够它归角色——
+  // 世界不给建议。放此刻区（动态），不碰缓存稳定区
+  if (ctx.state.life?.pursuit && ctx.tick !== undefined) {
+    const line = describePursuit(ctx.state.life.pursuit, Math.floor(ctx.tick / 96), {
+      state: ctx.state,
+      getRelationLevel: (a, b) => ctx.relationships?.get(a, b).level,
+    });
+    if (line) lines.push(line);
   }
 
   // 器物层（PLAN-grounding M1 触发通道②④）：重访 diff + 意图指路。

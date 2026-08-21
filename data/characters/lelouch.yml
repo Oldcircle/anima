@@ -84,4 +84,13 @@ life:
 # Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：同为支配型，手法是借人之手
 playstyle: killer
 
+pursuit:
+  id: lelouch_ally
+  summary: 在这镇上找到一个真正靠得住的人
+  metric: { kind: relationship, target: senjougahara }
+  target: 40
+  deadline_day: 6
+  on_achieved: 她终于把后背交给你了。一个人成不了事，两个人可以。
+  on_failed: 到最后还是只有你自己。你早该习惯的。
+
 relationships: {}

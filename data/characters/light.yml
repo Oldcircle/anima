@@ -79,4 +79,14 @@ life:
 # Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：他要的是让别人按他的判断动
 playstyle: killer
 
+# 追求：他要的是"局面在自己手里"——可测落点是钱（自由度的硬通货）
+pursuit:
+  id: light_leverage
+  summary: 手里攒够一笔谁也管不着的钱
+  metric: { kind: gold }
+  target: 160
+  deadline_day: 6
+  on_achieved: 两百金币。现在没有人能靠"你需要什么"来拿捏你了。
+  on_failed: 你还是那个要看别人脸色的人。这比没钱更难受。
+
 relationships: {}

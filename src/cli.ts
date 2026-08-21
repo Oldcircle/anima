@@ -234,6 +234,9 @@ if (existsSync(SAVE_FILE)) {
   }
 }
 
+// --- 追求：把角色卡的 pursuit 装进运行期（读档之后，不覆盖已有进度）---
+simulation.initPursuits();
+
 // --- 存档管理（信号全覆盖 + 备份轮转 + 快照）---
 const saves = new SaveManager({
   simulation,

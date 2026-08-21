@@ -76,4 +76,15 @@ life:
     observation: 8
   aspiration: "...（她不知道这个词是什么意思）"
 
+# 追求：她的 aspiration 是空的（"不知道这个词是什么意思"）——
+# 所以给一个她自己都说不清为什么的目标：养活地里那点东西
+pursuit:
+  id: rei_garden
+  summary: 让地里的菜长出来，收进手里
+  metric: { kind: item, item_id: vegetable }
+  target: 4
+  deadline_day: 6
+  on_achieved: 它们长出来了。你不知道为什么这让你想多站一会儿。
+  on_failed: 什么都没长成。也许本来就不该指望。
+
 relationships: {}

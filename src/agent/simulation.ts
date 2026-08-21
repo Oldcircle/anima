@@ -28,6 +28,7 @@ import { groundingEnabled } from "../world/world-objects.js";
 import { promptTrace } from "../providers/prompt-trace.js";
 import { detectEmergence } from "../world/emergence.js";
 import { jobLossEnabled, noteAttendance, settleAttendance } from "../world/employment.js";
+import { pursuitsEnabled, settlePursuit } from "../world/pursuit.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest, filterGroupInbox } from "./conversation-mode.js";
 import { extractPromise, mightContainPromise, extractTransaction, mightContainTransaction, type ExtractedTransaction } from "./promise-extractor.js";
@@ -439,6 +440,7 @@ export class Simulation {
     // 1.0d2 出勤日结算：连续缺勤 2 天带话警告、3 天辞退（世界的第一个"输"）
     if (gameTime.hour === 6 && gameTime.minute === 0) {
       this._settleEmployment(gameTime);
+      this._settlePursuits(gameTime);
     }
 
     // 1.0e 晨间打算：每天 06:00 各角色给自己定今天想做的 1-3 件事（fire-and-forget）
@@ -763,6 +765,63 @@ export class Simulation {
       },
       affectedCharacters: affected,
     };
+  }
+
+  /**
+   * 从角色卡把追求装进运行期状态。只装没有的——读档回来的进度不能被覆盖。
+   * CLI 与 harness 启动时各调一次。
+   */
+  initPursuits(): void {
+    if (!pursuitsEnabled()) return;
+    let n = 0;
+    for (const [id, config] of this._configs) {
+      const def = config.card.pursuit;
+      const state = this.world.getCharacter(id);
+      if (!def || !state?.life || state.life.pursuit) continue;
+      state.life.pursuit = { ...def, status: "active", lastProgress: 0 };
+      n++;
+    }
+    if (n > 0) console.log(`🎯 [追求] ${n} 人带着自己想要的东西上路`);
+  }
+
+  /**
+   * 追求日结算：达成 / 错过都是**一次性不可逆**的。
+   * 错过尤其重要——「输」的第二种形式不是失去已有的，是**永远错过想要的**。
+   */
+  private _settlePursuits(gameTime: GameTime): void {
+    if (!pursuitsEnabled()) return;
+    const day = Math.floor(gameTime.tick / 96);
+    for (const state of this.world.getAllCharacters()) {
+      const p = state.life?.pursuit;
+      if (!p) continue;
+      const outcome = settlePursuit(p, day, {
+        state,
+        getRelationLevel: (a, b) => this.relationships.get(a, b).level,
+      });
+      if (!outcome || outcome.kind === "progress") continue;
+
+      const achieved = outcome.kind === "achieved";
+      const text = achieved
+        ? (p.onAchieved ?? `你做到了：${p.summary}`)
+        : (p.onFailed ?? `你没做到：${p.summary}。差了 ${(outcome as { short: number }).short}，日子不会等人。`);
+      this.memory.add(state.id, { tick: gameTime.tick, type: "event", content: text, importance: 10 });
+      this.longTerm.add(state.id, { tick: gameTime.tick, type: "event", importance: 10, content: text });
+      addMoodlet(state, achieved ? "confident" : "sad", achieved ? 6 : 7,
+        achieved ? `终于做到了：${p.summary}` : `到底还是没做到：${p.summary}`,
+        48, "event", gameTime.tick);
+      this.world.chronicle.record({
+        id: `chr_pursuit_${state.id}_${p.id}`,
+        tick: gameTime.tick, day,
+        kind: "milestone", importance: achieved ? 9 : 10,
+        emoji: achieved ? "🎯" : "🥀",
+        title: achieved ? `${state.name}做到了：${p.summary}` : `${state.name}错过了：${p.summary}`,
+        detail: achieved
+          ? `${outcome.current}/${p.target}，够了。`
+          : `到期只到 ${outcome.current}/${p.target}，还差 ${(outcome as { short: number }).short}。**这件事没有下一次**。`,
+        actors: [state.id],
+      });
+      console.log(`🎯 [追求] ${state.name} ${achieved ? "达成" : "错过"}：${p.summary}（${outcome.current}/${p.target}）`);
+    }
   }
 
   /**

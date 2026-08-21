@@ -88,4 +88,13 @@ life:
 # Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：她的模式是把人拉进交锋，不是躲开人
 playstyle: socializer
 
+pursuit:
+  id: senjou_books
+  summary: 把整理这件事练到闭着眼也不会出错
+  metric: { kind: skill, skill: organizing }
+  target: 3
+  deadline_day: 6
+  on_achieved: 每一本都在它该在的地方。这种秩序是你自己造出来的。
+  on_failed: 还是乱的。你连这么小的一件事都没能理清楚。
+
 relationships: {}

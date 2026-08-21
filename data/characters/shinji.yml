@@ -80,4 +80,15 @@ life:
 # Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：他要的是被接住
 playstyle: socializer
 
+# 追求：aspiration「父亲说一句做得好」的可测版本——
+# 他够不着父亲，能够着的是"把这份活干到不被辞退、还攒下点什么"
+pursuit:
+  id: shinji_savings
+  summary: 攒够一笔钱，证明自己不是什么都做不成
+  metric: { kind: gold }
+  target: 150
+  deadline_day: 6
+  on_achieved: 一百五十金币。不多。但这是你自己挣的，没人施舍。
+  on_failed: 到头来还是没攒下。果然，你连这种事都做不成。
+
 relationships: {}

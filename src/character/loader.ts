@@ -3,6 +3,7 @@
  */
 
 import { readFileSync, readdirSync } from "node:fs";
+import { normalizePursuit } from "../world/pursuit.js";
 import { join } from "node:path";
 import { parse as parseYAML } from "yaml";
 import type { CharacterCard, LifeState } from "./types.js";
@@ -56,6 +57,7 @@ export function loadCharacterFromYAML(filePath: string): CharacterCard {
     life,
     startingItems: data.starting_items,
     playstyle: data.playstyle,
+    pursuit: normalizePursuit(data.pursuit),
     relationships: data.relationships ?? {},
   };
 }
