@@ -34,6 +34,12 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 - **气候系统（`src/world/climate.ts`）**：天气×四季×时辰 → 体感温度；露天暴露在
   恶劣气候会额外耗 needs + 生 moodlet（催人躲屋里），室内免疫；温度/气候提示/季节氛围注入 prompt；
   Godot 四季换装（季节染色 + 樱花/落叶/雪絮粒子 + 时钟温度）
+- **失业（`src/world/employment.ts`）**：世界的第一个**不可逆终局**——此前没有死亡/离镇/
+  永久失业，关系会 decay 回中性、需求会刷新，**每一天都可以重来**，于是等待永远是最优解
+  （cast-culprit r1 实测 steal 端上桌 28 次零采纳）。现在连续缺勤 2 天捎话警告 + 挂执念、
+  3 天辞退：workplace 清空、收入归零、worker 工具从菜单消失、风声传开。
+  **先警告后辞退**是纪律（没有预警的不可逆是惩罚，有预警的才是选择）；
+  连锁「失业→断收入→绝境阶梯打开」是设计意图。本期不做重新就业
 - **经济系统（`src/world/economy.ts`）**：生计压力（每天 07:00 扣房租/杂用 `applyDailyUpkeep`，
   付不起→焦虑+生计记忆）+ 财务体感（按"撑得了几天"分档 financeBand，进 prompt）+ 季节市场价格
   （`effectivePrice` 应季便宜反季贵，buy 工具三处一致）；Godot 名册/详情显示金币+财务档、头顶飘金币
@@ -188,6 +194,7 @@ ANIMA_AUTOSAVE_TICKS=24           # 自动存档间隔（tick）。默认 24 = 6
 ANIMA_CHEAP_MODEL=                # 分层模型便宜档（省钱）：印象/观察/反思/晨间打算/三个抽取器走它。留空=整层不启用
 ANIMA_CHEAP_BASE_URL=             # 便宜档换一家 provider 才填（不填=用主 provider 同一家）
 ANIMA_CHEAP_API_KEY=              # 同上
+ANIMA_JOB_LOSS=1                  # 失业机制（世界的第一个不可逆终局）：连续缺勤 2 天捎话警告、3 天辞退。=0 整层关（治愈系小镇不辞退人）
 ANIMA_CHEAP_KINDS=                # 覆盖便宜档承接的类型清单（逗号分隔）。想把 decision 也下放做 A/B 时用；空串=整层关
 PORT=3001                         # Web 服务端口，可选
 ```

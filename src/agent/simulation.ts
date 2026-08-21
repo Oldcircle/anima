@@ -27,6 +27,7 @@ import { mentionedObjects, extractFacts, settleExtractedFacts } from "./fact-ext
 import { groundingEnabled } from "../world/world-objects.js";
 import { promptTrace } from "../providers/prompt-trace.js";
 import { detectEmergence } from "../world/emergence.js";
+import { jobLossEnabled, noteAttendance, settleAttendance } from "../world/employment.js";
 import { runReflection, type ReflectionResult } from "./reflection.js";
 import { ConversationTracker, buildConversationRequest, filterGroupInbox } from "./conversation-mode.js";
 import { extractPromise, mightContainPromise, extractTransaction, mightContainTransaction, type ExtractedTransaction } from "./promise-extractor.js";
@@ -387,6 +388,14 @@ export class Simulation {
     // -1. 应用 API 层入队的角色/地点/provider 变更（保证 tick 内一致）
     this.drainMutations();
 
+    // -0.5 出勤记账：工作时段人在自己工作地点就算来过了（日结算时才消费）
+    if (jobLossEnabled()) {
+      for (const c of this.world.getAllCharacters()) {
+        if (this._isStaticNpc(c.id)) continue;
+        noteAttendance(c, gameTime.hour);
+      }
+    }
+
     // D2: 让 director 的 pulse store 把已过观察窗口的 pulse 自动 observe 回填
     const pulseStore = this.director?.getPulseStore();
     if (pulseStore) {
@@ -427,6 +436,11 @@ export class Simulation {
       { world: this.world, memory: this.memory, eventBus: this.eventBus, tick: gameTime.tick },
       this._crimeSupplyMode,
     );
+    // 1.0d2 出勤日结算：连续缺勤 2 天带话警告、3 天辞退（世界的第一个"输"）
+    if (gameTime.hour === 6 && gameTime.minute === 0) {
+      this._settleEmployment(gameTime);
+    }
+
     // 1.0e 晨间打算：每天 06:00 各角色给自己定今天想做的 1-3 件事（fire-and-forget）
     if (gameTime.hour === 6 && gameTime.minute === 0) {
       this.runMorningPlans(gameTime);
@@ -749,6 +763,71 @@ export class Simulation {
       },
       affectedCharacters: affected,
     };
+  }
+
+  /**
+   * 出勤日结算：世界的第一个**不可逆终局**。
+   *
+   * 纪律：**先警告后辞退**。缺勤第 2 天由同事捎话进信箱 + 挂执念（进晨间打算），
+   * 第 3 天才真丢——没有预警的不可逆是惩罚，有预警的不可逆才是选择。
+   * 辞退后 worker 工具从菜单消失、收入断掉，financeBand 随之下滑：
+   * 这条连锁（失业→断收入→绝境阶梯打开）是设计意图，不是副作用。
+   */
+  private _settleEmployment(gameTime: GameTime): void {
+    if (!jobLossEnabled()) return;
+    const day = Math.floor(gameTime.tick / 96);
+    for (const state of this.world.getAllCharacters()) {
+      if (this._isStaticNpc(state.id)) continue;
+      const outcome = settleAttendance(state);
+      if (!outcome || outcome.kind === "present" || outcome.kind === "absent") continue;
+
+      if (outcome.kind === "warn") {
+        const place = this.world.getLocation(state.life?.workplace ?? "")?.name ?? "店里";
+        this.world.sendMessage(state.id, {
+          fromId: "__work__",
+          fromName: `${place}捎来的话`,
+          content: `你已经${outcome.days}天没露面了。再不来，这份活就得给别人了。`,
+          tick: gameTime.tick,
+        });
+        this.memory.add(state.id, {
+          tick: gameTime.tick, type: "event", importance: 8,
+          content: `${place}让人捎话来——再不去上工，这份活就保不住了`,
+        });
+        if (obsessionsEnabled()) {
+          this.world.narrative.registerObsession(state.id, {
+            id: `obs_job_${state.id}`,
+            summary: `再不去${place}露面，这份活就没了`,
+            createdDay: day, decayDays: 3, source: "work",
+            relatedId: `job_${state.id}`,   // 辞退/复工时按它清账
+          });
+        }
+        console.log(`💼 [工作] ${state.name} 缺勤 ${outcome.days} 天，捎话警告`);
+        continue;
+      }
+
+      // ── 辞退：这件事没有撤销键 ──
+      const place = this.world.getLocation(outcome.formerWorkplace)?.name ?? outcome.formerWorkplace;
+      const desc = `${place}把你辞了——连着${outcome.days}天没露面，位置给了别人。${outcome.formerOccupation}这个身份，从今天起不是你的了。`;
+      this.memory.add(state.id, { tick: gameTime.tick, type: "event", content: desc, importance: 10 });
+      this.longTerm.add(state.id, { tick: gameTime.tick, type: "event", importance: 10, content: desc });
+      addMoodlet(state, "sad", 6, `被${place}辞退了`, 48, "event", gameTime.tick);
+      // 已经被辞了，"再不去就没了"这条执念失去意义——清掉，别挂在心上误导决策
+      this.world.narrative.clearObsessionsRelatedTo(`job_${state.id}`);
+      // 镇上会知道——丢工作是社交事件不只是经济事件
+      this.world.narrative.getWorld().rumors.push({
+        content: `听说${state.name}被${place}辞了，说是连着好几天没去`,
+        sourceCharId: undefined, tick: gameTime.tick, reachedChars: [],
+      });
+      this.world.chronicle.record({
+        id: `chr_fired_${state.id}_${gameTime.tick}`,
+        tick: gameTime.tick, day,
+        kind: "milestone", importance: 9, emoji: "💼",
+        title: `${state.name}被${place}辞退了`,
+        detail: `连着 ${outcome.days} 天没去上工。工作没了、收入断了——这件事没有撤销键。`,
+        actors: [state.id], locationId: outcome.formerWorkplace,
+      });
+      console.log(`💼 [工作] ${state.name} 被 ${place} 辞退（缺勤 ${outcome.days} 天）`);
+    }
   }
 
   /**

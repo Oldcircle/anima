@@ -21,6 +21,10 @@ export interface LifeState {
   aspiration: string;
   /** 当前短期目标（从反思中涌现） */
   currentGoal?: string;
+  /** 今天在工作时段到过工作地点（每 tick 记，日结算消费后清零） */
+  attendedToday?: boolean;
+  /** 连续缺勤天数（≥2 带话警告，≥3 辞退；见 world/employment.ts） */
+  absentDays?: number;
   /** 当前担忧（从反思中涌现） */
   currentConcern?: string;
 }
