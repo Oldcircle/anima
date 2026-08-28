@@ -87,4 +87,17 @@ pursuit:
   on_achieved: 它们长出来了。你不知道为什么这让你想多站一会儿。
   on_failed: 什么都没长成。也许本来就不该指望。
 
+# 声部：卡里已写"常常只回答一两个字"，这里给它牙齿
+voice:
+  max_chars: 24
+  bans: [比喻, 排比]
+  silence: true
+
+beliefs:
+  - id: replaceable
+    text: "你是可以被替换的。你不在了，也会有别人来浇这些花。"
+    broken_when: { metric: closest_bond, at_least: 45 }
+    when_broken: "有一个人，好像不是「谁都行」。你说不清这有什么不同，但它确实不同。"
+
+
 relationships: {}

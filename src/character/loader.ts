@@ -4,6 +4,8 @@
 
 import { readFileSync, readdirSync } from "node:fs";
 import { normalizePursuit } from "../world/pursuit.js";
+import { normalizeVoice } from "../agent/voice.js";
+import { normalizeBeliefs } from "./beliefs.js";
 import { join } from "node:path";
 import { parse as parseYAML } from "yaml";
 import type { CharacterCard, LifeState } from "./types.js";
@@ -58,6 +60,8 @@ export function loadCharacterFromYAML(filePath: string): CharacterCard {
     startingItems: data.starting_items,
     playstyle: data.playstyle,
     pursuit: normalizePursuit(data.pursuit),
+    voice: normalizeVoice(data.voice),
+    beliefs: normalizeBeliefs(data.beliefs),
     relationships: data.relationships ?? {},
   };
 }

@@ -25,7 +25,7 @@ export interface ExtractedPromise {
 }
 
 /** 时间性关键词预过滤：没有这些词的对话不可能有具体约定，不烧 LLM */
-const TIME_HINT = /明天|后天|今晚|晚上|中午|早上|下午|傍晚|下次|待会|回头|一起去|约|点半|[0-9一二三四五六七八九十]+点/;
+const TIME_HINT = /明天|后天|今晚|晚上|中午|早上|下午|傍晚|下次|待会|回头|一起去|约|点半|打烊|收工|下班|天黑|开门|上工|天亮|[0-9一二三四五六七八九十]+点/;
 
 export function mightContainPromise(history: ConversationExchange[]): boolean {
   if (history.length < 4) return false;

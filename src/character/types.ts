@@ -90,6 +90,18 @@ export interface CharacterCard {
    */
   playstyle?: string;
 
+  /**
+   * 声部（减法）：给这个人的嘴设限——字数硬顶 / 禁用修辞 / 允许沉默。
+   * 缺省 = 不设限（对照组，故意留白以保住声部对比度）。见 agent/voice.ts
+   */
+  voice?: import("../agent/voice.js").VoiceDef;
+
+  /**
+   * 可被世界击穿的信念：让角色卡从常量变成状态（见 character/beliefs.ts）。
+   * 缺省 = 这个人不会变（合法，但七天后他还是第一天那个人）。
+   */
+  beliefs?: import("./beliefs.js").BeliefDef[];
+
   relationships: Record<string, {
     level: number;
     type: string;

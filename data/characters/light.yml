@@ -79,6 +79,19 @@ life:
 # Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：他要的是让别人按他的判断动
 playstyle: killer
 
+# 声部：控制型。话可以长，但不许失控
+voice:
+  max_chars: 55
+  bans: [感叹]
+
+beliefs:
+  - id: above_them
+    text: "这些人跟你不是一个层面的。他们的judgment对你没有意义。"
+    broken_when: { metric: refused_by_others, at_least: 3 }
+    when_broken: "你被回绝了三次。他们没有按你算好的方式动——这比被反驳更让你在意。"
+
+
+
 # 追求：他要的是"局面在自己手里"——可测落点是钱（自由度的硬通货）
 pursuit:
   id: light_leverage

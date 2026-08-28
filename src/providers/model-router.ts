@@ -32,6 +32,7 @@ export const DEFAULT_CHEAP_KINDS = [
   "stance-extract",
   "transaction-extract",
   "promise-extract",
+  "settlement-extract",
 ] as const;
 
 export type ModelTier = "primary" | "cheap";

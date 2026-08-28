@@ -26,6 +26,7 @@ import { addMoodlet, type MoodletEmotion } from "../world/moodlets.js";
 import { textSimilarity } from "../memory/mmr.js";
 import { applyNarrativeTags, extractTagsFromArgs, hasAnyTags } from "../narrative/tag-applier.js";
 import { getDecisionPov, obsessionsEnabled } from "./break-config.js";
+import { enforceVoiceOnArgs, voiceOriginal } from "./voice.js";
 import { groundingEnabled } from "../world/world-objects.js";
 import { removeFromInventory } from "../world/item-registry.js";
 import { STOLEN_EVIDENCE_ITEM } from "../narrative/world-events.js";
@@ -227,6 +228,7 @@ export async function runAgentTick(params: {
   const isSocialScene = nearbyCharacters.length > 0 || inboxMessages.length > 0;
   const systemPrompt = buildSystemPrompt(card, workplaceName, colleagueNames, {
     decisionDirective: isSocialScene ? "social" : "solo",
+    brokenBeliefs: world.narrative.getBrokenBeliefs(card.id),
   });
   const userPrompt = buildUserPrompt({
     card,
@@ -396,6 +398,12 @@ export async function runAgentTick(params: {
   // 第 4 句台词被静默丢弃 + 代写 thought + 传送回家——对话的断头台。
   // 新版：只拦"真的在重复"（字面重复 / Jaccard 语义相似），长对话（6+ 句）只注入
   // 收尾意图让角色自己自然道别，台词照说不丢。
+  // 声部硬顶必须在重复拦截**之前**施加：拦截比对的旧行来自短期记忆（存的是截断后的），
+  // 若这里比的是未截断原文，两侧口径不一致——检查1「前 60 字字面相同」对任何
+  // maxChars<60 的角色恒不成立，检查2 的 Jaccard 也被系统性压低，
+  // 于是声部角色**逐字重复的台词反而逃过拦截**（对抗审查实测）。
+  enforceVoiceOnArgs(toolCall.name, toolCall.arguments as Record<string, unknown>, card.voice, card.id);
+
   if (toolCall.name === "talk" && params.memory) {
     const newMessage = (toolCall.arguments.message as string ?? "").trim();
     const newTarget = (toolCall.arguments.target as string ?? "").trim();
@@ -560,6 +568,9 @@ export async function runAgentTick(params: {
     }
 
     // 同一 tick 不允许 LLM 第二次还选同一个失败的工具+参数（避免死循环）
+    // 比之前先对重试参数施加同样的硬顶：上面那次已经就地截过 toolCall.arguments，
+    // 口径不一致会让"模型原样重发同一句"永远比不相等，去重守卫对声部角色整条失效
+    enforceVoiceOnArgs(retryCall.name, retryCall.arguments as Record<string, unknown>, card.voice, card.id);
     if (retryCall.name === toolCall.name && JSON.stringify(retryCall.arguments) === JSON.stringify(toolCall.arguments)) {
       console.log(`[${card.id}] 🔁 重试给了完全相同的调用，跳过`);
       break;
@@ -665,6 +676,12 @@ async function executeAction(
     needs: { ...state.needs },
     workSkill,
   };
+
+  // 声部机械侧（分发前的最后一道）：台词已定稿、还没进 description/记忆/WS/战报。
+  // 原地 mutate toolCall.arguments 是项目既有手法——AgentTickResult.action.args 与它同引用。
+  // 放在 executeAction 内而非调用点：493(正常) 与 572(工具失败重试) 两条都在此汇合，
+  // 重试路径产出的是新 toolCall，上游那次施加覆盖不到它。幂等，不重复计违规。
+  enforceVoiceOnArgs(toolCall.name, toolCall.arguments as Record<string, unknown>, card.voice, card.id);
 
   const result = actionDef.handler(toolCall.arguments, ctx);
 

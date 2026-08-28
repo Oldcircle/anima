@@ -104,6 +104,29 @@ export interface CharacterNarrativeState {
   secretsPool: string[];
   /** B5 多日执念（随档；登记/消费两端见 ObsessionEntry 文档注释） */
   obsessions: ObsessionEntry[];
+  /**
+   * S3 已被击穿的信念 id（随档，**不可逆**）。
+   * 想明白了就是想明白了——可逆的"成长"是均值回归，不是弧。
+   */
+  brokenBeliefs: string[];
+  /**
+   * S3 信念击穿判据的机械计数（随档）。
+   * 全部来自 S1/S2 已有的落账点，不新开管线：
+   * 兑现/爽约在 _sweepDeferrals，碰壁/要到在 _settleConversationOutcomes。
+   */
+  beliefStats: BeliefCounters;
+}
+
+/** S3 机械计数（关系/金币这类能直接从世界读的不入账，避免两份真相） */
+export interface BeliefCounters {
+  keptPromises: number;
+  brokenPromises: number;
+  refusedByOthers: number;
+  asksLanded: number;
+}
+
+export function emptyBeliefCounters(): BeliefCounters {
+  return { keptPromises: 0, brokenPromises: 0, refusedByOthers: 0, asksLanded: 0 };
 }
 
 export interface LocationNarrativeState {
@@ -176,6 +199,78 @@ export interface WorldNarrativeState {
    * fate 类无主之罪不入账（无真凶=天然悬案，accuse 不浮现）。
    */
   cases: Record<string, CaseEntry>;
+  /**
+   * S1 拒绝账本（随档）：`"<所求方>:<拒绝方>"`（**有向**，不排序）→ 该方向的碰壁记录。
+   * 对话结算判「被拒/反将」时累加；「得手」或和解时清账。
+   * 存在的意义：此前每一场戏都以平局收场——说完各自离开，世界状态零变化，
+   * 于是"再谈一次"永远是最优解，绝境阶梯永远走不到第二级。
+   */
+  refusals: Record<string, RefusalEntry>;
+  /**
+   * S2 拖延账（随档）：`"<所求方>:<承诺方>"`（**有向**）→ 一张到期要兑现的欠条。
+   *
+   * 拖延是结算的**第四格**：既不是得手也不是被拒，而是「答应了，然后到点没做」——
+   * 真实冲突里最常见的一格（live 实证：明日香追债十二个来回，真嗣自始至终既没给也没拒，他拖）。
+   * 它自带期限，所以天然可结算：到点兑现=得手，到点没兑现=**爽约**（比头一次被拒更重，
+   * 因为不是没要到，是被骗了一次）。
+   */
+  deferrals: Record<string, DeferralEntry>;
+}
+
+/** S2 拖延欠条 */
+export interface DeferralEntry {
+  /** 开口所求的一方 */
+  fromId: string;
+  /** 答应了要办的一方（拖的人） */
+  toId: string;
+  /** 所求类型（DesireKind） */
+  kind: string;
+  /** 逐字原话（他答应的那句） */
+  evidence: string;
+  createdTick: number;
+  /** 到期时刻 */
+  dueTick: number;
+  /**
+   * 立约时的"进度"快照——**只有能机械核验的 kind 才有**（如 debt = 当时还欠多少）。
+   * 缺省 = 核验不了，到期静默过期，绝不凭 LLM 自评判兑现（进度绑真实状态是本项目红线）。
+   */
+  baseline?: number;
+}
+
+/** 拖延的宽限：1 游戏天。不解析"打烊前"这类自然语言，机械给窗口——戏要的是"你说了你会做" */
+export const DEFERRAL_GRACE_TICKS = 96;
+
+/** S1 拒绝条目：某人朝某人开口要一类东西，碰了几次壁 */
+export interface RefusalEntry {
+  /** 开口的那一方（被拒的人） */
+  fromId: string;
+  /** 回绝的那一方 */
+  toId: string;
+  /** 所求类型（DesireKind）：升档只对同类生效，借钱碰壁不该把闲聊也写硬 */
+  kind: string;
+  /** 累计碰壁次数 */
+  count: number;
+  /** 手段档位 0..3（= min(count, 3)，3 = 这条路走到头了） */
+  tier: number;
+  /** 其中被反将（不但没给，还被将了一军）的次数 */
+  counterAttacks: number;
+  /** 其中「答应了却到点没做」的次数——爽约比单纯回绝更伤，升档也更快 */
+  brokenPromises: number;
+  lastTick: number;
+}
+
+/**
+ * 拒绝账本 TTL：5 游戏天没有新的碰壁 → 整条清掉。
+ * 与执念 decayDays=5 对齐——碰壁的记忆和碰壁的执念该一起淡。
+ */
+export const REFUSAL_TTL_TICKS = 5 * 96;
+
+/** 手段升档封顶（与 conversation-desire.MAX_REFUSAL_TIER 同值，此处为账本侧的钳位） */
+export const MAX_REFUSAL_TIER = 3;
+
+/** S1 有向 key：谁被谁拒是有方向的，绝不排序 */
+export function refusalKey(fromId: string, toId: string): string {
+  return `${fromId}:${toId}`;
 }
 
 /** M4 案件条目 */
@@ -223,6 +318,8 @@ export function emptyNarrativeState(): NarrativeStateSnapshot {
       stanceDayLog: {},
       crimeSupplyLedger: {},
       cases: {},
+      refusals: {},
+      deferrals: {},
     },
     characters: {},
     locations: {},
@@ -380,6 +477,58 @@ export function normalizeNarrativeSnapshot(
     }
   }
 
+  // S1：拒绝账本（旧档缺失回填空；缺必填字段或数值脏的条目整条丢弃——
+  // 半截的碰壁记录会让 tier 变 NaN，升档判定永假/永真）
+  if (!w.refusals || typeof w.refusals !== "object" || Array.isArray(w.refusals)) {
+    w.refusals = {};
+  } else {
+    for (const [k, r] of Object.entries(w.refusals)) {
+      const bad =
+        !r || typeof r !== "object" ||
+        typeof r.fromId !== "string" || typeof r.toId !== "string" ||
+        typeof r.kind !== "string" ||
+        typeof r.count !== "number" || !Number.isFinite(r.count) ||
+        typeof r.lastTick !== "number" || !Number.isFinite(r.lastTick);
+      if (bad) {
+        delete w.refusals[k];
+        continue;
+      }
+      r.count = Math.max(1, Math.floor(r.count));
+      r.tier =
+        typeof r.tier === "number" && Number.isFinite(r.tier)
+          ? Math.max(0, Math.min(MAX_REFUSAL_TIER, Math.floor(r.tier)))
+          : Math.min(MAX_REFUSAL_TIER, r.count);
+      r.counterAttacks =
+        typeof r.counterAttacks === "number" && Number.isFinite(r.counterAttacks)
+          ? Math.max(0, Math.floor(r.counterAttacks))
+          : 0;
+      r.brokenPromises =
+        typeof r.brokenPromises === "number" && Number.isFinite(r.brokenPromises)
+          ? Math.max(0, Math.floor(r.brokenPromises))
+          : 0;
+    }
+  }
+
+  // S2：拖延账（旧档缺失回填空；缺必填字段或数值脏的条目整条丢弃——
+  // 半截欠条到期会把 undefined 当 baseline 判成"没兑现"，冤枉人）
+  if (!w.deferrals || typeof w.deferrals !== "object" || Array.isArray(w.deferrals)) {
+    w.deferrals = {};
+  } else {
+    for (const [k, d] of Object.entries(w.deferrals)) {
+      const bad =
+        !d || typeof d !== "object" ||
+        typeof d.fromId !== "string" || typeof d.toId !== "string" ||
+        typeof d.kind !== "string" || typeof d.evidence !== "string" ||
+        typeof d.createdTick !== "number" || !Number.isFinite(d.createdTick) ||
+        typeof d.dueTick !== "number" || !Number.isFinite(d.dueTick);
+      if (bad) {
+        delete w.deferrals[k];
+        continue;
+      }
+      if (typeof d.baseline !== "number" || !Number.isFinite(d.baseline)) delete d.baseline;
+    }
+  }
+
   if (!snap.characters || typeof snap.characters !== "object" || Array.isArray(snap.characters)) {
     snap.characters = {};
   }
@@ -413,6 +562,20 @@ export function normalizeNarrativeSnapshot(
         if (typeof o.relatedId !== "string") delete o.relatedId;
       }
     }
+    // S3：信念（旧档缺失回填；非字符串 id 丢弃；计数脏值归零——
+    // NaN 会让 >= 阈值判定永假或永真）
+    c.brokenBeliefs = Array.isArray(c.brokenBeliefs)
+      ? c.brokenBeliefs.filter((b): b is string => typeof b === "string")
+      : [];
+    const counters = c.beliefStats;
+    if (!counters || typeof counters !== "object" || Array.isArray(counters)) {
+      c.beliefStats = emptyBeliefCounters();
+    } else {
+      for (const k of Object.keys(emptyBeliefCounters()) as Array<keyof BeliefCounters>) {
+        const v = counters[k];
+        counters[k] = typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0;
+      }
+    }
   }
 
   if (!snap.locations || typeof snap.locations !== "object" || Array.isArray(snap.locations)) {
@@ -439,11 +602,15 @@ function ensureCharacter(state: NarrativeStateSnapshot, charId: string): Charact
       pressure: 0,
       secretsPool: [],
       obsessions: [],
+      brokenBeliefs: [],
+      beliefStats: emptyBeliefCounters(),
     };
   }
   const c = state.characters[charId];
   // 构造器直灌的旧快照没走 normalize：就地补新字段
   if (!Array.isArray(c.obsessions)) c.obsessions = [];
+  if (!Array.isArray(c.brokenBeliefs)) c.brokenBeliefs = [];
+  if (!c.beliefStats || typeof c.beliefStats !== "object") c.beliefStats = emptyBeliefCounters();
   return c;
 }
 
@@ -502,6 +669,30 @@ export class NarrativeState {
     }
   }
 
+  // ── S3 信念 ──
+
+  getBrokenBeliefs(charId: string): string[] {
+    return [...ensureCharacter(this.snapshot, charId).brokenBeliefs];
+  }
+
+  /** 击穿一条信念（不可逆）。已击穿返回 false */
+  breakBelief(charId: string, beliefId: string): boolean {
+    const c = ensureCharacter(this.snapshot, charId);
+    if (c.brokenBeliefs.includes(beliefId)) return false;
+    c.brokenBeliefs.push(beliefId);
+    return true;
+  }
+
+  getBeliefCounters(charId: string): BeliefCounters {
+    return { ...ensureCharacter(this.snapshot, charId).beliefStats };
+  }
+
+  /** 计数 +1。落点只在 S1/S2 既有的结算处，不新开管线 */
+  bumpBeliefCounter(charId: string, key: keyof BeliefCounters, by = 1): void {
+    const c = ensureCharacter(this.snapshot, charId);
+    c.beliefStats[key] = Math.max(0, (c.beliefStats[key] ?? 0) + by);
+  }
+
   /** 和解清账用：摘掉某个 topic id（清空后删 key） */
   removeUnresolvedWith(charId: string, otherCharId: string, topicId: string): boolean {
     const c = ensureCharacter(this.snapshot, charId);
@@ -524,6 +715,187 @@ export class NarrativeState {
     c.obsessions.push({ ...entry });
     if (c.obsessions.length > 6) c.obsessions.splice(0, c.obsessions.length - 6);
     return true;
+  }
+
+  /**
+   * S1 执念原地升档：同 id 的执念改写 summary 并把 createdDay 推到今天（重新计时）。
+   * **不能用 registerObsession 重登记**——它同 id 直接 return false；
+   * 也不能换 id 另开一条：每人上限 6 条 FIFO，同一桩事挂多档会把执念池挤爆，
+   * 而 getActiveObsessions 只取最近 2 条，同一桩事会占满两个曝光位。
+   * 找不到该 id → false（调用方据此走首次 registerObsession）。
+   */
+  upgradeObsession(charId: string, id: string, summary: string, day: number): boolean {
+    const c = ensureCharacter(this.snapshot, charId);
+    const idx = c.obsessions.findIndex((x) => x.id === id);
+    if (idx < 0) return false;
+    const o = c.obsessions[idx]!;
+    o.summary = summary;
+    o.createdDay = day;
+    // **必须挪到队尾**：getActiveObsessions 的"取最近"是 slice(-limit) 按**数组位置**
+    // 而非 createdDay，registerObsession 的 FIFO 淘汰也是 splice(0,…) 从头砍。
+    // 只刷新 createdDay 不挪位置，会出现"刚升档的执念反而抢不到那 2 个曝光位、
+    // 甚至被当成最旧的第一个删掉"（对抗审查实证）。
+    c.obsessions.splice(idx, 1);
+    c.obsessions.push(o);
+    return true;
+  }
+
+  // ── S1 拒绝账本 ──
+
+  getRefusal(fromId: string, toId: string): RefusalEntry | undefined {
+    return this.snapshot.world.refusals?.[refusalKey(fromId, toId)];
+  }
+
+  /** 全量读口（面板/战报/单测用） */
+  getRefusals(): Record<string, RefusalEntry> {
+    if (!this.snapshot.world.refusals) this.snapshot.world.refusals = {};
+    return this.snapshot.world.refusals;
+  }
+
+  /**
+   * 记一次碰壁。同方向换了所求类型 → 从头计（借钱被拒和闲聊被拒不是同一桩事）。
+   * 返回落账后的条目（tier 已钳在 0..MAX_REFUSAL_TIER）。
+   */
+  recordRefusal(params: {
+    fromId: string;
+    toId: string;
+    kind: string;
+    tick: number;
+    counterAttack?: boolean;
+    /** S2 爽约：答应了却到点没做。比单纯回绝更伤——升档额外快一档 */
+    brokenPromise?: boolean;
+  }): RefusalEntry {
+    const { fromId, toId, kind, tick } = params;
+    if (!this.snapshot.world.refusals) this.snapshot.world.refusals = {};
+    const key = refusalKey(fromId, toId);
+    const prev = this.snapshot.world.refusals[key];
+    const carry = prev && prev.kind === kind ? prev : undefined;
+    const count = (carry?.count ?? 0) + 1;
+    const brokenPromises = (carry?.brokenPromises ?? 0) + (params.brokenPromise ? 1 : 0);
+    const entry: RefusalEntry = {
+      fromId,
+      toId,
+      kind,
+      count,
+      // 爽约计入档位：被回绝 N 次和"答应了 N 次都没做"不是一回事，后者该更快走到摊牌
+      tier: Math.min(MAX_REFUSAL_TIER, count + brokenPromises),
+      counterAttacks: (carry?.counterAttacks ?? 0) + (params.counterAttack ? 1 : 0),
+      brokenPromises,
+      lastTick: tick,
+    };
+    this.snapshot.world.refusals[key] = entry;
+    return entry;
+  }
+
+  // ── S2 拖延账 ──
+
+  getDeferral(fromId: string, toId: string): DeferralEntry | undefined {
+    return this.snapshot.world.deferrals?.[refusalKey(fromId, toId)];
+  }
+
+  getDeferrals(): Record<string, DeferralEntry> {
+    if (!this.snapshot.world.deferrals) this.snapshot.world.deferrals = {};
+    return this.snapshot.world.deferrals;
+  }
+
+  /**
+   * 立一张欠条。
+   *
+   * **同方向已有未到期欠条时，保留原来的 dueTick 与 baseline**，只更新原话——
+   * 否则"每次快到期就再答应一次"是一张免罪符：结算每对每天限 1 次、宽限恰好也是 1 天，
+   * 刚好够无限续期，而戏里"他一直在拿话搪塞我"本该越滚越重，不是清零重来。
+   * 同时刷新拒绝账的 lastTick：欠条还悬着的时候，TTL 日扫不该把攒的阶梯先抹掉。
+   */
+  recordDeferral(entry: DeferralEntry): void {
+    if (!this.snapshot.world.deferrals) this.snapshot.world.deferrals = {};
+    const key = refusalKey(entry.fromId, entry.toId);
+    const prev = this.snapshot.world.deferrals[key];
+    const keepOriginal = prev && entry.createdTick < prev.dueTick;
+    this.snapshot.world.deferrals[key] = keepOriginal
+      ? { ...prev, evidence: entry.evidence, kind: entry.kind }
+      : { ...entry };
+    const r = this.snapshot.world.refusals?.[key];
+    if (r) r.lastTick = entry.createdTick;
+  }
+
+  clearDeferral(fromId: string, toId: string): boolean {
+    const d = this.snapshot.world.deferrals;
+    const key = refusalKey(fromId, toId);
+    if (!d?.[key]) return false;
+    delete d[key];
+    return true;
+  }
+
+  /** 到期的欠条（调用方逐张核验兑现与否） */
+  getDueDeferrals(tick: number): DeferralEntry[] {
+    return Object.values(this.snapshot.world.deferrals ?? {}).filter((d) => tick >= d.dueTick);
+  }
+
+  /**
+   * S1 拒绝账本衰减 sweep（06:00 日扫调）：`REFUSAL_TTL_TICKS` 内没有新的碰壁就整条清掉。
+   * 没有这条，refusals 会是同批随档态里**唯一无限期**的账——
+   * 半年前碰过一次壁的人，所求那一行永远写着硬话。返回清掉的条数。
+   */
+  sweepRefusals(tick: number): number {
+    const refusals = this.snapshot.world.refusals;
+    if (!refusals) return 0;
+    let n = 0;
+    for (const [key, r] of Object.entries(refusals)) {
+      if (tick - r.lastTick >= REFUSAL_TTL_TICKS) {
+        delete refusals[key];
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /**
+   * S1 得手退档：**降一档而不是一键清空**。
+   *
+   * 得手是唯一会删持久状态的结果，而判它的是个会出错的分类器——
+   * 给分类器一键抹掉几天阶梯的权力，等于把整层的可靠性押在它身上。
+   * 退档让一次误判只值一档，而且叙事上更真：这回成了，不等于之前碰的壁一笔勾销。
+   * 退到 0 即整条摘掉。返回退档后的条目（已清则 undefined）。
+   */
+  easeRefusal(fromId: string, toId: string, tick: number): RefusalEntry | undefined {
+    const refusals = this.snapshot.world.refusals;
+    const key = refusalKey(fromId, toId);
+    const prev = refusals?.[key];
+    if (!refusals || !prev) return undefined;
+    const count = prev.count - 1;
+    // **爽约计数也要跟着退**：tier = count + brokenPromises，只减 count 的话
+    // 爽约过的对永远退不下来（bp=2 时 count 2→1，tier 仍是 3），
+    // "得手退一档"这句话就成了空话
+    const brokenPromises = Math.max(0, (prev.brokenPromises ?? 0) - 1);
+    if (count <= 0) {
+      delete refusals[key];
+      return undefined;
+    }
+    const next: RefusalEntry = {
+      ...prev,
+      count,
+      brokenPromises,
+      tier: Math.min(MAX_REFUSAL_TIER, count + brokenPromises),
+      lastTick: tick,
+    };
+    refusals[key] = next;
+    return next;
+  }
+
+  /** 清账：得手了，或者两人和解了。返回清掉的条数 */
+  clearRefusals(fromId: string, toId: string, bothWays = false): number {
+    const refusals = this.snapshot.world.refusals;
+    if (!refusals) return 0;
+    let n = 0;
+    for (const key of bothWays
+      ? [refusalKey(fromId, toId), refusalKey(toId, fromId)]
+      : [refusalKey(fromId, toId)]) {
+      if (refusals[key]) {
+        delete refusals[key];
+        n++;
+      }
+    }
+    return n;
   }
 
   /**

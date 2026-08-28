@@ -67,19 +67,46 @@ export function normalizePursuit(v: unknown): PursuitDef | undefined {
   if (m.kind === "gold") metric = { kind: "gold" };
   else if (m.kind === "skill" && typeof m.skill === "string") metric = { kind: "skill", skill: m.skill };
   else if (m.kind === "relationship" && typeof m.target === "string") metric = { kind: "relationship", target: m.target };
-  else if (m.kind === "item" && typeof m.item_id === "string") metric = { kind: "item", itemId: m.item_id };
+  // snake/camel 双接受（对齐 loader.ts 的 `speech_style ?? speechStyle` 惯例）：
+  // YAML 手写 snake_case，但管理面板 PUT 回来的是 loader 归一化过的 camelCase。
+  // 只认 snake 会让「面板存一次卡 → 整层静默消失」（对抗审查确认的 blocker）。
+  else if (m.kind === "item" && (typeof m.item_id === "string" || typeof m.itemId === "string")) {
+    metric = { kind: "item", itemId: (m.item_id ?? m.itemId) as string };
+  }
   if (!metric) return undefined;
+
+  const deadline = o.deadline_day ?? o.deadlineDay;
+  const achieved = o.on_achieved ?? o.onAchieved;
+  const failed = o.on_failed ?? o.onFailed;
 
   return {
     id: typeof o.id === "string" && o.id ? o.id : `pursuit_${metric.kind}`,
     summary: o.summary.trim(),
     metric,
     target: Math.floor(o.target),
-    deadlineDay: typeof o.deadline_day === "number" && Number.isFinite(o.deadline_day)
-      ? Math.floor(o.deadline_day) : undefined,
-    onAchieved: typeof o.on_achieved === "string" ? o.on_achieved : undefined,
-    onFailed: typeof o.on_failed === "string" ? o.on_failed : undefined,
+    deadlineDay: typeof deadline === "number" && Number.isFinite(deadline)
+      ? Math.floor(deadline) : undefined,
+    onAchieved: typeof achieved === "string" ? achieved : undefined,
+    onFailed: typeof failed === "string" ? failed : undefined,
   };
+}
+
+/**
+ * PursuitDef → YAML 形态（snake_case）。管理面板回写角色卡时用。
+ * **必须与 normalizePursuit 严格互逆**——写 camelCase 进 YAML 会让下次加载
+ * 整层退场（rei 的 metric.item_id 一丢，normalizePursuit 直接 return undefined）。
+ */
+export function pursuitToYaml(p: PursuitDef): Record<string, unknown> {
+  const metric: Record<string, unknown> = { kind: p.metric.kind };
+  if (p.metric.kind === "skill") metric.skill = p.metric.skill;
+  else if (p.metric.kind === "relationship") metric.target = p.metric.target;
+  else if (p.metric.kind === "item") metric.item_id = p.metric.itemId;
+
+  const out: Record<string, unknown> = { id: p.id, summary: p.summary, metric, target: p.target };
+  if (p.deadlineDay !== undefined) out.deadline_day = p.deadlineDay;
+  if (p.onAchieved) out.on_achieved = p.onAchieved;
+  if (p.onFailed) out.on_failed = p.onFailed;
+  return out;
 }
 
 export interface ProgressDeps {

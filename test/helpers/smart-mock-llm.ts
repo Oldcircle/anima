@@ -9,6 +9,7 @@
  *   reflection → 洞察/心情/愿望 行格式；morning-plan → "- " 列表；
  *   observation → 一句白描；director → do_nothing 工具调用
  *   stance-extract → {"stances":[{"kind":"no_stance"}]}（B1 schema 强制默认项）
+ *   settlement-extract → 「未果」（S1 默认平局，不落账）
  * - 剧本化冲突脚本：scriptTalk 给指定角色排队台词（decision/conversation 命中即说），
  *   enqueueKindResponse 对任意 kind 排队覆盖响应——离线彩排立场/冲突链路用
  */
@@ -131,6 +132,10 @@ export class SmartMockLLM implements LLMProvider {
         }
         return respond("（无可用工具）");
       }
+      case "settlement-extract":
+        // S1 对话结算：默认「未果」（= 平局，不落账）。彩排升档链路用
+        // enqueueKindResponse("settlement-extract", "角色: X\n结果: 被拒\n原话: <逐字原话>")
+        return respond("角色: 无\n结果: 未果\n原话: ");
       case "stance-extract":
         // B1 真 schema（S4）：默认 no_stance（schema 强制默认项）。
         // 彩排立场链路用 enqueueKindResponse("stance-extract", JSON.stringify({stances:[{kind,holder,target,summary,evidence}]}))

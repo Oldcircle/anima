@@ -420,8 +420,12 @@ export function buildConversationRequest(params: {
   conversationDesire?: string;
   /** C5 群聊时间线（实验开关默认关；只进尾部此刻区） */
   groupTimeline?: GroupSceneLine[];
+  /** S3 已被击穿的信念 id（与决策路共用同一份 system 顶块，两条路都要传） */
+  brokenBeliefs?: string[];
 }): LLMRequest {
-  const systemPrompt = buildSystemPrompt(params.card, params.workplaceName, params.colleagueNames);
+  const systemPrompt = buildSystemPrompt(params.card, params.workplaceName, params.colleagueNames, {
+    brokenBeliefs: params.brokenBeliefs,
+  });
   const userPrompt = buildConversationPrompt({
     card: params.card,
     state: params.state,

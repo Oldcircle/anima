@@ -19,6 +19,8 @@ import { formatBodyFeelings } from "../world/need-definitions.js";
 import { formatInventory as _formatInventory } from "../world/item-registry.js";
 import { formatAppointmentReminder } from "../world/appointments.js";
 import { buildPlaystyleBlock } from "./playstyle.js";
+import { buildVoiceBlock } from "./voice.js";
+import { buildBeliefBlock } from "../character/beliefs.js";
 import {
   creativeFrameworkAddendum,
   worldFrictionLine,
@@ -178,6 +180,8 @@ export function buildSystemPrompt(
      * 社交/独处两个变体 = 每角色两条并存的缓存前缀（DeepSeek 多前缀共存，翻转免费）。
      */
     decisionDirective?: "social" | "solo";
+    /** S3 已被击穿的信念 id（narrative.getBrokenBeliefs）。不传 = 一条都没被击穿 */
+    brokenBeliefs?: string[];
   },
 ): string {
   const parts: string[] = [];
@@ -226,6 +230,11 @@ export function buildSystemPrompt(
   // Bartle 玩法人格（per 角色恒定，稳定区不抖前缀）：只作用在"先伸手够哪个工具"
   const playstyleBlock = buildPlaystyleBlock(card.playstyle);
   if (playstyleBlock) parts.push(playstyleBlock);
+
+  // S3 可击穿的信念（per 角色；只在被击穿那一刻变一次，砸一次前缀是预期成本）。
+  // 放在性格之前：信念是性格的底座——"你是个累赘"先成立，"总在道歉"才讲得通
+  const beliefBlock = buildBeliefBlock(card.beliefs, opts?.brokenBeliefs);
+  if (beliefBlock) parts.push(beliefBlock);
 
   // 性格 — 优先使用深度描写
   parts.push("\n## 你的性格");
@@ -340,6 +349,12 @@ ${socialAngerLine()}
   // 禁八股黑名单（craft 层，独立 section，带"出现即视为跑偏，重写"框架）
   const antiCliche = antiClicheBlock();
   if (antiCliche) parts.push(`\n${antiCliche}`);
+
+  // 声部（减法，per 角色恒定，稳定区不抖前缀）：字数硬顶/禁修辞/允许沉默。
+  // 位置必须在「表达准则」之后——那里有一条通用的"一两句到三四句就够了"，
+  // 本块要靠后置把它覆盖掉；也必须在决策指令分岔之前，否则只有社交 tick 才生效。
+  const voiceBlock = buildVoiceBlock(card.voice);
+  if (voiceBlock) parts.push(voiceBlock);
 
   // ── 决策指令（Tier1 上移，文本与原 user prompt 尾部逐字一致，只改位置） ──
   if (opts?.decisionDirective) {

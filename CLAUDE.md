@@ -12,69 +12,76 @@
 
 Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford Generative Agents。
 
-- **可切换剧本（Scenario Pack）**：默认 `default` 剧本启用 7 个混搭角色（asuka/L/lelouch/light/rei/senjougahara/shinji），`mygo-seaside` 剧本启用 5 个 MyGO!!!!! 角色。`pnpm dev --scenario <id>` 切换。
-- **Tool-based Agent**：每个角色的行为空间由工具定义（talk/eat/work/go_to 等），LLM 自主选择
-- **零预设关系**：角色卡不包含任何跨角色引用，所有关系从零涌现
+- **Tool-based Agent**：角色的行为空间由工具定义（talk/eat/work/go_to…），LLM 自主选择
+- **零预设关系**：角色卡不含任何跨角色引用，关系从零涌现（代价见「对话结算」那条的 ⚠️）
 - **五层活人感**：环境感知 + 印象系统 + 内心独白分级 + 对话模式 + 观察推理
-- **Bartle 玩法人格（`src/agent/playstyle.ts`）**：角色卡 `playstyle` 四型（成就/探索/社交/支配）
-  注入 system 稳定区，**只作用在"同样处境下先伸手够哪个工具"**，不碰台词质地（那有人格描写/
-  说话方式/破线三层在管）。缺省不注入；`ANIMA_PLAYSTYLE=0` 逐字节退场
-- **破线提示词（`src/agent/break-config.ts`）**：解锁"下行通道"——让关系会变差、会 argue、印象态度
-  会出负，而非只有真善美。核心是**决策前强制 COT 自检脚手架**（态度/旧账/语气/走向），非许可散文。
-  三档 `off`(纯和谐)/`mild`(默认,允许摩擦)/`strong`(戏剧化冲突)，经 `ANIMA_BREAK_LEVEL` 或 scenario
-  `break_level` 调。所有破线文本集中在 break-config.ts，`off` 档保证 A/B 基线。写法参考酒馆破限预设
-  （`reference/tavern-presets/`）
-- **生活主线**：晨间打算（每天 06:00 基于昨日反思定今日打算）+ 约定系统
-  （arrange_meet 说定→分级提醒→赴约/爽约结算）——反思→打算→行动→回顾的日循环闭环
-- **生活节律**：饭点感知、上班节律、居家可供性（rest/tidy_up）、
-  重要性感知记忆（反思比琐事活得久）、跨天时间标注（"昨天23:00"）
-- **记忆检索重排（`src/memory/{mmr,temporal-decay}.ts`）**：注入 prompt 的记忆按「重要性 × 时间衰减」
-  加权 + MMR 多样性重排——只在最近窗口内重排（不碰长期记忆），重要反思不被琐事挤出、雷同记忆不刷屏。
-  `ANIMA_MEM_RERANK=0` 可关（= 纯 recency 行为，用于 A/B）
-- **气候系统（`src/world/climate.ts`）**：天气×四季×时辰 → 体感温度；露天暴露在
-  恶劣气候会额外耗 needs + 生 moodlet（催人躲屋里），室内免疫；温度/气候提示/季节氛围注入 prompt；
-  Godot 四季换装（季节染色 + 樱花/落叶/雪絮粒子 + 时钟温度）
-- **追求（`src/world/pursuit.ts`）**：世界的**方向**。此前 `aspiration` 只是注入 prompt 的
-  一行字符串，`needs` 全是恒稳态（推你回平衡点）——**需求是回归性的，目标是方向性的**，
-  只有恒稳态的世界里没人在往哪儿走。现在角色卡 `pursuit:` 声明可测目标：
-  进度绑真实状态（金币/技能/关系/持有物，**不是 LLM 自评**）+ 期限 + **到期即永久失败**
-  （「输」的第二种形式：不是失去已有的，是永远错过想要的）。进度进此刻区，只报数不给建议。
-  **目标必须按真实增长率校准**（技能 +0.05/次工作、关系 +1/次 talk、日净收入 +5~10），
-  否则不是必成就是必败，两样都不是戏。本期作者预埋，运行期自生成留后续
-- **失业（`src/world/employment.ts`）**：世界的第一个**不可逆终局**——此前没有死亡/离镇/
-  永久失业，关系会 decay 回中性、需求会刷新，**每一天都可以重来**，于是等待永远是最优解
-  （cast-culprit r1 实测 steal 端上桌 28 次零采纳）。现在连续缺勤 2 天捎话警告 + 挂执念、
-  3 天辞退：workplace 清空、收入归零、worker 工具从菜单消失、风声传开。
-  **先警告后辞退**是纪律（没有预警的不可逆是惩罚，有预警的才是选择）；
-  连锁「失业→断收入→绝境阶梯打开」是设计意图。本期不做重新就业
-- **经济系统（`src/world/economy.ts`）**：生计压力（每天 07:00 扣房租/杂用 `applyDailyUpkeep`，
-  付不起→焦虑+生计记忆）+ 财务体感（按"撑得了几天"分档 financeBand，进 prompt）+ 季节市场价格
-  （`effectivePrice` 应季便宜反季贵，buy 工具三处一致）；Godot 名册/详情显示金币+财务档、头顶飘金币
+- **可切换剧本**：见下方「剧本系统」
+- **Bartle 玩法人格（`src/agent/playstyle.ts`）**：角色卡 `playstyle` 四型（成就/探索/社交/支配）注入
+  system 稳定区，**只作用在"同样处境下先伸手够哪个工具"**，不碰台词质地。`ANIMA_PLAYSTYLE=0` 逐字节退场
+- **破线提示词（`src/agent/break-config.ts`）**：解锁下行通道。核心是**决策前强制 COT 自检脚手架**，
+  非许可散文。三档 `off`/`mild`(默认)/`strong`（`ANIMA_BREAK_LEVEL` 或 scenario `break_level`）；
+  **所有破线文本集中在本文件**，`off` 档 = A/B 基线。写法参考 `reference/tavern-presets/`
+- **生活主线**：晨间打算（06:00 基于昨日反思）+ 约定系统（arrange_meet→分级提醒→赴约/爽约结算），
+  构成反思→打算→行动→回顾的日循环；另有饭点/上班节律、居家可供性、重要性感知记忆、跨天时间标注
+- **记忆检索重排（`src/memory/{mmr,temporal-decay}.ts`）**：按「重要性 × 时间衰减」加权 + MMR 多样性重排，
+  **只在最近窗口内**（不碰长期记忆）。`ANIMA_MEM_RERANK=0` 退回纯 recency
+- **气候系统（`src/world/climate.ts`）**：天气×四季×时辰 → 体感温度；露天遇恶劣气候额外耗 needs + 生 moodlet，
+  室内免疫；Godot 四季换装
+- **追求（`src/world/pursuit.ts`）**：世界的**方向**（needs 是回归性的，目标才是方向性的）。角色卡
+  `pursuit:` 声明可测目标——进度绑真实状态（金币/技能/关系/持有物，**不是 LLM 自评**）+ 期限 +
+  **到期即永久失败**（「输」的第二种形式：永远错过想要的）。
+  ⚠️ **改目标前先查真实增长率**（技能 +0.05/次工作、关系 +1/次 talk、日净收入 +5~10）——
+  必成和必败一样不是戏。⚠️ **YAML 是 snake_case，回写必须走 `pursuitToYaml`**（严格互逆，
+  裸写 camelCase = 下次加载整层静默消失）。`ANIMA_PURSUIT=0` 整层关
+- **失业（`src/world/employment.ts`）**：世界的第一个**不可逆终局**——缺勤 2 天警告+挂执念，3 天辞退
+  （workplace 清空/收入归零/worker 工具消失/风声传开）。**先警告后辞退是纪律**
+  （没有预警的不可逆是惩罚，有预警的才是选择）。`ANIMA_JOB_LOSS=0` 整层关
+- **经济系统（`src/world/economy.ts`）**：生计压力（07:00 扣房租杂用）+ 财务体感（撑得了几天，进 prompt）
+  + 季节市场价格（buy 三处一致）
+- **对话结算（`src/agent/settlement-extractor.ts`）**：对话结束管线**第五兄弟**——判这场戏
+  `得手/被拒/反将/未果`（**未果=平局，合法但从此可计量**）。此前四个兄弟没有一个判胜负，
+  对话是超时过期而非被结果终结的，于是每场戏都是平局，而平局是一切下行通路的天敌。
+  问的是**有指称**的窄问题（引擎已知每方进场时的所求，见 `computeAddressableDesire`）。
+  防线照 B1 同规格 + 两条新的：归属**反向**校验、得手需明示应允原话（唯一会删持久状态的结果，
+  且判据**必须否定感知**——纯子串词表判不出极性，「不能答应你」含「答应」）。
+  被拒 → 拒绝账本（有向，随档，5 天 TTL）→ 执念原地升档 → 所求那行写硬 → 档位 ≥2 复用 argue
+  兜底注入摊牌 intent；**得手退一档而不是清空**（判它的是会出错的分类器）。
+  **第四格「拖延」是一张到期要兑现的欠条**（`deferrals` 随档，固定宽限 1 天）：
+  到点**机械核验**兑现（`_verifiableProgress`，核验不了就静默过期，绝不凭 LLM 自评）——
+  兑现=退档，爽约=记拒绝且 `tier = count + brokenPromises`（一次爽约就够到摊牌门）。
+  **刻意不 setGrudge**（否则把 argue 兜底自己关掉）。`ANIMA_SETTLEMENT=0` 退场。
+  ⚠️ **产出上限由「所求」供给决定**（`conversation-desire.ts`）：没人带着所求进场就没有胜负可判。
+  所求源按此顺序判：**债务(逾期 2 天，有向且可机械核验——必须排第一)**/敌对(压力 top-1 且 ≥40，无向不可核验)/临近约定/追求向/亲密——
+  陌生人世界里"敌对/亲密"极窄，债务与追求向才是现成可用的（live 第一跑实证）
+- **声部（`src/agent/voice.ts`）**：角色卡 `voice:` 用**减法**给嘴设限（字数硬顶/禁修辞/允许沉默）——
+  动漫的乐趣一半来自声部对比度，而模型会把所有人拉平到它自己的文笔上。**两条腿**：prompt 侧进
+  system 稳定区（须排在「表达准则」之后才压得住通用句数建议），机械侧在 agent-loop 两处收口点
+  按句边界硬截（幂等；按工具收台词参数——argue 要连 `reason` 一起收，它的 `words` 是可选的）。
+  只做 prompt 侧会重演「"可以生气"="从不"」。**截断前的原文由 `voiceOriginal` 留着**——
+  中文道歉词在句尾，拿截断后的文本判道歉会让这些角色的疙瘩永远解不开。
+  **L 与鲁鲁修故意不设限当对照组**。`ANIMA_VOICE=0` 退场
+- **可击穿的信念（`src/character/beliefs.ts`）**：让角色卡从**常量**变成**状态**。
+  角色卡 `beliefs:` 每条带机械可测的击穿判据（六指标：兑现/爽约/碰壁/要到/最高关系/金币），
+  达标即**不可逆**击穿，prompt 里**换掉那一行字**（不新增段落）+ LTM imp9 + 编年史 🫀。
+  证据源是 S1/S2 的账本，**不新开管线**，只在既有落账处各 +1；06:00 日扫，零 LLM——
+  绝不问「他成长了吗」。缺省 = 这个人不会变（合法，但七天后他还是第一天那个人）。
+  ⚠️ 击穿那一刻会砸一次该角色的前缀缓存（一局几次，预期成本）。`ANIMA_BELIEFS=0` 退场
 - **社交可视化**：`godot/ui/RelationWeb.gd` 关系网（R 键，圆环 + 关系连线按类型上色 + bond 标注）
 - **思考持久化**：LLM 每次决策的内心独白存入记忆，念头能跨 tick 延续
 - **时间系统**：Tick 驱动（1 tick = 游戏 15 分钟），支持加速/暂停
-- **存档（`src/persistence/`）**：SQLite 单事务写入 + 启动自动读档 + 跨剧本护栏。
-  **命名存档**（像游戏那样）：`data/saves/<名字>.db`，`pnpm dev --load <名字>` 打开、
-  `--new <名字>` 新建、面板「另存为并切换」；四类档案并存——主档 / 命名档 /
-  快照 `data/snapshots/` / **sim 长跑归档 `data/runs/`**（runner 跑完自动归档，
-  否则一趟长跑的编年史/器物/案件跑完就蒸发，也没法续跑）。
-  调度在 `save-manager.ts`：**退出信号全覆盖**（SIGINT/SIGTERM/SIGHUP/SIGQUIT + 未捕获异常——
-  长跑靠 screen/nohup 脱管，被杀时来的是 SIGTERM）、覆盖前轮转 `.bak`、
-  **手动存档排到 tick 边界执行**（tick 内部有 await，中途存会存出"一半角色已决策"的世界）。
-  面板只列档案与打开命令，**不做运行中热加载**（切世界要重建一堆内存态，风险大于收益）
-- **世界编年史（`src/world/chronicle.ts` + `emergence.ts`）**：世界自己把"值得知道的事"报上来，
-  人不用盯着 log 洪水。两类来源——**重大事件**（在既有 emoji 日志同处补一条 record：案件/篡改/
-  指控/命运/饿倒/债务闭环/应验）与**涌现**（每 tick 全量重跑的机械探测器：证据竞赛/正典被非首述者
-  转述/篡改痕迹被他人发现/流言到 3 人/执念挂满 3 天/关系翻向）。涌现条目**必须带机械判据 evidence**，
-  判据说不清的不报；零 LLM；随档；管理面板「编年史」页按天分组、默认只看重要性 ≥7
-- **分层模型（`src/providers/model-router.ts`）**：按调用类型路由到不同模型/provider——
-  印象/观察/反思/晨间打算/三个抽取器走**便宜档**（结构化小任务，不吃文采，且几乎吃不到
-  前缀缓存＝每次全价），决策/对话/导演留主模型。在 provider 的 `chat()` 一处解析覆盖所有调用点；
-  每类固定一档所以缓存前缀仍稳定；不配 cheap 则整层不启用逐字节回退
-- **提示词追踪（`src/providers/prompt-trace.ts`）**：进程内环形缓冲记下每次 LLM 调用的完整
-  输入输出 + usage + 缓存命中，管理面板「提示词」页按 kind/角色回看。核心是**前缀断点**——
-  拿本次的工具表+system 与上一次同「类型×角色×模型」的逐字节比，直接指出断在第几字节、
-  落在工具表还是 system（缓存命中率掉了的归因，此前要落盘手工 diff 两个 JSON）
+- **存档（`src/persistence/` + `save-manager.ts`）**：SQLite 单事务 + 启动自动读档 + 跨剧本护栏。
+  四类档案：主档 / 命名档 `data/saves/` / 快照 `data/snapshots/` / **sim 长跑归档 `data/runs/`**
+  （`pnpm dev --load <名字|路径>` 续跑）。纪律：退出信号全覆盖（脱管被杀时来的是 SIGTERM）、
+  覆盖前轮转 `.bak`、**手动存档排到 tick 边界**（tick 内有 await）。面板不做运行中热加载
+- **世界编年史（`src/world/chronicle.ts` + `emergence.ts`）**：世界自己报"值得知道的事"，人不用盯 log 洪水。
+  重大事件 + 六个机械涌现探测器。**涌现条目必须带机械判据 evidence**，说不清的不报；
+  id 由内容决定 = 幂等（不维护游标，游标读档会错位）；零 LLM；随档
+- **分层模型（`src/providers/model-router.ts`）**：结构化小任务（印象/观察/反思/晨间打算/五个抽取器）
+  走**便宜档**，决策/对话/导演留主模型。在 `chat()` 一处解析覆盖所有调用点；每类固定一档，
+  缓存前缀仍稳定。新增抽取器**必须把 kind 加进 `DEFAULT_CHEAP_KINDS`**，否则默认走贵档
+- **提示词追踪（`src/providers/prompt-trace.ts`）**：环形缓冲记每次 LLM 调用的完整输入输出 + 缓存命中，
+  管理面板「提示词」页回看。杀手级是**前缀断点**——与上一次同「类型×角色×模型」**逐字节**比
+  （Buffer 比，不是字符串比），直接报出断在第几字节。`ANIMA_PROMPT_TRACE_KEEP=0` 整层关
 - **提示词缓存纪律**：DeepSeek 自动前缀缓存按逐字节匹配——工具表/system prompt 只随「角色×地点」变化，
   每 tick 抖动的状态走 user prompt 末尾"此刻区"（环境快照）；由 `src/agent/prompt-cache-discipline.test.ts`
   回归锁定，命中率按调用类型分桶打印（`[LLM cache]` 日志）
@@ -91,29 +98,26 @@ Anima 是一个 AI 生命模拟项目，灵感来自星露谷物语 + Stanford G
 
 ```
 anima/
-├── CLAUDE.md           # 本文件（项目说明书）
-├── PLAN-appointments.md    # 分期：约定系统（已实施）
-├── PLAN-tool-feedback.md   # 分期：Tool Feedback Loop（已实施）
-├── PLAN-game-frontend.md   # 分期：Godot 夜景前端
 ├── src/
 │   ├── core/           # 时间系统（tick-engine）、事件总线
-│   ├── world/          # 世界状态、地点、关系、经济、天气、气候(climate)、约定（appointments）
-│   ├── character/      # 角色卡类型、YAML 加载器
-│   ├── agent/          # LLM agent 循环、prompt 构建、对话模式、印象、观察推理、反思、晨间打算
-│   ├── memory/         # 短期记忆、印象存储、时间衰减、MMR
+│   ├── world/          # 世界状态、地点、关系、经济、气候、追求、失业、器物、编年史
+│   ├── character/      # 角色卡类型 + YAML 加载器（**逐字段显式映射，绝不整体 cast**）
+│   ├── agent/          # LLM agent 循环、prompt 构建、对话模式、印象、观察、反思、
+│   │                   # 晨间打算、四+一个对话结束抽取器、声部
+│   ├── memory/         # 短期/长期记忆、印象、时间衰减、MMR
+│   ├── narrative/      # 压力图谱、立场、导演、beat、剧本加载、罪行供给
 │   ├── actions/        # 行为工具（basic/social/leisure/gray）
-│   ├── providers/      # LLM provider 抽象（OpenAI 兼容、failover）
+│   ├── providers/      # LLM provider 抽象、分层模型路由、提示词追踪
 │   ├── persistence/    # SQLite 持久化、存档/读档
-│   ├── api/            # Express + WebSocket 服务
-│   └── cli.ts          # CLI 入口
-├── web/                # 管理面板前端（单 HTML）
-├── godot/              # 游戏化观看前端（Godot 4.6，日式 RPG 像素小镇，见 godot/README.md）
+│   └── api/            # Express + WebSocket 服务
+├── web/                # 管理面板（单 HTML）
+├── godot/              # 游戏化观看前端（见 godot/README.md）
 ├── data/
-│   ├── locations/      # 地点 YAML（含 atmosphere 感官描写）
-│   └── characters/     # 27 个角色卡 YAML（多数 disabled，由 scenario 启用；零跨角色引用）
-├── test/
-│   └── helpers/        # 测试工具（test-world、sim-reporter）
-└── logs/               # 模拟日志（Markdown 格式）
+│   ├── locations/      # 地点 YAML（含 atmosphere 感官描写 + objects 器物声明）
+│   ├── characters/     # 27 个角色卡 YAML（多数 disabled，由 scenario 启用；零跨角色引用）
+│   └── scenarios/      # 剧本包 manifest + seeds + beats
+├── test/helpers/       # test-world、sim-reporter、SmartMockLLM、scenario-sim
+└── logs/               # 模拟日志（md）+ 每趟真 API 跑的 VERDICT
 ```
 
 ## 开发命令
@@ -131,43 +135,27 @@ pnpm test:sim         # 一日/七日模拟测试（需要 DEEPSEEK_API_KEY）
 
 ## 测试说明
 
-### 单元测试（pnpm test）
-- 不需要 API key，几秒跑完（测试数/文件数随开发增长，以实际运行为准）
-- 覆盖：时间系统、世界状态、需求衰减、关系、记忆、印象、对话追踪、观察推理、prompt 构建、约束检查、数据库、约定系统、晨间打算
-
-### Live 测试（pnpm test:live）
-- 需要 `.env` 中配置 `DEEPSEEK_API_KEY`
-- 测试文件：`*.live.test.ts`
-- 包含：单角色决策、双角色对话、印象生成、观察推理
-- 超时：600 秒
-
-### 模拟测试（pnpm test:sim）
-- 需要 `DEEPSEEK_API_KEY`
-- `full-day.sim.test.ts`：5 角色跑完整一天（72 tick，约 10-15 分钟）
-- `seven-day.sim.test.ts`：5 角色跑 7 天（672 tick，约 30-60 分钟）
-- `stress-sim.test.ts`：用 SmartMockLLM 压力测试（不需要 API key，几秒完成）
-- 输出 Markdown 日志到 `logs/` 目录
-
-### 半天模拟（pnpm test:live 中的 sim-halfday）
-- `sim-halfday.live.test.ts`：5 角色跑 36 tick（06:00→15:00，约 5 分钟）
-- 这是最常用的验证测试：快速验证对话、印象、观察推理完整链路
-- 输出实时 per-tick 行为 + 最终摘要 + Markdown 日志
-
-## 剧本系统（Phase N1 引入）
-
-通过 `data/scenarios/<id>/manifest.yml` 声明启用哪些角色和地点。
-
-| Scenario | 角色 | 用途 |
+| 命令 | 是什么 | 需要 API key |
 |---|---|---|
-| `default` | asuka, L, lelouch, light, rei, senjougahara, shinji（7 个） | CLI 默认 |
-| `mygo-seaside` | tomori, anon, sakiko, mutsumi, soyo（5 个 MyGO） | 备用剧本 |
-| `koukou-judgment` | 14 个魔法少女（艾玛/希罗/雪莉/诺亚/蕾雅/...） | 弹丸论破式审判，含 seeds + beats + trial 工具 |
-| `kira-incident` | default 同款 7 人 | 死亡笔记非致死移植：诅咒之册 + kira_strike 夜书 + 怪病应验 + 委托人到期日（见 PLAN-kira.md） |
+| `pnpm test` | 单元测试，几秒跑完 | 否 |
+| `pnpm test:live` | `*.live.test.ts`（单角色决策/双角色对话/印象/观察），超时 600s | 是 |
+| `pnpm test:sim` | 一日/七日模拟（`full-day` 72 tick / `seven-day` 672 tick），输出 md 到 `logs/` | 是 |
+| `stress-sim.test.ts` | SmartMockLLM 压力测试 | 否 |
 
-另有 `last-ferry`（3 角色狗血版，3 重 climax + 全 beat auto_seeds）与 `seaside-trio`；完整清单以 `data/scenarios/` 为准。
+**最常用的验证**是 `sim-halfday.live.test.ts`（5 角色 36 tick，约 5 分钟，走完对话/印象/观察全链路）。
 
-`data/characters/` 下含 27 个角色 yml（多数标 disabled，由各 scenario 显式启用）。
-`data/locations/` 下含 43+ 个地点 yml（含 25 个监狱地点，标 disabled，由 koukou-judgment 显式启用）。
+> ⚠️ **绝不裸跑 `pnpm test:sim`**：长跑必须 screen/nohup 脱管 + 设调用硬顶
+> （`ANIMA_MAX_CALLS`）+ 日志重定向进 `logs/`。历次教训见 STATUS。
+> 每趟真 API 跑完要写 `logs/<name>-VERDICT.md`。
+
+## 剧本系统
+
+`data/scenarios/<id>/manifest.yml` 声明启用哪些角色/地点/beats，`pnpm dev --scenario <id>` 切换。
+主要剧本：`default`（7 人混搭，CLI 默认）· `default-verify`（验收用，seeds 预热标定在阈值下方）·
+`kira-incident`（死亡笔记非致死移植，见 PLAN-kira.md）· `koukou-judgment`（14 魔法少女弹丸论破式审判）·
+`mygo-seaside` / `last-ferry` / `seaside-trio`。完整清单以 `data/scenarios/` 为准。
+
+> 剧本用显式 id 数组时**会忽略 `disabled` 强制启用**，可能拉进没有 speech 深度块的旧卡。
 
 ## 活跃文档
 
@@ -202,6 +190,9 @@ ANIMA_CHEAP_MODEL=                # 分层模型便宜档（省钱）：印象/�
 ANIMA_CHEAP_BASE_URL=             # 便宜档换一家 provider 才填（不填=用主 provider 同一家）
 ANIMA_CHEAP_API_KEY=              # 同上
 ANIMA_PURSUIT=1                   # 追求（世界的「方向」）：角色卡 pursuit 字段，机械可测进度+期限+不可逆失败。=0 整层关
+ANIMA_SETTLEMENT=1                # 对话结算（第五兄弟）：判得手/被拒/反将，被拒→拒绝账本→手段升档。=0 整层退场
+ANIMA_BELIEFS=1                   # 可击穿的信念（角色卡 beliefs:）：机械判据达标即不可逆击穿，prompt 换掉那一行。=0 整层退场
+ANIMA_VOICE=1                     # 声部减法（角色卡 voice: max_chars/bans/silence）：prompt 约束+台词硬截。=0 整层退场
 ANIMA_JOB_LOSS=1                  # 失业机制（世界的第一个不可逆终局）：连续缺勤 2 天捎话警告、3 天辞退。=0 整层关（治愈系小镇不辞退人）
 ANIMA_CHEAP_KINDS=                # 覆盖便宜档承接的类型清单（逗号分隔）。想把 decision 也下放做 A/B 时用；空串=整层关
 PORT=3001                         # Web 服务端口，可选
@@ -209,29 +200,19 @@ PORT=3001                         # Web 服务端口，可选
 
 ## DeepSeek V4 思考模式适配
 
-默认模型为 `deepseek-v4-flash`（1M context，tool_use 友好）。V4 系列默认开启思考链——
-对 anima 这种"工具调用 + 角色扮演 + 项目自带内心独白"的场景纯属浪费 token + 增加延迟。
-
-实现要点（`src/providers/openai-compatible.ts`）：
-
-- `OpenAICompatibleConfig.thinking?: "enabled" | "disabled" | "auto"`，默认 `auto`
-- `auto`：模型名匹配 `deepseek-v4` 时自动加 `thinking: {type: "disabled"}`，其他模型不发参数（向后兼容 deepseek-chat / OpenAI / OpenRouter / Ollama 等）
-- `disabled`：始终发 `{type: "disabled"}`
-- `enabled`：发 `{type: "enabled"}`，并主动**不发** `temperature`（DeepSeek 文档：思考模式下 temperature/top_p/presence_penalty/frequency_penalty 会被服务端忽略）
-- `data/settings.json` 的 `llm.thinking` 字段（前端 Settings 页可设）优先级高于 env
-
-如果将来切回 `deepseek-reasoner` 或 OpenAI o1 之类原生 reasoning 模型，这套机制不会干扰它们（auto 模式只识别 v4 前缀）。
+默认模型 `deepseek-v4-flash`（1M context，tool_use 友好）。V4 默认开思考链，对本项目
+（工具调用 + 角色扮演 + 自带内心独白）纯属浪费 token，故默认关掉。
+实现在 `openai-compatible.ts` 的 `thinking?: "enabled"|"disabled"|"auto"`（默认 `auto`——
+只对 `deepseek-v4*` 发 `{type:"disabled"}`，其他模型不发参数，因此不干扰 o1 之类原生 reasoning）。
+`enabled` 时主动**不发** temperature（DeepSeek 文档：思考模式下会被忽略）。
+`data/settings.json` 的 `llm.thinking` 优先级高于 env。
 
 ## 首次运行记录
 
-- **日期**: 2026-04-27
-- **机器**: macOS Apple Silicon, Node 24.14.0, pnpm 10.32.1
-- **状态**: 成功
-- **耗时**: `pnpm install` ~3s（lockfile 命中），`better-sqlite3` 原生模块编译 ~30s，单元测试 1.2s
-- **测试结果**: `pnpm test` → 40 文件 / 406 用例全通过（README 上写的 266 已过期）
-- **启动**: `pnpm dev` → http://localhost:3001 ，加载 18 个地点 + 7 个角色（默认 scenario）+ 5 个 beats，LLM Director 启用（每天 5 次预算），WebSocket 实时推送
-- **踩坑点**:
-  - `pnpm install` 默认会拒绝执行 `better-sqlite3` 和 `esbuild` 的 install 脚本（pnpm 10+ 安全策略），出现 `Ignored build scripts` 警告。手动到 `node_modules/.pnpm/better-sqlite3@12.8.0/node_modules/better-sqlite3` 跑 `npm run install` 才能编译出 `better_sqlite3.node`。或者用 `pnpm approve-builds`（交互式）。
-- **已知现象**:
-  - 启动时 dotenv 提示 "🔐 prevent building .env in docker" 是正常营销文案
-  - tick 启动后会立即 scan beats，例如 `🎬 [beat] scan @ day 1 tick 24: 1 beat(s) ready` 是预期行为
+- **2026-04-27 / macOS Apple Silicon / Node 24.14.0 / pnpm 10.32.1：成功**（`pnpm test` 全绿，
+  `pnpm dev` → http://localhost:3001 加载 18 地点 + 7 角色 + 5 beats）
+- **唯一踩坑点**：pnpm 10+ 默认拒绝执行 `better-sqlite3`/`esbuild` 的 install 脚本
+  （`Ignored build scripts` 警告）→ 跑 `pnpm approve-builds`，或手动进
+  `node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3` 跑 `npm run install`
+- **不是问题的现象**：dotenv 那句 "prevent building .env in docker" 是营销文案；
+  启动即 `🎬 [beat] scan` 是预期行为

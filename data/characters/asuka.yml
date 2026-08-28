@@ -79,6 +79,19 @@ life:
 # Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：「成为世界上最厉害的人」——她要的是看得见的名次
 playstyle: achiever
 
+# 声部：直球高音。她不绕弯子，绕弯子的是模型
+voice:
+  max_chars: 40
+  bans: [比喻, 书面语]
+
+beliefs:
+  - id: never_ask
+    text: "示弱就是输。开口求人，就等于承认自己不行。"
+    broken_when: { metric: asks_landed, at_least: 2 }
+    when_broken: "你开过口，而且要到了——两回。天没塌。这件事你不打算跟任何人提。"
+
+
+
 # 追求：aspiration「成为世界上最厉害的人」的可测版本——
 # 对一个 14 岁咖啡馆店员来说，"最厉害"最近的落点是把手艺练到没人比得过
 pursuit:

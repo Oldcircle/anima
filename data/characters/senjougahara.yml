@@ -88,6 +88,19 @@ life:
 # Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：她的模式是把人拉进交锋，不是躲开人
 playstyle: socializer
 
+# 声部：每个字都打磨过，但打磨不等于铺陈
+voice:
+  max_chars: 55
+  bans: [感叹]
+
+beliefs:
+  - id: no_free_lunch
+    text: "没有人会白对你好。对你笑的人，都在准备开价。"
+    broken_when: { metric: kept_promises, at_least: 2 }
+    when_broken: "你答应过的事你办到了，而对方没有趁机要价。这不合你的账本。"
+
+
+
 pursuit:
   id: senjou_books
   summary: 把整理这件事练到闭着眼也不会出错

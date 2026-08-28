@@ -10,7 +10,31 @@ import { tickToGameTime, TICKS_PER_DAY } from "../core/tick-engine.js";
 import type { Appointment } from "./types.js";
 
 /** 模糊时间词 → 小时 */
+/**
+ * 模糊时间词 → 小时。**事件锚定的时间排在前面**（"打烊前"比"晚上"更具体，
+ * 而且 includes 是先命中先赢）——这类才是镇上人真正会说的话：
+ * live 实测「打烊前给你个准数」这种承诺此前整条解析不出来，约定落不了地，
+ * 于是"答应了"说完就蒸发（见 logs/sim-s1-voice-live-VERDICT.md §3）。
+ */
+/**
+ * 事件锚定词的**假朋友**：这些短语里含时间词，但根本不是在说时间。
+ * 不剔掉的话，「开门见山地说吧」会被静默解析成早上八点的约定——
+ * 旧行为是解析不出来（工具会回一句"没说清什么时候"让角色重说），
+ * 现在变成一个自信的错时刻，比解析失败更毒。
+ */
+const FALSE_FRIENDS = /开门见山|下班车|下班机|上下班高峰|上下班|天黑路滑|天亮之前就|收工不/g;
+
 const FUZZY_HOURS: Array<[string, number]> = [
+  // 打烊=18 是**店铺无关的近似**：真实 openHours 面包店 17 / 图书馆·花店 18 /
+  // 杂货 20 / 咖啡 22 / 酒吧 02，而这里拿不到说话人的 workplace。
+  // 取中位数少错一点；要精确得把 workplace 传进来（未做）
+  ["打烊", 18],
+  ["收工", 18],
+  ["下班", 18],
+  ["天黑", 19],
+  ["开门", 8],
+  ["上工", 8],
+  ["天亮", 6],
   ["早上", 8],
   ["清晨", 7],
   ["上午", 10],
@@ -43,9 +67,10 @@ export function parseAppointmentTime(when: string, currentTick: number): number 
     if (hhmm[2]) minute = parseInt(hhmm[2], 10);
     else if (text.includes("点半")) minute = 30;
   } else {
-    // 2. 模糊时间词
+    // 2. 模糊时间词（先剔掉假朋友短语，见 FALSE_FRIENDS）
+    const cleaned = text.replace(FALSE_FRIENDS, "");
     for (const [word, h] of FUZZY_HOURS) {
-      if (text.includes(word)) {
+      if (cleaned.includes(word)) {
         hour = h;
         break;
       }

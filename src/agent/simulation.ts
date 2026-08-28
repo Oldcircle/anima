@@ -48,7 +48,18 @@ import { shouldObserve, generateObservation, type ObservationResult } from "./ob
 import { tickMoodlets, generateNeedMoodlets, addMoodlet } from "../world/moodlets.js";
 import { APPOINTMENT_GRACE_TICKS, APPOINTMENT_EARLY_TICKS, describeAppointmentTime } from "../world/appointments.js";
 import { getBreakLevel, unresolvedThrottleMinCount, obsessionsEnabled, isGroupSceneEnabled } from "./break-config.js";
-import { computeConversationDesire } from "./conversation-desire.js";
+import { computeAddressableDesire, MAX_REFUSAL_TIER, type AddressableDesire } from "./conversation-desire.js";
+import { voiceOriginal } from "./voice.js";
+import { DEFERRAL_GRACE_TICKS } from "../narrative/narrative-state.js";
+import { beliefsEnabled, evaluateBeliefs } from "../character/beliefs.js";
+import {
+  extractSettlements,
+  mightContainSettlement,
+  settlementSkipReason,
+  settlementEnabled,
+  type ExtractedSettlement,
+  type SettlementSubject,
+} from "./settlement-extractor.js";
 import { FATE_EVENTS, FATE_INTERVAL_MIN_TICKS, FATE_INTERVAL_MAX_TICKS, pickFateEvent, applyFateGold } from "../world/fate-events.js";
 import { getItemDef, resolveItem, hasItem, removeFromInventory, addToInventory } from "../world/item-registry.js";
 import { generateMorningPlan } from "./morning-plan.js";
@@ -460,6 +471,8 @@ export class Simulation {
     this._applyCursedCollapseRecovery(gameTime);
 
     // 1.0h argue 机械兜底：疙瘩攒够且撞见对方 → 注入"把话挑明"的 intent（决策前，进本 tick prompt）
+    // 1.0g S2 拖延到期结算：说了会办、到点没办——必须在决策前跑，账才进得了本 tick 的 prompt
+    this._sweepDeferrals(gameTime);
     this._applyConfrontationFallback(gameTime);
 
     // 1.0i 讨债：欠了两天以上的账，债主撞见欠债人会想起来提一嘴
@@ -560,6 +573,12 @@ export class Simulation {
       this.world.narrative.sweepStanceTTL(gameTime.tick);
       // B5：执念 5 天衰减 sweep（settled 即清走 onEventSettled 钩子，这里只清自然过期的）
       this.world.narrative.sweepObsessions(gameTime.day);
+      // S1：拒绝账本 5 天衰减——不扫的话它是同批随档态里唯一无限期的账，
+      // 半年前碰过一次壁，所求那行永远写着硬话
+      // S3 信念击穿：判据全是机械读数，零 LLM
+      this._sweepBeliefs(gameTime);
+      const sweptRefusals = this.world.narrative.sweepRefusals(gameTime.tick);
+      if (sweptRefusals > 0) console.log(`🧾 [结算] 拒绝账本衰减 ${sweptRefusals} 条`);
       // M4 冷案扫描：悬 5 游戏天没人破的案子诚实搁置（悬案是合法终局，不是禁令）
       for (const coldCase of this.world.narrative.getStaleCases(gameTime.tick, COLD_CASE_TICKS)) {
         this.world.narrative.closeCase(coldCase.id, "cold", gameTime.tick);
@@ -1019,18 +1038,12 @@ export class Simulation {
               .filter((n): n is string => !!n),
             wantToDiscuss: this.world.getWantToDiscuss(id, gameTime.tick, activePartnerId),
             sharedHistory: this._sharedHistoryFor(id, activePartnerId, gameTime.tick),
-            // C2 对话所求：此刻区 1 行（off 档/来源判定收敛在 conversation-desire.ts）
-            conversationDesire: computeConversationDesire({
-              selfId: id,
-              selfCard: config.card,
-              partnerId: activePartnerId,
-              partnerName: partnerConfig.card.name,
-              relationship: rel,
-              upcomingAppointments: this.world.getUpcomingAppointments(id, gameTime.tick),
-              pressureGraph: this.pressureGraph,
-              tick: gameTime.tick,
-              day: gameTime.day,
-            }),
+            // C2 对话所求：此刻区 1 行（off 档/来源判定收敛在 conversation-desire.ts）。
+            // S1：同时把可寻址所求登记进账本，供对话结束时结算「要到了没有」
+            brokenBeliefs: this.world.narrative.getBrokenBeliefs(id),
+            conversationDesire: this._conversationDesireFor(
+              id, config.card, activePartnerId, partnerConfig.card.name, rel, gameTime,
+            ),
             // C5 群聊 v1（实验开关 ANIMA_GROUP_SCENE=1，默认关）：读 inbox 里第三方的插话，
             // 同地点近似=发信者当前同地点+3 tick 窗；渲染只进尾部此刻区（对话记录之后）
             groupTimeline: isGroupSceneEnabled()
@@ -1376,7 +1389,10 @@ export class Simulation {
         const targetId = this._resolveCharacterId(targetRaw);
         const rel = this.relationships.get(r.characterId, targetId);
         if (rel.grudge && gameTime.tick - rel.grudge.sinceTick >= 2) {
-          const message = (r.action.args.message as string | undefined) ?? (r.action.args.words as string | undefined) ?? "";
+          // 读**截断前**的原文：中文道歉的关键词几乎总在句尾，正落在声部硬顶外，
+          // 拿截断后的文本判会让 rei/shinji 这类角色的疙瘩永远解不开（对抗审查实测 5/5）
+          const rawArgs = r.action.args as Record<string, unknown>;
+          const message = voiceOriginal(rawArgs, "message") || voiceOriginal(rawArgs, "words");
           // 道歉性 talk 只认肇事方（受害者的习惯性"对不起"不构成和解——真嗣的口癖不该替对方免责）；
           // comfort/give 是主动示好动作，哪边做都算递了台阶
           const isInstigator = rel.grudge.instigatorId === r.characterId;
@@ -1574,18 +1590,11 @@ export class Simulation {
                 .filter((n): n is string => !!n),
               wantToDiscuss: this.world.getWantToDiscuss(id, gameTime.tick, partnerId),
               sharedHistory: this._sharedHistoryFor(id, partnerId, gameTime.tick),
-              // C2 对话所求（与主轮一致）
-              conversationDesire: computeConversationDesire({
-                selfId: id,
-                selfCard: config.card,
-                partnerId,
-                partnerName: partnerConfig.card.name,
-                relationship: rel,
-                upcomingAppointments: this.world.getUpcomingAppointments(id, gameTime.tick),
-                pressureGraph: this.pressureGraph,
-                tick: gameTime.tick,
-                day: gameTime.day,
-              }),
+              // C2 对话所求（与主轮一致，走同一个 helper——两处只改一处是老坑）
+              brokenBeliefs: this.world.narrative.getBrokenBeliefs(id),
+              conversationDesire: this._conversationDesireFor(
+                id, config.card, partnerId, partnerConfig.card.name, rel, gameTime,
+              ),
               // C5 群聊 v1（与主轮一致，实验开关默认关）
               groupTimeline: isGroupSceneEnabled()
                 ? filterGroupInbox({
@@ -1747,6 +1756,11 @@ export class Simulation {
       this._scheduleStanceExtraction(conv, gameTime);
       // M2 正典抽取（第四兄弟）：对已知器物的世界断言 → 三规裁决落账
       this._scheduleFactExtraction(conv, gameTime);
+      // S1 对话结算（第五兄弟）：这场戏谁得手、谁被拒、谁被反将——把平局变成有胜负的戏。
+      // 必须在下面清 _desireLedger 之前跑（它同步取所求，异步落账）
+      this._scheduleSettlementExtraction(conv, gameTime);
+      this._desireLedger.delete(`${conv.charA}:${conv.charB}`);
+      this._desireLedger.delete(`${conv.charB}:${conv.charA}`);
       this._confrontSceneUntil.delete(stancePairKey(conv.charA, conv.charB));
       if (!mightContainPromise(conv.history)) continue;
       const cardA = this._configs.get(conv.charA)?.card;
@@ -1933,7 +1947,14 @@ export class Simulation {
     // 预过滤分叉：该 pair 有 activeOpenStance 且对话含和解词 → 跳过 valence 门直接进抽取。
     // 摊牌次日的道歉对话近窗 valence 是空的，AND 门会把和解通路整个闸死；
     // 清账动作只减不增，放行安全。敌对类保持 AND 门（摊牌词 且 近窗负 valence≤-2）。
-    const reconcilePath = hasActive && mightContainReconcile(conv.history);
+    // S1：拒绝账也是「账」。结算层刻意不建 openStance 不结 grudge，
+    // 若绕行钥匙只认 openStance，纯碰壁攒出来的那对在 valence 窗为空时
+    // 根本进不了抽取，和解分支里的清账永远够不着（对抗审查实测：修了内层没修外层）
+    const hasRefusal = Boolean(
+      this.world.narrative.getRefusal(conv.charA, conv.charB) ??
+      this.world.narrative.getRefusal(conv.charB, conv.charA),
+    );
+    const reconcilePath = (hasActive || hasRefusal) && mightContainReconcile(conv.history);
     if (!reconcilePath && this.pressureGraph.windowValence(conv.charA, conv.charB, gameTime.tick) > -2) {
       // 诊断（live 零落账可归因）：词面命中了摊牌，但近窗 valence 门没过
       console.log(`⚖️ [立场抽取] ${conv.charA}↔${conv.charB} 词面命中但近窗 valence 门未过（>-2），跳过`);
@@ -1948,7 +1969,7 @@ export class Simulation {
     const day = Math.floor((conv.history[conv.history.length - 1]?.tick ?? gameTime.tick) / 96);
     const dayLogged = this.world.narrative.getStanceDayLog()[pk] === day;
     const hasGrudge = Boolean(this.relationships.get(conv.charA, conv.charB).grudge);
-    if (dayLogged && !hasActive && !hasGrudge) {
+    if (dayLogged && !hasActive && !hasGrudge && !hasRefusal) {
       console.log(`⚖️ [立场抽取] ${conv.charA}↔${conv.charB} 今日已落账且无账可清，跳过`);
       return;
     }
@@ -1966,6 +1987,382 @@ export class Simulation {
       console.warn(`⚖️ [立场抽取] ${conv.charA}↔${conv.charB} 失败:`, err?.message ?? err);
     });
     this._trackBackgroundTask(task);
+  }
+
+  /**
+   * S3 信念击穿扫描（06:00 日扫）。
+   *
+   * 判据全是机械读数——兑现/爽约/碰壁/要到来自 S1/S2 的账本，关系与金币直接读世界。
+   * **绝不问 LLM「他成长了吗」**（追求层同款红线）。击穿不可逆：想明白了就是想明白了。
+   */
+  private _sweepBeliefs(gameTime: GameTime): void {
+    if (!beliefsEnabled()) return;
+    const ns = this.world.narrative;
+    for (const [id, config] of this._configs) {
+      const beliefs = config.card.beliefs;
+      if (!beliefs?.length) continue;
+      const state = this.world.getCharacter(id);
+      if (!state) continue;
+      const counters = ns.getBeliefCounters(id);
+      const closestBond = this.relationships
+        .getRelationshipsOf(id)
+        .reduce((m, r) => Math.max(m, r.relationship.level), 0);
+      const broken = evaluateBeliefs(beliefs, ns.getBrokenBeliefs(id), {
+        ...counters,
+        closestBond,
+        gold: state.gold,
+      });
+      for (const b of broken) {
+        if (!ns.breakBelief(id, b.id)) continue;
+        // 这是这个人一生里的大事，配 imp9（比立场落账的 8 还高一档）
+        this.longTerm.add(id, {
+          tick: gameTime.tick, type: "reflection", importance: 9,
+          content: b.whenBroken,
+        });
+        this.world.chronicle.record({
+          id: `chr_belief_${id}_${b.id}`,
+          tick: gameTime.tick, day: gameTime.day,
+          kind: "relationship", importance: 8, emoji: "🫀",
+          title: `${config.card.name}不再那么想了：「${b.text.slice(0, 24)}」`,
+          detail: `判据 ${b.brokenWhen.metric} ≥ ${b.brokenWhen.atLeast}｜现在他心里是：${b.whenBroken.slice(0, 40)}`,
+          actors: [id],
+        });
+        console.log(`🫀 [信念击穿] ${config.card.name} / ${b.id}（${b.brokenWhen.metric} ≥ ${b.brokenWhen.atLeast}）`);
+      }
+    }
+  }
+
+  /**
+   * S2 某个所求的**可机械核验进度**。缺省 undefined = 核验不了。
+   *
+   * 红线：进度绑真实世界状态，**绝不问 LLM "他做到了吗"**（追求层同款纪律）。
+   * 现在只有债务能核验（还欠多少）；约定类将来可接约定系统的 kept/missed。
+   */
+  private _verifiableProgress(kind: string, fromId: string, toId: string): number | undefined {
+    if (kind !== "debt") return undefined;
+    // **只有「债主向」可核验**：到期看承诺方（toId）还欠所求方（fromId）多少。
+    //
+    // 曾经这里还有一条"所求方是欠债人 → 看自己还欠对方多少"的回落，那是错的：
+    // 欠债人向的欠条里承诺方是**债主**，他答应的是"宽限"——宽限没有任何机械动作可测，
+    // 而量所求方自己的还款等于把功过全记在承诺方头上（他不还钱，判债主爽约）。
+    // 现在那条路返回 0 → 立约时不记 baseline → 到期静默过期，诚实地不判胜负。
+    //
+    // 找不到债记录返回 **0 而不是 undefined**：全额还清会把整条 debt 删掉
+    // （repay_debt 是 filter 掉整条），undefined 会让到期核验回落成 baseline → 把
+    // **真还了钱的人判成爽约**。0 = 这个方向上对方已经不欠了。
+    const owed = this.world.getCharacter(toId)?.debts?.find((d) => d.lenderId === fromId);
+    return owed ? owed.amount : 0;
+  }
+
+  /**
+   * S2 拖延到期结算（每 tick 扫，决策前跑）。
+   *
+   * **这是把"平局"真正变成戏的那一下**：说了会办、到点没办，不是没要到，是被骗了一次。
+   * 兑现 → 退档（等同得手）；爽约 → 记一笔带 brokenPromise 的拒绝（升档额外快一档）。
+   * 核验不了的欠条到点静默过期——宁可不判，也不凭 LLM 自评说他做到了。
+   */
+  private _sweepDeferrals(gameTime: GameTime): void {
+    // 红线②：与 _scheduleSettlementExtraction 同闸，否则 ANIMA_SETTLEMENT=0 时
+    // 存档里已有的欠条照样结算，整层退不干净
+    if (getBreakLevel() === "off") return;
+    if (!settlementEnabled()) return;
+    const ns = this.world.narrative;
+    for (const d of ns.getDueDeferrals(gameTime.tick)) {
+      ns.clearDeferral(d.fromId, d.toId);
+      const fromName = this.world.getCharacter(d.fromId)?.name ?? d.fromId;
+      const toName = this.world.getCharacter(d.toId)?.name ?? d.toId;
+      const relatedId = `refusal_${d.fromId}_${d.toId}`;
+      const obsId = `obs_${relatedId}`;
+      const day = gameTime.day;
+
+      if (d.baseline === undefined) {
+        console.log(`🧾 [拖延→过期] ${fromName} ← ${toName}（核验不了，不判胜负）`);
+        continue;
+      }
+      // ?? d.baseline 只是防御性兜底；_verifiableProgress 对 debt 恒返回数字
+      // （已清=0），所以"还清了 → 债记录整条消失"这条路会正确判成兑现
+      const now = this._verifiableProgress(d.kind, d.fromId, d.toId) ?? d.baseline;
+      const delivered = now < d.baseline;
+
+      if (delivered) {
+        const eased = ns.easeRefusal(d.fromId, d.toId, gameTime.tick);
+        if (!eased) ns.clearObsessionsRelatedTo(relatedId);
+        else ns.upgradeObsession(d.fromId, obsId, `${toName}说到做到了。`, day);
+        this.relationships.modify(d.fromId, d.toId, 2, gameTime.tick, `${toName}说到做到`);
+        this.longTerm.add(d.fromId, {
+          tick: gameTime.tick, type: "event", importance: 6,
+          content: `${toName}答应过的事，他真办了。`,
+          relatedCharacterId: d.toId,
+        });
+        this.world.chronicle.record({
+          id: `chr_defer_ok_${d.fromId}_${d.toId}_${d.dueTick}`,
+          tick: gameTime.tick, day, kind: "relationship", importance: 5, emoji: "🧾",
+          title: `${toName}对${fromName}说到做到了`,
+          detail: `「${d.evidence.slice(0, 40)}」`,
+          actors: [d.fromId, d.toId],
+        });
+        ns.bumpBeliefCounter(d.toId, "keptPromises");   // S3 判据：有人指望过你，你没搞砸
+        console.log(`🧾 [拖延→兑现] ${toName} 对 ${fromName} 说到做到（${d.baseline}→${now}）`);
+        continue;
+      }
+
+      // ── 爽约 ──
+      const entry = ns.recordRefusal({
+        fromId: d.fromId, toId: d.toId, kind: d.kind,
+        tick: gameTime.tick, brokenPromise: true,
+      });
+      const summary =
+        `${toName}答应过「${d.evidence.slice(0, 24)}」——到点了，什么都没有。` +
+        (entry.brokenPromises >= 2 ? `他已经这样第 ${entry.brokenPromises} 回了。` : "");
+      if (!ns.upgradeObsession(d.fromId, obsId, summary, day)) {
+        ns.registerObsession(d.fromId, {
+          id: obsId, summary, createdDay: day, decayDays: 5, source: "broken-promise", relatedId,
+        });
+      }
+      ns.bumpBeliefCounter(d.toId, "brokenPromises");   // S3 判据：你就是个说话不算数的人
+      this.relationships.modify(d.fromId, d.toId, -3, gameTime.tick, `${toName}放了空话`);
+      this._addFriction(d.fromId, d.toId, `TA答应过的事到点没办`);
+      this.longTerm.add(d.fromId, {
+        tick: gameTime.tick, type: "event", importance: 7,
+        content: `${toName}答应过「${d.evidence}」，到点了什么都没有。`,
+        relatedCharacterId: d.toId,
+      });
+      this.longTerm.add(d.toId, {
+        tick: gameTime.tick, type: "event", importance: 6,
+        content: `你答应过${fromName}的事，到点了没办。`,
+        relatedCharacterId: d.fromId,
+      });
+      this.world.chronicle.record({
+        id: `chr_defer_broken_${d.fromId}_${d.toId}_${d.dueTick}`,
+        tick: gameTime.tick, day, kind: "relationship",
+        importance: entry.brokenPromises >= 2 ? 8 : 7, emoji: "🧾",
+        title: `${toName}对${fromName}放了空话（第 ${entry.brokenPromises} 回）`,
+        detail: `档位 ${entry.tier}/${MAX_REFUSAL_TIER}：「${d.evidence.slice(0, 40)}」`,
+        actors: [d.fromId, d.toId],
+      });
+      console.log(
+        `🧾 [拖延→爽约] ${toName} 对 ${fromName} 放了空话（第 ${entry.brokenPromises} 回，档位 ${entry.tier}/${MAX_REFUSAL_TIER}）`,
+      );
+    }
+  }
+
+  /**
+   * S1 对话结算（fire-and-forget，对话结束管线第五兄弟）。
+   *
+   * 判的是「这场戏谁得手、谁被拒、谁被反将」——此前每场戏都以平局收场，
+   * 说完各自离开、世界状态零变化，于是"再谈一次"永远是最优解。
+   *
+   * 预过滤：≥4 句 且 至少一方有登记在案的所求（没所求 = 寒暄底噪，没胜负可判，不烧 LLM）；
+   * 防线④每对每天 ≤1 次（随档水位，走 worldEventQuota.lastByType）。
+   * off 档 / ANIMA_SETTLEMENT=0 整层退场。
+   */
+  private _scheduleSettlementExtraction(
+    conv: { charA: string; charB: string; history: import("./conversation-mode.js").ConversationExchange[] },
+    gameTime: GameTime,
+  ): void {
+    if (getBreakLevel() === "off") return;      // 红线②：off 档 = 治愈系基线
+    if (!settlementEnabled()) return;           // 整层 A/B 退场
+    const cardA = this._configs.get(conv.charA)?.card;
+    const cardB = this._configs.get(conv.charB)?.card;
+    if (!cardA || !cardB) return;
+
+    // 所求账本（进这场对话时压着的事）——同步取，取完调用方就清
+    const subjects: SettlementSubject[] = [];
+    for (const [selfId, partnerId, card] of [
+      [conv.charA, conv.charB, cardA],
+      [conv.charB, conv.charA, cardB],
+    ] as const) {
+      const d = this._desireLedger.get(`${selfId}:${partnerId}`);
+      if (d) subjects.push({ charId: selfId, charName: card.name, want: d.want, kind: d.kind });
+    }
+    const skip = settlementSkipReason(conv.history, subjects);
+    if (skip) {
+      console.log(`🧾 [结算] ${conv.charA}↔${conv.charB} 跳过：${skip}`);
+      return;
+    }
+
+    // 防线④预判：该对今天已结过账 → 连抽取都不跑（省成本）
+    const pk = stancePairKey(conv.charA, conv.charB);
+    const day = Math.floor((conv.history[conv.history.length - 1]?.tick ?? gameTime.tick) / 96);
+    const quota = this.world.narrative.getWorldEventQuota();
+    if (quota.lastByType[`settlement:${pk}`] === day) {
+      console.log(`🧾 [结算] ${conv.charA}↔${conv.charB} 今日已结过账，跳过`);
+      return;
+    }
+    quota.lastByType[`settlement:${pk}`] = day;
+    console.log(`🧾 [结算] ${conv.charA}↔${conv.charB} 进入结算（所求 ${subjects.length} 方）`);
+
+    const task = extractSettlements({
+      history: conv.history,
+      subjects,
+      charAId: cardA.id, charAName: cardA.name,
+      charBId: cardB.id, charBName: cardB.name,
+      provider: this._provider,
+      modelId: this._modelId,
+    }).then((settlements) => {
+      this._settleConversationOutcomes(settlements, subjects, gameTime);
+    }).catch((err: any) => {
+      console.warn(`🧾 [结算] ${conv.charA}↔${conv.charB} 失败:`, err?.message ?? err);
+    });
+    this._trackBackgroundTask(task);
+  }
+
+  /**
+   * S1 结算落账：得手清账 / 被拒升档 / 反将升档且结疙瘩。
+   *
+   * **刻意不 setGrudge**：grudge 会冻结 registerTalk 加分、跳过 idleDecay，还会让
+   * argue 兜底直接 `continue`——升档的目的是把人推向摊牌，结了疙瘩反而把摊牌那条路关了。
+   * 手段升档的载体是拒绝账本 + 原地升档的执念，两个兜底不互相踩。
+   */
+  private _settleConversationOutcomes(
+    settlements: ExtractedSettlement[],
+    subjects: SettlementSubject[],
+    gameTime: GameTime,
+  ): void {
+    if (settlements.length === 0) return;
+    const ns = this.world.narrative;
+    const tick = gameTime.tick;
+    const day = gameTime.day;
+
+    for (const st of settlements) {
+      const holderName = this.world.getCharacter(st.holderId)?.name ?? st.holderId;
+      const targetName = this.world.getCharacter(st.targetId)?.name ?? st.targetId;
+      const kind = subjects.find((s) => s.charId === st.holderId)?.kind ?? "hostile";
+      const relatedId = `refusal_${st.holderId}_${st.targetId}`;
+      const obsId = `obs_${relatedId}`;
+
+      // ── 得手：清账。这条路走通了，档位没有理由还挂着 ──
+      if (st.outcome === "得手") {
+        // **退一档，不清空**：判得手的是个会出错的分类器，别给它一键抹掉几天阶梯的权力。
+        // 叙事上也更真——这回成了，不等于之前碰的壁一笔勾销。退到 0 才整条摘掉。
+        const eased = ns.easeRefusal(st.holderId, st.targetId, tick);
+        if (eased) {
+          ns.upgradeObsession(
+            st.holderId, obsId,
+            `你朝${targetName}开口，这回成了——但前面碰的壁还搁在心里。`, day,
+          );
+        } else {
+          ns.clearObsessionsRelatedTo(relatedId);
+        }
+        this.relationships.modify(st.holderId, st.targetId, 1, tick, `${targetName}答应了你`);
+        this.longTerm.add(st.holderId, {
+          tick, type: "event", importance: 6,
+          content: `你朝${targetName}开了口，成了：「${st.evidence}」`,
+          relatedCharacterId: st.targetId,
+        });
+        this.world.chronicle.record({
+          id: `chr_settle_${st.holderId}_${st.targetId}_${tick}`,
+          tick, day,
+          kind: "relationship", importance: 5, emoji: "🧾",
+          title: `${holderName}朝${targetName}开了口，要到了`,
+          detail: `「${st.evidence.slice(0, 40)}」`,
+          actors: [st.holderId, st.targetId],
+        });
+        console.log(
+          `🧾 [结算→得手] ${holderName} → ${targetName}（${eased ? `退档至 ${eased.tier}/${MAX_REFUSAL_TIER}` : "拒绝账已清空"}）`,
+        );
+        continue;
+      }
+
+      // ── 拖延：立一张到期要兑现的欠条（既不清账也不升档——胜负要等到点才见分晓）──
+      if (st.outcome === "拖延") {
+        // 0 = 这个方向上没有可核验的欠款（欠债人向、或账早已清）→ 不记 baseline，
+        //     到期静默过期。记了反而必判爽约（now=0 不小于 baseline=0）
+        const progress = this._verifiableProgress(kind, st.holderId, st.targetId);
+        const baseline = progress !== undefined && progress > 0 ? progress : undefined;
+        ns.recordDeferral({
+          fromId: st.holderId,
+          toId: st.targetId,
+          kind,
+          evidence: st.evidence,
+          createdTick: tick,
+          dueTick: tick + DEFERRAL_GRACE_TICKS,
+          ...(baseline !== undefined ? { baseline } : {}),
+        });
+        // 挂在心上（不是升档，是"他说了会办"）——到期前这是最该被角色记着的事
+        const summary = `${targetName}答应了：「${st.evidence.slice(0, 30)}」——到时候看他做不做。`;
+        if (!ns.upgradeObsession(st.holderId, obsId, summary, day)) {
+          ns.registerObsession(st.holderId, {
+            id: obsId, summary, createdDay: day, decayDays: 3, source: "deferral", relatedId,
+          });
+        }
+        this.longTerm.add(st.holderId, {
+          tick, type: "event", importance: 5,
+          content: `你朝${targetName}开了口，他答应了但推到以后：「${st.evidence}」`,
+          relatedCharacterId: st.targetId,
+        });
+        console.log(
+          `🧾 [结算→拖延] ${holderName} → ${targetName}（${DEFERRAL_GRACE_TICKS} tick 后到期${
+            baseline !== undefined ? `，可核验 baseline=${baseline}` : "，核验不了，到点静默过期"
+          }）`,
+        );
+        continue;
+      }
+
+      // ── 被拒 / 反将：升档 ──
+      const entry = ns.recordRefusal({
+        fromId: st.holderId,
+        toId: st.targetId,
+        kind,
+        tick,
+        counterAttack: st.outcome === "反将",
+      });
+      ns.bumpBeliefCounter(st.holderId, "refusedByOthers");   // S3 判据：开口也没用
+
+      // 执念**原地升档**（不新开 id：每人上限 6 条 FIFO，同一桩事挂多档会挤爆执念池）
+      const summary =
+        entry.tier <= 1
+          ? `你朝${targetName}开过口，被挡回来了——这事你还没放下。`
+          : entry.tier === 2
+            ? `同样的事你朝${targetName}张过两回嘴，两回都没成。`
+            : `你朝${targetName}张嘴张到第 ${entry.count} 回了，好话说尽也没用——这条路走到头了。`;
+      if (!ns.upgradeObsession(st.holderId, obsId, summary, day)) {
+        ns.registerObsession(st.holderId, {
+          id: obsId, summary, createdDay: day, decayDays: 5, source: "settlement", relatedId,
+        });
+      }
+
+      this.relationships.modify(
+        st.holderId, st.targetId,
+        st.outcome === "反将" ? -2 : -1,
+        tick,
+        st.outcome === "反将" ? `被${targetName}将了一军` : `被${targetName}回绝`,
+      );
+      this.longTerm.add(st.holderId, {
+        tick, type: "event", importance: 6,
+        content:
+          st.outcome === "反将"
+            ? `你朝${targetName}开了口，被将了一军：「${st.evidence}」`
+            : `你朝${targetName}开了口，被回绝了：「${st.evidence}」`,
+        relatedCharacterId: st.targetId,
+      });
+      this.longTerm.add(st.targetId, {
+        tick, type: "event", importance: 5,
+        content: `${holderName}朝你开过口，你没答应。`,
+        relatedCharacterId: st.holderId,
+      });
+      if (st.outcome === "反将") {
+        this._addFriction(st.holderId, st.targetId, `你朝TA开口，反被将了一军`);
+        this._addFriction(st.targetId, st.holderId, `TA朝你开口，你回敬了一句`);
+      }
+      this.world.chronicle.record({
+        id: `chr_settle_${st.holderId}_${st.targetId}_${tick}`,
+        tick, day,
+        kind: "relationship",
+        // 档位 ≥2 抬到 7：碰过两回钉子的人才是要出事的人，面板默认看得见
+        importance: entry.tier >= 2 ? 7 : 5,
+        emoji: "🧾",
+        title:
+          st.outcome === "反将"
+            ? `${holderName}朝${targetName}开口，反被将了一军（第 ${entry.count} 回）`
+            : `${holderName}朝${targetName}开口，被挡了回来（第 ${entry.count} 回）`,
+        detail: `档位 ${entry.tier}/${MAX_REFUSAL_TIER}：「${st.evidence.slice(0, 40)}」`,
+        actors: [st.holderId, st.targetId],
+      });
+      console.log(
+        `🧾 [结算→${st.outcome}] ${holderName} → ${targetName}（第 ${entry.count} 回，档位 ${entry.tier}/${MAX_REFUSAL_TIER}）`,
+      );
+    }
   }
 
   /**
@@ -2060,7 +2457,16 @@ export class Simulation {
       if (isReconcileKind(s.kind)) {
         const archived = ns.resolveOpenStances(s.holderId, s.targetId, tick);
         const hadGrudge = Boolean(this.relationships.get(s.holderId, s.targetId).grudge);
-        if (archived.length === 0 && !hadGrudge) continue; // 没账可清——和解立场不无中生有
+        // S1：和解也清拒绝账本（双向）——话说开了，手段档位没有理由还挂在高位。
+        // **必须在下面的 continue 之前清**：结算层刻意不建 openStance / 不结 grudge
+        // （见 _settleConversationOutcomes 的注释），所以纯碰壁攒出来的账走到这里时
+        // archived=0 且 hadGrudge=false，清账那行永远够不着（对抗审查确认）。
+        const clearedRefusals = ns.clearRefusals(s.holderId, s.targetId, true);
+        for (const rid of [`refusal_${s.holderId}_${s.targetId}`, `refusal_${s.targetId}_${s.holderId}`]) {
+          ns.clearObsessionsRelatedTo(rid);
+        }
+        // 没账可清——和解立场不无中生有（拒绝账也算账）
+        if (archived.length === 0 && !hadGrudge && clearedRefusals === 0) continue;
         this.relationships.clearGrudge(s.holderId, s.targetId);
         for (const st of archived) {
           ns.removeUnresolvedWith(st.holderId, st.targetId, st.id);
@@ -2894,6 +3300,52 @@ export class Simulation {
    * 吵不吵、怎么吵、还是继续咽下去，仍由角色自己决定。
    * off 档不启用（保 A/B 基线）；已有 grudge 的对子交给积怨状态机，不重复驱动。
    */
+  /**
+   * S1 所求账本（瞬态不入档）：`"<自己>:<对方>"` → 进这场对话时心里压着的那桩事。
+   * 对话结束时结算器据它判「要到了没有」。对话生命周期 ≤8 tick，
+   * 重启丢掉最多损失一场未结算的戏，不值得进档。
+   */
+  private _desireLedger = new Map<string, AddressableDesire & { tick: number }>();
+
+  /**
+   * C2 对话所求的唯一构建口（主轮/反应轮共用）。顺手做两件事：
+   * ① 把拒绝账本喂进去（同类所求碰过壁 → 这一行写得更硬 = 手段升档）
+   * ② 把可寻址所求登记进 _desireLedger，供对话结束时结算
+   */
+  private _conversationDesireFor(
+    selfId: string,
+    selfCard: import("../character/types.js").CharacterCard,
+    partnerId: string,
+    partnerName: string,
+    relationship: { level: number; type: string },
+    gameTime: GameTime,
+  ): string | undefined {
+    const refusal = this.world.narrative.getRefusal(selfId, partnerId);
+    const deferral = this.world.narrative.getDeferral(selfId, partnerId);
+    const desire = computeAddressableDesire({
+      selfId,
+      selfCard,
+      partnerId,
+      partnerName,
+      relationship,
+      upcomingAppointments: this.world.getUpcomingAppointments(selfId, gameTime.tick),
+      myDebts: this.world.getCharacter(selfId)?.debts,
+      selfPursuit: this.world.getCharacter(selfId)?.life?.pursuit,
+      partnerDebts: this.world.getCharacter(partnerId)?.debts,
+      pressureGraph: this.pressureGraph,
+      tick: gameTime.tick,
+      day: gameTime.day,
+      refusal: refusal
+        ? { kind: refusal.kind, count: refusal.count, tier: refusal.tier, brokenPromises: refusal.brokenPromises }
+        : undefined,
+      pendingDeferral: deferral
+        ? { kind: deferral.kind, evidence: deferral.evidence, dueTick: deferral.dueTick }
+        : undefined,
+    });
+    if (desire) this._desireLedger.set(`${selfId}:${partnerId}`, { ...desire, tick: gameTime.tick });
+    return desire?.line;
+  }
+
   private _applyConfrontationFallback(gameTime: GameTime): void {
     if (getBreakLevel() === "off") return;
     const COOLDOWN_TICKS = 48; // 同一对至少隔半个游戏天再催一次
@@ -2904,25 +3356,36 @@ export class Simulation {
       for (const otherId of this.world.getCharactersAtLocation(me.locationId)) {
         if (otherId === me.id) continue;
         const frictions = this.impressions.get(me.id, otherId)?.frictions ?? [];
-        if (frictions.length < 2) continue;
         const rel = this.relationships.get(me.id, otherId);
         if (rel.grudge) continue;
-        const boiling = frictions.length >= 3 || rel.level <= -10;
-        if (!boiling) continue;
+        const boiling = frictions.length >= 2 && (frictions.length >= 3 || rel.level <= -10);
+        // S1 第二条入口：同一桩事朝同一个人碰过 ≥2 回钉子。
+        // 疙瘩路走的是"攒不满"，这条走的是"要不到"——绕开说话这条路走死了才有下一步。
+        const refusal = this.world.narrative.getRefusal(me.id, otherId);
+        const stonewalled = (refusal?.tier ?? 0) >= 2;
+        if (!boiling && !stonewalled) continue;
         const key = `${me.id}:${otherId}`;
         const last = this._confrontNudgeAt.get(key);
         if (last !== undefined && gameTime.tick - last < COOLDOWN_TICKS) continue;
         this._confrontNudgeAt.set(key, gameTime.tick);
         const otherName = this.world.getCharacter(otherId)?.name ?? otherId;
+        // 措辞两路都含「挑明」——tool-builder 靠这个词面把 argue 强制上菜
+        const summary = boiling
+          ? `对${otherName}攒的不满已经压不住了（${frictions[frictions.length - 1]}）。这回别再咽下去，把话当面挑明。`
+          : `同一桩事你朝${otherName}张过 ${refusal!.count} 回嘴，回回落空。绕着说这条路已经走死了——要么当面挑明，要么就这么算了。`;
         this.world.setIntent(me.id, {
           kind: "recover",
           source: "action",
           targetId: otherId,
-          summary: `对${otherName}攒的不满已经压不住了（${frictions[frictions.length - 1]}）。这回别再咽下去，把话当面挑明。`,
+          summary,
           createdTick: gameTime.tick,
           expiresAt: gameTime.tick + 6,
         });
-        console.log(`⚡ [argue-fallback] ${me.id} → ${otherId} (疙瘩=${frictions.length}, level=${Math.round(rel.level)})`);
+        console.log(
+          boiling
+            ? `⚡ [argue-fallback] ${me.id} → ${otherId} (疙瘩=${frictions.length}, level=${Math.round(rel.level)})`
+            : `⚡ [argue-fallback/被拒升档] ${me.id} → ${otherId} (碰壁=${refusal!.count} 回, 档位=${refusal!.tier})`,
+        );
         break; // 一次只压一桩心事
       }
     }

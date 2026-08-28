@@ -6,6 +6,9 @@
  */
 
 import type { CharacterCard } from "../character/types.js";
+import { normalizeVoice } from "../agent/voice.js";
+import { normalizeBeliefs } from "../character/beliefs.js";
+import { normalizePursuit } from "../world/pursuit.js";
 
 export type ValidationResult<T> =
   | { ok: true; value: T }
@@ -70,6 +73,12 @@ export function validateCharacterPayload(input: unknown): ValidationResult<Chara
     preferences: isObject(input.preferences) ? (input.preferences as Record<string, string>) : undefined,
     life: isObject(input.life) ? (input.life as unknown as CharacterCard["life"]) : undefined,
     startingItems: Array.isArray(input.startingItems) ? (input.startingItems as string[]) : undefined,
+    // 可选层字段：不带过来 = 面板存一次就把该层从卡里抹了（playstyle/pursuit 是补的旧账）
+    playstyle: isString(input.playstyle) ? input.playstyle : undefined,
+    // 走 normalize 而不是裸 cast（与相邻的 voice 对称）：面板/外部 POST 进来的可能是任一形态
+    pursuit: normalizePursuit(input.pursuit),
+    voice: normalizeVoice(input.voice),
+    beliefs: normalizeBeliefs(input.beliefs),
     relationships: isObject(input.relationships) ? (input.relationships as CharacterCard["relationships"]) : {},
     disabled: input.disabled === true,
   };

@@ -15,6 +15,8 @@ import { parse as parseYAML, stringify as stringifyYAML } from "yaml";
 import type { Simulation } from "../agent/simulation.js";
 import type { CharacterCard } from "../character/types.js";
 import { loadCharacterFromYAML } from "../character/loader.js";
+import { pursuitToYaml } from "../world/pursuit.js";
+import { beliefsToYaml } from "../character/beliefs.js";
 import { OpenAICompatibleProvider } from "../providers/openai-compatible.js";
 import { SettingsStore, maskKey, type PersistedLLMSettings } from "./settings-store.js";
 import {
@@ -85,7 +87,11 @@ export function registerAdminRoutes(config: AdminRoutesConfig): void {
     const card = result.value;
     if (card.id !== id) return res.status(400).json({ error: "id mismatch" });
     const file = findCharacterFile(charactersDir, id) ?? join(charactersDir, `${id}.yml`);
-    writeFileSync(file, stringifyYAML(toYamlCharacter(card)), "utf-8");
+    writeFileSync(
+      file,
+      stringifyYAML({ ...toYamlCharacter(card), ...preservedUnknownKeys(file) }),
+      "utf-8",
+    );
     simulation.enqueueMutation(() => simulation.upsertCharacter(card));
     res.json(card);
   });
@@ -294,6 +300,32 @@ export function registerAdminRoutes(config: AdminRoutesConfig): void {
  * 与现有 data/characters/*.yml 风格保持一致。
  * loader 同时支持两种写法，所以这是纯文件风格层面的转换。
  */
+/**
+ * 磁盘上 loader 不认识、CharacterCard 里也没有的顶层字段（koukou 导入的
+ * `secrets` / `known_relationships` 等）。toYamlCharacter 是白名单式「从零重建文件」，
+ * 不把它们捞回来，面板存一次就把作者手写的内容从磁盘抹掉了（对抗审查实证 5 张卡）。
+ * DELETE 的软删除路径是 parse→改 disabled→stringify，本来就保留原文；只有 PUT/POST 会抹。
+ */
+function preservedUnknownKeys(file: string): Record<string, unknown> {
+  if (!existsSync(file)) return {};
+  try {
+    const raw = parseYAML(readFileSync(file, "utf-8"));
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const known = new Set([
+      "id", "name", "gender", "age", "occupation", "home", "starting_items", "appearance",
+      "personality", "background", "backstory", "preferences", "life", "playstyle",
+      "pursuit", "voice", "relationships", "disabled",
+    ]);
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (!known.has(k)) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};   // 读不动就当没有：宁可少保留，也不能让保存整个失败
+  }
+}
+
 function toYamlCharacter(card: CharacterCard & { disabled?: boolean }): Record<string, unknown> {
   const p = card.personality ?? { traits: [], interests: [], dislikes: [], speechStyle: "" };
   const personality: Record<string, unknown> = {
@@ -335,6 +367,20 @@ function toYamlCharacter(card: CharacterCard & { disabled?: boolean }): Record<s
     if (l.currentConcern) life.current_concern = l.currentConcern;
     out.life = life;
   }
+  // 可选层字段必须显式回写：漏一个，用户在面板存一次角色卡该层就从 YAML 里消失了
+  // （= 整层静默退场，表现和关闸一模一样，极难查）。playstyle/pursuit 是补的旧账。
+  if (card.playstyle) out.playstyle = card.playstyle;
+  // 必须走 pursuitToYaml：card.pursuit 是 loader 归一化后的 camelCase，
+  // 裸写回去 = 下次加载 normalizePursuit 读不到 → 整层静默消失
+  if (card.pursuit) out.pursuit = pursuitToYaml(card.pursuit);
+  if (card.voice) {
+    const v: Record<string, unknown> = {};
+    if (card.voice.maxChars !== undefined) v.max_chars = card.voice.maxChars;
+    if (card.voice.bans?.length) v.bans = card.voice.bans;
+    if (card.voice.silence) v.silence = true;
+    if (Object.keys(v).length > 0) out.voice = v;
+  }
+  if (card.beliefs?.length) out.beliefs = beliefsToYaml(card.beliefs);
   if (card.relationships && Object.keys(card.relationships).length > 0) {
     out.relationships = card.relationships;
   }

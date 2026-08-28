@@ -137,3 +137,52 @@ describe("World 约定存储", () => {
     expect(world.getDueAppointments(48)).toHaveLength(0);
   });
 });
+
+describe("事件锚定的时间词（镇上人真正会说的话）", () => {
+  const day0 = 0;
+  it("打烊/收工/下班/开门 都解析得出来", () => {
+    // 06:00 说「打烊前」→ 当天 20:00
+    expect(parseAppointmentTime("打烊前", 24)).toBe(18 * 4);
+    expect(parseAppointmentTime("收工以后", 24)).toBe(18 * 4);
+    expect(parseAppointmentTime("下班了来找我", 24)).toBe(18 * 4);
+    // 20:00 说「明早开门」→ 次日 08:00
+    expect(parseAppointmentTime("明天开门的时候", 80)).toBe(96 + 8 * 4);
+  });
+
+  it("事件锚定优先于泛时段——用**结果不同**的词对来钉顺序", () => {
+    // 收工(18) vs 深夜(23)：如果泛时段先命中，结果会是 23*4
+    expect(parseAppointmentTime("深夜之前收工", 24)).toBe(18 * 4);
+    // 下班(18) vs 下午(15)
+    expect(parseAppointmentTime("下午下班", 24)).toBe(18 * 4);
+    // 开门(8) vs 中午(12)
+    expect(parseAppointmentTime("中午之前开门那会儿", 24)).toBe(8 * 4);
+  });
+
+  it("新增的每个锚点都真的在表里（少一条 = 那类承诺整条解析不出来）", () => {
+    const cases: Array<[string, number]> = [
+      ["打烊", 18], ["收工", 18], ["下班", 18],
+      ["天黑", 19], ["开门", 8], ["上工", 8], ["天亮", 6],
+    ];
+    for (const [word, hour] of cases) {
+      const t = parseAppointmentTime(`${word}的时候`, 0);
+      expect(t, word).toBe(hour === 0 ? 96 : hour * 4);
+    }
+  });
+
+  it("已经过去的时刻自然理解为明天（既有语义不变）", () => {
+    expect(parseAppointmentTime("打烊前", 88)).toBe(96 + 18 * 4);
+  });
+});
+
+describe("事件锚定词的假朋友（比解析失败更毒的是自信的错时刻）", () => {
+  it("含时间词但不是在说时间的短语 → 仍然解析不出来", () => {
+    for (const t of ["开门见山地说吧", "我赶下班车", "坐下班机走", "上下班高峰堵得很", "天黑路滑，小心点"]) {
+      expect(parseAppointmentTime(t, 24), t).toBeUndefined();
+    }
+  });
+
+  it("假朋友不影响同句里真正的时间词", () => {
+    // 「开门见山」被剔掉，但「明天中午」还在
+    expect(parseAppointmentTime("开门见山地说，明天中午见", 24)).toBe(96 + 12 * 4);
+  });
+});

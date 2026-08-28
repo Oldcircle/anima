@@ -80,6 +80,20 @@ life:
 # Bartle 玩法人格（只作用在"先伸手够哪个工具"，不碰台词质地）：他要的是被接住
 playstyle: socializer
 
+# 声部：说不出漂亮话的人。他的怯懦此前只写在人设里，模型照样让他吐工整的排比
+voice:
+  max_chars: 28
+  bans: [比喻, 排比, 反问]
+  silence: true
+
+beliefs:
+  - id: burden
+    text: "你是个累赘。有人对你好，只是因为还不知道你有多没用。"
+    broken_when: { metric: kept_promises, at_least: 2 }
+    when_broken: "有人指望过你，你没搞砸——两回了。这事你还没想明白，但它硌在那儿：也许你不是一定会拖累别人。"
+
+
+
 # 追求：aspiration「父亲说一句做得好」的可测版本——
 # 他够不着父亲，能够着的是"把这份活干到不被辞退、还攒下点什么"
 pursuit:
