@@ -79,6 +79,24 @@ describe("argue 机械兜底", () => {
     expect(world.getCurrentIntent("tomori", 40)).toBeUndefined();
   });
 
+  it("疙瘩路暖档豁免：level ≥ +15 不催架（live2：+35 的朋友对被反复催「挑明」）", () => {
+    setFrictions(sim, "tomori", "anon", ["一", "二", "三"]);
+    sim.relationships.set("tomori", "anon", 20);
+    (sim as any)._applyConfrontationFallback(tickToGameTime(40));
+    expect(world.getCurrentIntent("tomori", 40)).toBeUndefined();
+  });
+
+  it("被拒升档不吃暖档豁免：朋友欠着钱不还，碰壁照样是碰壁", () => {
+    sim.relationships.set("tomori", "anon", 20);
+    world.narrative.recordRefusal({ fromId: "tomori", toId: "anon", kind: "debt", tick: 30 });
+    world.narrative.recordRefusal({ fromId: "tomori", toId: "anon", kind: "debt", tick: 35 });
+    (sim as any)._applyConfrontationFallback(tickToGameTime(40));
+    const intent = world.getCurrentIntent("tomori", 40);
+    expect(intent?.targetId).toBe("anon");
+    expect(intent?.summary).toContain("挑明");
+    expect(intent?.summary).toContain("2 回");
+  });
+
   it("off 档完全不启用（A/B 基线）", () => {
     setBreakLevel("off");
     setFrictions(sim, "tomori", "anon", ["一", "二", "三"]);

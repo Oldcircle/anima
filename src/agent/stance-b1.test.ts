@@ -434,6 +434,72 @@ describe("B1 落账形状", () => {
     expect(aliceUnresolved).toContain(bobStance.id);
   });
 
+  it("和解不清债（live2「嘴上还钱」）：欠款没动 → 债主向拒绝账+执念留着，立场/疙瘩/欠债人向照清", () => {
+    const { sim, world } = makeSim();
+    const ns = sim.world.narrative;
+    // bob 欠 alice 15 金未还；alice 朝 bob 的 debt 所求被爽约过（tier 2 = 摊牌门开着）
+    world.getCharacter("bob")!.debts = [{ lenderId: "alice", amount: 15, borrowedTick: 0 }];
+    ns.recordRefusal({ fromId: "alice", toId: "bob", kind: "debt", tick: 100, brokenPromise: true });
+    ns.registerObsession("alice", {
+      id: "obs_refusal_alice_bob", summary: "他答应过的到点没做",
+      createdDay: 1, decayDays: 5, source: "broken-promise", relatedId: "refusal_alice_bob",
+    });
+    // 欠债人向（bob 求宽限碰壁）不可核验 → 和解应照清（方向纪律与 S2 一致）
+    ns.recordRefusal({ fromId: "bob", toId: "alice", kind: "debt", tick: 100 });
+    // 场上再挂一条立场 + 疙瘩（好话**该**清的部分）
+    (sim as any)._settleExtractedStances(conv(showdownHistory(100)), [
+      { kind: "accuse", holderId: "alice", targetId: "bob", summary: "指控", evidence: "你偷了我的钱，别装了。" },
+    ], tickToGameTime(112));
+    expect(sim.relationships.get("alice", "bob").grudge).toBeDefined();
+
+    (sim as any)._settleExtractedStances(conv([
+      ...showdownHistory(200, []),
+      { speakerId: "bob", speakerName: "鲍勃", message: "钱我已经还了，咱们两清了吧。", tick: 204, witnesses: [], locationId: "park" },
+    ]), [
+      { kind: "reconcile", holderId: "bob", targetId: "alice", summary: "嘴上两清", evidence: "钱我已经还了，咱们两清了吧。" },
+    ], tickToGameTime(212));
+
+    // 好话说得开的：立场归档、疙瘩清、欠债人向拒绝账清
+    expect(ns.getActiveOpenStances("alice", "bob")).toHaveLength(0);
+    expect(sim.relationships.get("alice", "bob").grudge).toBeUndefined();
+    expect(ns.getRefusal("bob", "alice")).toBeUndefined();
+    // 好话说不掉的：钱没动，债主向拒绝账（档位 2）与执念原地留着
+    const r = ns.getRefusal("alice", "bob");
+    expect(r).toMatchObject({ kind: "debt", tier: 2, brokenPromises: 1 });
+    expect(
+      ns.getCharacter("alice").obsessions.some((o) => o.id === "obs_refusal_alice_bob"),
+    ).toBe(true);
+  });
+
+  it("和解清债的解锁条件：钱真还清了（债记录已销）→ 债主向拒绝账随和解一起清", () => {
+    const { sim } = makeSim();
+    const ns = sim.world.narrative;
+    // 无在账欠款（还清即整条删除）→ _verifiableProgress = 0 → 闸放行
+    ns.recordRefusal({ fromId: "alice", toId: "bob", kind: "debt", tick: 100, brokenPromise: true });
+    (sim as any)._settleExtractedStances(conv([
+      ...showdownHistory(200, []),
+      { speakerId: "bob", speakerName: "鲍勃", message: "对不起，是我不对。", tick: 204, witnesses: [], locationId: "park" },
+    ]), [
+      { kind: "apologize", holderId: "bob", targetId: "alice", summary: "道歉和好", evidence: "对不起，是我不对。" },
+    ], tickToGameTime(212));
+    expect(ns.getRefusal("alice", "bob")).toBeUndefined();
+  });
+
+  it("核验不了的 kind（hostile）维持原行为：和解照清拒绝账", () => {
+    const { sim, world } = makeSim();
+    const ns = sim.world.narrative;
+    // 就算两人之间还有欠款，hostile 类拒绝账也不受债务闸保护（闸只按该条账的 kind 核验）
+    world.getCharacter("bob")!.debts = [{ lenderId: "alice", amount: 15, borrowedTick: 0 }];
+    ns.recordRefusal({ fromId: "alice", toId: "bob", kind: "hostile", tick: 100 });
+    (sim as any)._settleExtractedStances(conv([
+      ...showdownHistory(200, []),
+      { speakerId: "bob", speakerName: "鲍勃", message: "对不起，是我不对。", tick: 204, witnesses: [], locationId: "park" },
+    ]), [
+      { kind: "apologize", holderId: "bob", targetId: "alice", summary: "道歉和好", evidence: "对不起，是我不对。" },
+    ], tickToGameTime(212));
+    expect(ns.getRefusal("alice", "bob")).toBeUndefined();
+  });
+
   it("和解不无中生有：没账可清时 apologize 不产生任何写入", () => {
     const { sim } = makeSim();
     (sim as any)._settleExtractedStances(conv(showdownHistory(100)), [

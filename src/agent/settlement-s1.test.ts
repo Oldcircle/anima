@@ -151,6 +151,20 @@ describe("抽取防线", () => {
     expect(out).toEqual([]);
   });
 
+  it("prompt 带说话人反面示例（live2 两连败：模型引所求方自己的复述/宣布）", async () => {
+    let sys = "";
+    const p = {
+      chat: async (req: { system?: string }) => {
+        sys = req.system ?? "";
+        return { content: "", toolCalls: [] };
+      },
+    } as unknown as LLMProvider;
+    await extractSettlements({ ...ARGS, provider: p });
+    expect(sys).toContain("自己");
+    expect(sys).toContain("复述");
+    expect(sys).toContain("咱们两清");
+  });
+
   it("防线③：原话是 holder 自己说的 → 归属错误丢弃", async () => {
     const out = await extractSettlements({
       ...ARGS,

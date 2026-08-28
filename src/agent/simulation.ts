@@ -2480,11 +2480,30 @@ export class Simulation {
         // **必须在下面的 continue 之前清**：结算层刻意不建 openStance / 不结 grudge
         // （见 _settleConversationOutcomes 的注释），所以纯碰壁攒出来的账走到这里时
         // archived=0 且 hadGrudge=false，清账那行永远够不着（对抗审查确认）。
-        const clearedRefusals = ns.clearRefusals(s.holderId, s.targetId, true);
-        for (const rid of [`refusal_${s.holderId}_${s.targetId}`, `refusal_${s.targetId}_${s.holderId}`]) {
-          ns.clearObsessionsRelatedTo(rid);
+        //
+        // ⚠️ 但**可机械核验的账不吃好话**（live2「嘴上还钱」）：真嗣一句「15金我已经还了」
+        // （账上分文未动）就让 reconcile 把爽约攒出的 tier 2 阶梯整个抹平——得手有三道闸、
+        // 兑现有机械核验，唯独和解裸奔，谎言精确找到了它。现在逐方向过账：kind 可核验
+        // （debt=对方还欠着钱）且账没清 → 该方向的拒绝账与执念**原地留着**——
+        // 好话能说开立场和疙瘩，说不掉欠款；核验不了的 kind（hostile 等）维持原行为。
+        let clearedRefusals = 0;
+        for (const [rFrom, rTo] of [
+          [s.holderId, s.targetId],
+          [s.targetId, s.holderId],
+        ] as const) {
+          const refusal = ns.getRefusal(rFrom, rTo);
+          if (!refusal) continue;
+          const owed = this._verifiableProgress(refusal.kind, rFrom, rTo);
+          if (owed !== undefined && owed > 0) {
+            console.log(
+              `⚖️ [和解不清债] ${rFrom} → ${rTo}：账上还欠着 ${owed} 金，拒绝账（档位 ${refusal.tier}）原地留着`,
+            );
+            continue;
+          }
+          clearedRefusals += ns.clearRefusals(rFrom, rTo);
+          ns.clearObsessionsRelatedTo(`refusal_${rFrom}_${rTo}`);
         }
-        // 没账可清——和解立场不无中生有（拒绝账也算账）
+        // 没账可清——和解立场不无中生有（拒绝账也算账；被闸保住的账不算"清了"）
         if (archived.length === 0 && !hadGrudge && clearedRefusals === 0) continue;
         this.relationships.clearGrudge(s.holderId, s.targetId);
         for (const st of archived) {
@@ -3427,6 +3446,10 @@ export class Simulation {
   private _applyConfrontationFallback(gameTime: GameTime): void {
     if (getBreakLevel() === "off") return;
     const COOLDOWN_TICKS = 48; // 同一对至少隔半个游戏天再催一次
+    // 疙瘩路暖档豁免（live2：level +35 的朋友对被反复催「挑明」——13 次 ⚡ 全是疙瘩路，
+    // 其中一半发给了正在变熟的对子）。关系暖到这就别催架了；**只豁免疙瘩路**——
+    // 被拒升档不看暖档：朋友欠着钱不还，碰壁照样是碰壁
+    const BOILING_WARM_EXEMPT_LEVEL = 15;
     for (const me of this.world.getAllCharacters()) {
       const acting = me.currentAction?.name;
       if (acting === "sleep" || acting === "collapse_asleep" || acting === "collapse_starving") continue;
@@ -3436,7 +3459,10 @@ export class Simulation {
         const frictions = this.impressions.get(me.id, otherId)?.frictions ?? [];
         const rel = this.relationships.get(me.id, otherId);
         if (rel.grudge) continue;
-        const boiling = frictions.length >= 2 && (frictions.length >= 3 || rel.level <= -10);
+        const boiling =
+          rel.level < BOILING_WARM_EXEMPT_LEVEL &&
+          frictions.length >= 2 &&
+          (frictions.length >= 3 || rel.level <= -10);
         // S1 第二条入口：同一桩事朝同一个人碰过 ≥2 回钉子。
         // 疙瘩路走的是"攒不满"，这条走的是"要不到"——绕开说话这条路走死了才有下一步。
         const refusal = this.world.narrative.getRefusal(me.id, otherId);
