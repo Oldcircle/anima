@@ -59,18 +59,44 @@ export function detectEmergence(deps: EmergenceDeps): ChronicleEntry[] {
 const day = (tick: number) => Math.floor(tick / TICKS_PER_DAY);
 
 /**
- * ①**证据竞赛**：同一天里 ≥2 个人各自查了同一件器物。
- * 判据 = 器物的 lastSeen 里有 ≥2 个角色落在同一天。
+ * ①**证据竞赛**：同一天里 ≥2 个人各自查了同一件**有实质可查之处**的器物。
+ * 判据 = 器物的 lastSeen 里有 ≥2 个角色落在同一天，且器物身上真的发生过事
+ * （有痕迹，或有运行期长出来的正典——纯预埋布景不算）。
  * 这正是 default-verify 那场"L 查借阅台账 × light 同晨追同一本书"的机械形状——
  * 当时是人肉从 log 里认出来的。
+ *
+ * r3 降噪（判决处方，47 次 examine 出 11 条竞赛全是同类，同对一天刷 4 条）：
+ * - **实质关联门槛**：没痕迹也没运行期正典的器物，两人凑巧都看过只是"爱查东西的人
+ *   又碰上了"，不是涌现。案件相关器物必带撬痕 trace（applyTheftWithPerp 接线），
+ *   所以"与 open 案件相关"这半句已被 trace 子句覆盖
+ * - **同一对每天最多报 1 条**：先读今天已落账的竞赛条目占住对子，再按稳定顺序扫——
+ *   幂等重跑不会换一件器物再报一遍同一对
  */
 function detectEvidenceRace(deps: EmergenceDeps, push: (e: ChronicleEntry) => void): void {
   const today = day(deps.tick);
+  // 同对每天 1 条：今天已经报过的对子先占坑（探测器每 tick 全量重跑，靠这个跨 tick 稳定）
+  const seenPairs = new Set<string>();
+  const pairKey = (a: string, b: string) => [a, b].sort().join(":");
+  for (const e of deps.chronicle.list({ emergenceOnly: true })) {
+    if (e.day !== today || !e.id.startsWith("emg_race_")) continue;
+    for (let i = 0; i < e.actors.length; i++)
+      for (let j = i + 1; j < e.actors.length; j++) seenPairs.add(pairKey(e.actors[i]!, e.actors[j]!));
+  }
   for (const obj of deps.objects.all()) {
+    // 实质关联门槛：这件器物身上得真的发生过事
+    const substantive =
+      obj.traces.length > 0 || obj.canonFacts.some((f) => f.source !== "authored");
+    if (!substantive) continue;
     const sameDay = Object.entries(obj.lastSeen)
       .filter(([, seen]) => day((seen as { tick: number }).tick) === today)
       .map(([charId]) => charId);
     if (sameDay.length < 2) continue;
+    // 这些人两两组成的对子今天全报过 → 跳过；有新对子 → 报，并占住全部对子
+    const pairs: string[] = [];
+    for (let i = 0; i < sameDay.length; i++)
+      for (let j = i + 1; j < sameDay.length; j++) pairs.push(pairKey(sameDay[i]!, sameDay[j]!));
+    if (pairs.every((p) => seenPairs.has(p))) continue;
+    for (const p of pairs) seenPairs.add(p);
     const who = sameDay.map((id) => nameOf(deps, id));
     push({
       id: `emg_race_${today}_${obj.key}`,
@@ -83,7 +109,7 @@ function detectEvidenceRace(deps: EmergenceDeps, push: (e: ChronicleEntry) => vo
       detail: `没有任何机制安排他们查同一件东西——注意力自己撞到了一起。`,
       actors: sameDay,
       locationId: obj.locationId,
-      evidence: `${obj.key} 的 lastSeen 里有 ${sameDay.length} 人落在第 ${today} 天`,
+      evidence: `${obj.key} 的 lastSeen 里有 ${sameDay.length} 人落在第 ${today} 天，且器物带痕迹/运行期正典`,
     });
   }
 }

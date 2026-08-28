@@ -1,0 +1,28 @@
+id: drama-verify
+name: 戏剧化验收（结算链下半段）
+description: |
+  S1/S2 升档链下半段的 live 验收剧本（≠ default 本体，别拿它当日常剧本跑）。
+  与 default-verify 同一套七人阵容与地点，seeds 把结算账本预热到闸的下方一格：
+  - A 对（asuka←shinji）：一张开局 6 tick 后到期的欠条——live 里机械爽约或兑现。
+    爽约则 tier 直跳 2（「一次爽约就够到摊牌门」），撞见即注入摊牌 intent。
+    验的是 S2 最锋利的那一下 + 摊牌链下半段：自然发酵要 ≥96 tick 才有一张欠条到期，
+    r1/r2 各 300 调用只够 ~30 tick，所以这段从没在 live 演过。
+  - B 对（senjougahara→lelouch）：拒绝账直接种在 tier 2——首次同台即开摊牌门。
+    独立探针：就算爽约扫描在 live 失手，摊牌注入→argue→结算这后半截也有样本。
+  无 beats 无 crime_supply：摊牌必须由账本自燃，不由导演编排（归因纪律——
+  beat 排的摊牌验的是 beat 引擎，账本逼出来的摊牌才是 S1/S2 的验收对象）。
+
+characters:
+  - asuka
+  - l_lawliet
+  - lelouch
+  - light
+  - rei
+  - senjougahara
+  - shinji
+
+locations: "*"
+
+# 与 default-verify 同档：mild 摩擦 + 作者第三人称
+break_level: mild
+decision_pov: third

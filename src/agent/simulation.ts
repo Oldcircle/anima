@@ -1447,33 +1447,52 @@ export class Simulation {
         }
       }
 
-      // 还钱：销账进双方 LTM——"他守信"和"我不欠人"都值得被长久记住
-      const repayOutcome = (r.result as any)?._repayOutcome as { lenderId: string; amount: number } | undefined;
+      // 还钱：销账进双方 LTM——"他守信"和"我不欠人"都值得被长久记住。
+      // ⚠️ 部分还款的记忆措辞必须诚实（红线：还欠着 8 金时绝不能写"还清了/不欠人了"——
+      // 那是往长期记忆里埋假账，和"口头 7 金"是同一种病）
+      const repayOutcome = (r.result as any)?._repayOutcome as
+        | { lenderId: string; amount: number; remaining?: number }
+        | undefined;
       if (r.action.name === "repay_debt" && repayOutcome) {
         const borrowerName = this.world.getCharacter(r.characterId)?.name ?? r.characterId;
         const lenderName = this.world.getCharacter(repayOutcome.lenderId)?.name ?? repayOutcome.lenderId;
+        const remaining = repayOutcome.remaining ?? 0;
+        const paidOff = remaining <= 0;
         this.memory.add(repayOutcome.lenderId, {
           tick: gameTime.tick, type: "event",
-          content: `${borrowerName}把欠你的${repayOutcome.amount}金币当面还上了`,
+          content: paidOff
+            ? `${borrowerName}把欠你的${repayOutcome.amount}金币当面还上了`
+            : `${borrowerName}当面先还了${repayOutcome.amount}金币，还欠你${remaining}金`,
           importance: 7, relatedCharacterId: r.characterId,
         });
         this.longTerm.add(r.characterId, {
           tick: gameTime.tick, type: "event", importance: 7,
-          content: `你把欠${lenderName}的${repayOutcome.amount}金币还清了，不欠人了`,
+          content: paidOff
+            ? `你把欠${lenderName}的${repayOutcome.amount}金币还清了，不欠人了`
+            : `你先还了${lenderName}${repayOutcome.amount}金币，还欠着${remaining}金`,
           relatedCharacterId: repayOutcome.lenderId,
         });
         this.longTerm.add(repayOutcome.lenderId, {
           tick: gameTime.tick, type: "event", importance: 7,
-          content: `${borrowerName}把欠的${repayOutcome.amount}金币还了——这人守信`,
+          content: paidOff
+            ? `${borrowerName}把欠的${repayOutcome.amount}金币还了——这人守信`
+            : `${borrowerName}先还了${repayOutcome.amount}金币，还欠${remaining}金——账在动，人没跑`,
           relatedCharacterId: r.characterId,
         });
-        console.log(`💰 [还钱] ${r.characterId} → ${repayOutcome.lenderId}: ${repayOutcome.amount} 金币`);
+        console.log(
+          `💰 [还钱] ${r.characterId} → ${repayOutcome.lenderId}: ${repayOutcome.amount} 金币` +
+            (paidOff ? "（清账）" : `（还欠 ${remaining}）`),
+        );
           this.world.chronicle.record({
             id: `chr_repay_${r.characterId}_${repayOutcome.lenderId}_${gameTime.tick}`,
             tick: gameTime.tick, day: Math.floor(gameTime.tick / 96),
             kind: "economy", importance: 7, emoji: "💰",
-            title: `${r.characterId} 把欠 ${repayOutcome.lenderId} 的 ${repayOutcome.amount} 金币还了`,
-            detail: "人情账比金币账重——借了又还，这条弧线走完了。",
+            title: paidOff
+              ? `${r.characterId} 把欠 ${repayOutcome.lenderId} 的 ${repayOutcome.amount} 金币还了`
+              : `${r.characterId} 先还了 ${repayOutcome.lenderId} ${repayOutcome.amount} 金币（还欠 ${remaining}）`,
+            detail: paidOff
+              ? "人情账比金币账重——借了又还，这条弧线走完了。"
+              : "没还清，但账在动了——这条弧线还没走完。",
             actors: [r.characterId, repayOutcome.lenderId],
           });
       }
@@ -2882,6 +2901,8 @@ export class Simulation {
     initialGold?: Array<{ character: string; gold: number }>;
     debts?: Array<{ debtor: string; lender: string; amount: number; borrowedDaysAgo?: number }>;
     openStances?: Array<{ id?: string; kind: OpenStanceKind; holder: string; target: string; summary: string; evidence?: string; daysAgo?: number; witnesses?: string[] }>;
+    refusals?: Array<{ from: string; to: string; kind: string; count: number; brokenPromises?: number; daysAgo?: number }>;
+    deferrals?: Array<{ from: string; to: string; kind: string; evidence: string; dueInTicks: number }>;
   }): void {
     const ns = this.world.narrative;
     if (seeds.activePhase) {
@@ -3004,11 +3025,68 @@ export class Simulation {
       }
     }
 
+    // ── S1/S2 结算账本预热（drama 验收）：拒绝账 / 到期欠条 ──
+    // 双闸：off 档不带火药（与疙瘩/立场同规）；ANIMA_SETTLEMENT=0 也退场——
+    // 结算层关着还种账本，所求行会带出无处落账的升档尾巴（假 A/B 基线）。
+    let refusalCount = 0;
+    let deferralCount = 0;
+    const settlementSeedsAllowed = hostileAllowed && settlementEnabled();
+    if ((seeds.refusals?.length || seeds.deferrals?.length) && !settlementSeedsAllowed) {
+      console.log("🌱 [seeds] off 档或结算层未启用：跳过拒绝账/欠条预热");
+    } else {
+      for (const r of seeds.refusals ?? []) {
+        if (!this.world.getCharacter(r.from) || !this.world.getCharacter(r.to)) {
+          console.warn(`🌱 [seeds] refusals 预热跳过未知角色 ${r.from}→${r.to}`);
+          continue;
+        }
+        // 不直写条目：逐次走 recordRefusal，钳位/爽约计档等不变式只留一处真相
+        const tick = this.world.tick - Math.max(0, Math.floor(r.daysAgo ?? 0)) * 96;
+        const broken = Math.min(r.count, Math.max(0, Math.floor(r.brokenPromises ?? 0)));
+        for (let i = 0; i < r.count; i++) {
+          this.world.narrative.recordRefusal({
+            fromId: r.from,
+            toId: r.to,
+            kind: r.kind,
+            tick,
+            brokenPromise: i < broken,
+          });
+        }
+        refusalCount++;
+      }
+      for (const d of seeds.deferrals ?? []) {
+        if (!this.world.getCharacter(d.from) || !this.world.getCharacter(d.to)) {
+          console.warn(`🌱 [seeds] deferrals 预热跳过未知角色 ${d.from}→${d.to}`);
+          continue;
+        }
+        // baseline 用与到期核验同一把尺现算（debt = 对方现在还欠多少）；
+        // 量不出就不记——到期静默过期，与生产立约行为一致（绝不手写进度快照）
+        const baseline = this._verifiableProgress(d.kind, d.from, d.to);
+        const verifiable = baseline !== undefined && baseline > 0;
+        if (!verifiable) {
+          console.warn(
+            `🌱 [seeds] deferrals ${d.from}←${d.to}（${d.kind}）核验不出进度` +
+              `（非可核验类或账已清），欠条仍种但不记 baseline = 到期不判胜负`,
+          );
+        }
+        this.world.narrative.recordDeferral({
+          fromId: d.from,
+          toId: d.to,
+          kind: d.kind,
+          evidence: d.evidence,
+          createdTick: this.world.tick,
+          dueTick: this.world.tick + d.dueInTicks,
+          baseline: verifiable ? baseline : undefined,
+        });
+        deferralCount++;
+      }
+    }
+
     console.log(
       `🌱 Seeds 已应用: ${seeds.unresolvedEvents?.length ?? 0} 未解决事件, ` +
         `${seeds.characterRelationships?.length ?? 0} 关系, ` +
         `${seeds.initialRumors?.length ?? 0} 流言, ` +
         `${frictionCount} 疙瘩预热, ${debtCount} 欠账, ${stanceCount} 立场, ` +
+        `${refusalCount} 拒绝账, ${deferralCount} 欠条, ` +
         `phase=${seeds.activePhase ?? "(无)"}`,
     );
   }

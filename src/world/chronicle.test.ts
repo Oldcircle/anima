@@ -112,8 +112,9 @@ describe("Chronicle 存储", () => {
 });
 
 describe("涌现探测器", () => {
-  it("证据竞赛：同一天两人查同一件器物 → 报；只有一人 → 不报", () => {
+  it("证据竞赛：同一天两人查同一件带痕迹的器物 → 报；只有一人 → 不报", () => {
     const deps = makeDeps();
+    deps.objects.addTrace("library.ledger", { id: "t1", text: "封皮有撬痕", addedTick: 90, source: "event" });
     deps.objects.examine("library.ledger", "l", 100);
     expect(detectEmergence(deps)).toHaveLength(0); // 一个人不算竞赛
 
@@ -125,6 +126,37 @@ describe("涌现探测器", () => {
     expect(race.evidence).toContain("lastSeen");
     // 幂等：再跑一遍不重复
     expect(detectEmergence(deps).filter((e) => e.id.startsWith("emg_race_"))).toHaveLength(0);
+  });
+
+  it("证据竞赛降噪（r3）：没痕迹也没运行期正典的器物，两人同天查过也不算竞赛", () => {
+    const deps = makeDeps();
+    // library.ledger 只有 authored 预埋正典 = 纯布景
+    deps.objects.examine("library.ledger", "l", 100);
+    deps.objects.examine("library.ledger", "light", 110);
+    expect(detectEmergence(deps).filter((e) => e.id.startsWith("emg_race_"))).toHaveLength(0);
+    // 运行期长出正典（canonized）后，同一份 lastSeen 就够格了
+    deps.objects.addCanonFact("library.ledger", "台账第 147 页折了个角", 111, "canonized");
+    expect(detectEmergence(deps).filter((e) => e.id.startsWith("emg_race_"))).toHaveLength(1);
+  });
+
+  it("证据竞赛降噪（r3）：同一对每天最多报 1 条——换一件器物也不再报", () => {
+    const deps = makeDeps();
+    deps.objects.addTrace("library.ledger", { id: "t1", text: "封皮有撬痕", addedTick: 90, source: "event" });
+    deps.objects.addTrace("library.desk", { id: "t2", text: "桌面有新刻痕", addedTick: 91, source: "event" });
+    deps.objects.examine("library.ledger", "l", 100);
+    deps.objects.examine("library.ledger", "light", 100);
+    deps.objects.examine("library.desk", "l", 105);
+    deps.objects.examine("library.desk", "light", 105);
+    const first = detectEmergence(deps).filter((e) => e.id.startsWith("emg_race_"));
+    expect(first, "同一对同一天两件器物只报 1 条").toHaveLength(1);
+    // 跨 tick 幂等：占坑读的是编年史，不是本轮内存态
+    deps.tick = 130;
+    expect(detectEmergence(deps).filter((e) => e.id.startsWith("emg_race_"))).toHaveLength(0);
+    // 新的对子（asuka×l 在另一件器物上）仍然报得出来
+    deps.objects.examine("library.desk", "asuka", 131);
+    const second = detectEmergence(deps).filter((e) => e.id.startsWith("emg_race_"));
+    expect(second).toHaveLength(1);
+    expect(second[0]!.actors).toContain("asuka");
   });
 
   it("共享虚构成真：正典被非首述者复述 → 报；自己复述自己 → 不报", () => {

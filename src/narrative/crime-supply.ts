@@ -57,8 +57,12 @@ export const NPC_CRIME_MIN_VICTIM_GOLD = 30;
 
 /** v2：目击/情报执念的保温天数（与 B5 默认窗口对齐，够覆盖延迟发现到冷案之间的调查窗） */
 export const CRIME_LEAD_OBSESSION_DAYS = 5;
-/** v2：同一人连问静态 NPC 到第几次，才可能撞见失言（前两次只有敷衍与不耐烦） */
-export const NPC_PROBE_SLIP_AT = 3;
+/**
+ * v2：同一人连问静态 NPC 到第几次，才可能撞见失言（此前只有敷衍与不耐烦）。
+ * r3 判决降档 3→2：两天弧里全场试探只攒到 2 次就撞调用硬顶，而失言是全局唯一
+ * 能把嫌疑从"这人不对劲"抬到"他否认了我没提过的事"的机关——差这一次=没有实证。
+ */
+export const NPC_PROBE_SLIP_AT = 2;
 
 /**
  * 内置静态恶人 NPC（探针产品化：KIRA_INJECT_CRIME 用的就是"赵三"人设——

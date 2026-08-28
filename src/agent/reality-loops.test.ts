@@ -114,12 +114,73 @@ describe("债务闭环", () => {
     expect(result.result?.description).toContain("石头落了地");
   });
 
-  it("钱不够时 repay_debt 不浮现", () => {
+  it("身无分文时 repay_debt 不浮现；手头不够全还也浮现（部分还款是一等公民）", () => {
     const world = makeWorld();
     const t = world.getCharacter("tomori")!;
-    t.gold = 5;
     t.debts = [{ lenderId: "anon", amount: 20, borrowedTick: 10 }];
+    t.gold = 0;
     expect(buildToolList(ctxFor(world, "tomori")).map((x) => x.tool.name)).not.toContain("repay_debt");
+    // drama-verify live1 的洞：全额闸让"先还 7 金"在物理上不存在，谈成的交易停在口头
+    t.gold = 5;
+    expect(buildToolList(ctxFor(world, "tomori")).map((x) => x.tool.name)).toContain("repay_debt");
+  });
+
+  it("部分还款：amount 指定还 7 → 账减到 13、转账 7、记忆/描述不说'还清'", async () => {
+    const world = makeWorld();
+    const t = world.getCharacter("tomori")!;
+    const a = world.getCharacter("anon")!;
+    t.gold = 7;
+    a.gold = 30;
+    t.debts = [{ lenderId: "anon", amount: 20, borrowedTick: 10 }];
+
+    const provider = new MockLLMProvider();
+    provider.enqueueResponse("先还一部分", [{ id: "c1", name: "repay_debt", arguments: { target: "anon", amount: 7 } }]);
+    const result = await runAgentTick({
+      config: { card: makeCard("tomori", "高松灯"), actions: [], provider, modelId: "test" },
+      world, eventBus: new EventBus(), gameTime: tickToGameTime(40),
+      relationships: new RelationshipManager(),
+    });
+
+    expect(t.gold).toBe(0);
+    expect(a.gold).toBe(37);
+    expect(t.debts).toEqual([{ lenderId: "anon", amount: 13, borrowedTick: 10 }]);
+    expect(result.result?.description).toContain("还欠 13 金");
+    expect(result.result?.description).not.toContain("石头落了地");
+    expect((result.result as any)?._repayOutcome).toEqual({ lenderId: "anon", amount: 7, remaining: 13 });
+  });
+
+  it("部分还款钳位：想还的比手头多 → 按手头；比欠的多 → 按欠额清账", async () => {
+    const world = makeWorld();
+    const t = world.getCharacter("tomori")!;
+    const a = world.getCharacter("anon")!;
+    t.gold = 4;
+    a.gold = 0;
+    t.debts = [{ lenderId: "anon", amount: 20, borrowedTick: 10 }];
+
+    const provider = new MockLLMProvider();
+    provider.enqueueResponse("把钱还上", [{ id: "c1", name: "repay_debt", arguments: { target: "anon", amount: 100 } }]);
+    await runAgentTick({
+      config: { card: makeCard("tomori", "高松灯"), actions: [], provider, modelId: "test" },
+      world, eventBus: new EventBus(), gameTime: tickToGameTime(40),
+      relationships: new RelationshipManager(),
+    });
+    expect(t.gold).toBe(0);
+    expect(a.gold).toBe(4);
+    expect(t.debts![0]!.amount).toBe(16);
+
+    // 手头充裕 + amount 超过欠额 → 只还欠额并清账
+    t.gold = 50;
+    const p2 = new MockLLMProvider();
+    p2.enqueueResponse("全还上", [{ id: "c2", name: "repay_debt", arguments: { target: "anon", amount: 999 } }]);
+    const r2 = await runAgentTick({
+      config: { card: makeCard("tomori", "高松灯"), actions: [], provider: p2, modelId: "test" },
+      world, eventBus: new EventBus(), gameTime: tickToGameTime(41),
+      relationships: new RelationshipManager(),
+    });
+    expect(t.gold).toBe(34);
+    expect(a.gold).toBe(20);
+    expect(t.debts).toEqual([]);
+    expect(r2.result?.description).toContain("石头落了地");
   });
 
   it("欠满 2 天撞见欠债人 → 债主起讨债念头（每天最多催一次）", () => {

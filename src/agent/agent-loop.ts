@@ -1033,16 +1033,30 @@ async function executeAction(
     const lenderId = resolveCharacterId(world, repayAsk.lenderId);
     const lender = world.getCharacter(lenderId);
     const debt = state.debts?.find((d) => d.lenderId === lenderId);
-    if (lender && debt && state.gold >= debt.amount) {
-      state.gold -= debt.amount;
-      lender.gold += debt.amount;
-      state.debts = state.debts!.filter((d) => d.lenderId !== lenderId);
-      relationships?.modify(card.id, lenderId, 3, gameTime.tick, "把欠的钱还上了");
-      result.description = `把欠${lender.name}的 ${debt.amount} 金币还上了，心里一块石头落了地`;
-      (result as any)._repayOutcome = { lenderId, amount: debt.amount };
+    if (lender && debt && state.gold >= 1) {
+      // 部分还款是一等公民（drama-verify live1：谈成的"先还 7 金"必须物理可执行，
+      // 否则摊牌戏里最自然的和解路径只存在于台词里）。还多少 = 意愿、手头、欠额三者取小
+      const asked =
+        typeof repayAsk.amount === "number" && Number.isFinite(repayAsk.amount)
+          ? Math.floor(repayAsk.amount)
+          : debt.amount;
+      const pay = Math.max(1, Math.min(state.gold, debt.amount, asked));
+      state.gold -= pay;
+      lender.gold += pay;
+      const remaining = debt.amount - pay;
+      if (remaining <= 0) {
+        state.debts = state.debts!.filter((d) => d.lenderId !== lenderId);
+        relationships?.modify(card.id, lenderId, 3, gameTime.tick, "把欠的钱还上了");
+        result.description = `把欠${lender.name}的 ${pay} 金币还上了，心里一块石头落了地`;
+      } else {
+        debt.amount = remaining;
+        relationships?.modify(card.id, lenderId, 2, gameTime.tick, "先还上了一部分欠款");
+        result.description = `先把 ${pay} 金币还给${lender.name}，还欠 ${remaining} 金——没还清，但账在动了`;
+      }
+      (result as any)._repayOutcome = { lenderId, amount: pay, remaining: Math.max(0, remaining) };
     } else {
       result.description = debt
-        ? `想把欠${lender?.name ?? repayAsk.lenderId}的钱还上，可手头的钱还不够`
+        ? `想把欠${lender?.name ?? repayAsk.lenderId}的钱还上，可手头一个子儿都拿不出来`
         : "想还钱，但账上没有这笔欠账";
       result.success = false;
     }

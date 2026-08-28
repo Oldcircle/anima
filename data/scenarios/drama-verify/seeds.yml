@@ -1,0 +1,82 @@
+# drama-verify — 结算链预热（S1/S2 验收）
+#
+# 标定纪律（与 default-verify 同规）：种到闸的下方一格，点火那一下必须来自 run 内事件。
+# 摊牌闸 = refusal.tier ≥ 2（_applyConfrontationFallback）：
+# - A 对种的是 tier 0：欠条到期爽约 → count1+broken1 = tier2 → 门被 run 内的爽约推开
+#   （直接把门种开就只验了"开着的门"，验不了"爽约推门"这一下）
+# - B 对种 count 2 = tier 2：门开着进场，验的是"开着的门到底有没有人走"
+#   （摊牌注入→argue→结算这后半截，r1/r2 零样本）
+#
+# 压力账（pressure-graph v1，对照 default-verify 的标定）：
+#   asuka:shinji         = 疙瘩2×8 + 逾期2天×6 + level(-3)×4 = 40
+#   senjougahara:lelouch = 疙瘩2×8 + 立场1×18 + level(-2)×4  = 42
+#   （B 对的 hostile 所求要求 top-1 且 ≥40——这份预热同时是结算器的所求供给；
+#     A 对的所求走 debt 源，与压力无关，kind 必须是 debt 才接得住欠条的 pendingTail）
+
+character_relationships:
+  - { a: asuka, b: shinji, level: -3, type: "看不顺眼的欠债邻居", bond: ~ }
+  - { a: senjougahara, b: lelouch, level: -2, type: "互相闻到危险味道的同行", bond: ~ }
+
+frictions:
+  - observer: asuka
+    target: shinji
+    summary: "面包店那个只会道歉的学徒——欠着钱还一副等你先开口的样子"
+    mental_label: "拖债的软骨头"
+    entries:
+      - "借走15金说'两天内一定还'，今天是第四天，他见了我只会低头"
+  - observer: shinji
+    target: asuka
+    summary: "咖啡馆那个声音很大的女生——她一出现你就想找地方躲"
+    mental_label: "会爆炸的人"
+    entries:
+      - "上次她当着客人的面数落我十分钟，我到现在想起来手还会抖"
+  - observer: senjougahara
+    target: lelouch
+    summary: "咖啡馆那位微笑先生——每一句话都经过打磨，打磨得过分了"
+    mental_label: "带血腥味的演员"
+    entries:
+      - "问他从哪里来，他换了三次话题，每次都换得很漂亮——漂亮本身就是答案"
+  - observer: lelouch
+    target: senjougahara
+    summary: "杂货店那位小姐的眼睛是解剖刀——她在收集你，不是在看你"
+    mental_label: "危险的观察者"
+    entries:
+      - "她记住了我说过的每一个细节，还在结账时'随口'复述给我听——那是警告"
+
+# 真嗣穷但不至于绝对还不起（15 金债 vs 20 金存款）：还不还仍是他的选择，
+# 只是把"顺手就还了"的无痛路收窄——r2 里他揣着 100 金也在拖，这里让拖更像他自己的处境
+initial_gold:
+  - { character: shinji, gold: 20 }
+
+debts:
+  # borrowedTick 设过去 4 天：过 2 天宽限 → 逾期 2 天（debt 所求源 + 欠条 baseline 的数据源）
+  - debtor: shinji
+    lender: asuka
+    amount: 15
+    borrowed_days_ago: 4
+
+open_stances:
+  # days_ago 1：落在压力图 3 天活动窗内（计入 activeOpenStances）
+  - kind: accuse
+    holder: senjougahara
+    target: lelouch
+    summary: "战场原当面点破鲁鲁修的来历有问题，话没说死，但意思到了"
+    evidence: "你不是来端咖啡的。哪天你愿意讲讲真话，我可以假装第一次听。"
+    days_ago: 1
+    witnesses: []
+
+# ── S1/S2 结算账本预热（本剧本的主角）──
+
+refusals:
+  # B 对：同一桩事碰过两回钉子（kind=hostile 与她的所求源一致——压力 top-1 且 ≥40；
+  # kind 对不上的话，结算落账会按"换了所求类型"把这两回从头计）
+  - { from: senjougahara, to: lelouch, kind: hostile, count: 2, days_ago: 1 }
+
+deferrals:
+  # A 对：真嗣已答应"打烊了凑一凑还"（沿用 r2 live 逐字原话），开局 6 tick（07:30）到期。
+  # baseline 由 applySeeds 用 _verifiableProgress 现算（=15），不手写
+  - from: asuka
+    to: shinji
+    kind: debt
+    evidence: "等打烊了，我把钱凑一凑还你。"
+    due_in_ticks: 6

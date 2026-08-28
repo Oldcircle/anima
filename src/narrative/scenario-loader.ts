@@ -136,6 +136,31 @@ export interface ScenarioSeeds {
     daysAgo?: number;
     witnesses?: string[];
   }>;
+  /**
+   * S1 拒绝账本预热（drama 验收）：from 朝 to 要 kind 的东西已碰过 count 次壁。
+   * tier 不在 seeds 里写——applySeeds 逐次走 recordRefusal，钳位等不变式只留一处真相
+   * （两处真相是校准事故的温床）。daysAgo 默认 0；注意 TTL 5 天，设 ≥5 等于白种。
+   */
+  refusals?: Array<{
+    from: string;
+    to: string;
+    kind: string;
+    count: number;
+    brokenPromises?: number;
+    daysAgo?: number;
+  }>;
+  /**
+   * S2 欠条预热（drama 验收）：to 已答应过 from 的 kind 所求，dueInTicks 后到期。
+   * baseline 不可手写——applySeeds 用与到期核验同一把尺（_verifiableProgress）现算，
+   * 量不出（非 debt 类 / 账已清）就不记 baseline = 到期静默过期，与生产立约行为一致。
+   */
+  deferrals?: Array<{
+    from: string;
+    to: string;
+    kind: string;
+    evidence: string;
+    dueInTicks: number;
+  }>;
 }
 
 const DEFAULT_CHARACTER_DIR = "data/characters";
@@ -424,6 +449,52 @@ function loadSeeds(scenariosRoot: string, scenarioId: string): ScenarioSeeds | u
             witnesses: Array.isArray(s.witnesses)
               ? (s.witnesses as unknown[]).filter((w): w is string => typeof w === "string")
               : undefined,
+          }))
+      : undefined,
+    // S1/S2 结算账本预热（同规逐字段显式映射；count/due_in_ticks 不合法整条丢弃）
+    refusals: Array.isArray(parsed.refusals)
+      ? (parsed.refusals as Array<Record<string, unknown>>)
+          .filter(
+            (r) =>
+              r && typeof r === "object" &&
+              typeof r.from === "string" &&
+              typeof r.to === "string" &&
+              typeof r.kind === "string" &&
+              typeof r.count === "number" && Number.isFinite(r.count) && (r.count as number) >= 1,
+          )
+          .map((r) => ({
+            from: r.from as string,
+            to: r.to as string,
+            kind: r.kind as string,
+            count: Math.floor(r.count as number),
+            brokenPromises:
+              typeof r.broken_promises === "number" && Number.isFinite(r.broken_promises)
+                ? Math.max(0, Math.floor(r.broken_promises as number))
+                : undefined,
+            daysAgo:
+              typeof r.days_ago === "number" && Number.isFinite(r.days_ago)
+                ? (r.days_ago as number)
+                : undefined,
+          }))
+      : undefined,
+    deferrals: Array.isArray(parsed.deferrals)
+      ? (parsed.deferrals as Array<Record<string, unknown>>)
+          .filter(
+            (d) =>
+              d && typeof d === "object" &&
+              typeof d.from === "string" &&
+              typeof d.to === "string" &&
+              typeof d.kind === "string" &&
+              typeof d.evidence === "string" && (d.evidence as string).trim().length > 0 &&
+              typeof d.due_in_ticks === "number" && Number.isFinite(d.due_in_ticks) &&
+              (d.due_in_ticks as number) >= 1,
+          )
+          .map((d) => ({
+            from: d.from as string,
+            to: d.to as string,
+            kind: d.kind as string,
+            evidence: d.evidence as string,
+            dueInTicks: Math.floor(d.due_in_ticks as number),
           }))
       : undefined,
   };

@@ -259,9 +259,12 @@ export function buildToolList(ctx: ToolBuildContext): ActionDefinition[] {
       if (age >= 18) tools.push(buildSellBloodTool(ctx));
       if (ctx.nearbyCharacters.length > 0) tools.push(buildBorrowMoneyTool(ctx));
     }
-    // 还钱：债主就在眼前且手头够——账要还，人情才续得上
+    // 还钱：债主就在眼前且手头有钱——能还多少还多少。
+    // ⚠️ 曾经的闸是 gold >= 全额（drama-verify live1 实锤）：真嗣揣着 7 金跟明日香
+    // 谈成了"先还 7、剩下 8 说日子"，而部分兑付在物理上不存在——工具从没上过菜单，
+    // 谈成的交易只能停在口头，asuka 的印象还把口头当成了已发生。
     const payableDebt = (ctx.state.debts ?? []).find(
-      (d) => ctx.nearbyCharacters.some((n) => n.id === d.lenderId) && ctx.gold >= d.amount,
+      (d) => ctx.nearbyCharacters.some((n) => n.id === d.lenderId) && ctx.gold >= 1,
     );
     if (payableDebt) tools.push(buildRepayDebtTool());
     if (desperate && hunger < 30) {
@@ -791,17 +794,18 @@ function buildTakeMedicineTool(): ActionDefinition {
   };
 }
 
-/** repay_debt：把欠在场债主的钱还上（转账/销账在 executeAction 结算） */
+/** repay_debt：把欠在场债主的钱还上——全额或先还一部分（转账/销账在 executeAction 结算） */
 function buildRepayDebtTool(): ActionDefinition {
   return {
     tool: {
       name: "repay_debt",
-      description: "把欠人家的钱当面还上。欠着的账压在心里，还了人情才续得上。",
+      description: "把欠人家的钱当面还上——手头不够全还，就先还一部分。账在动，人情才续得上。",
       parameters: {
         type: "object",
         properties: {
           thought: { type: "string", description: "你在想什么" },
           target: { type: "string", description: "还给谁（你的债主，此刻在场）" },
+          amount: { type: "number", description: "还多少金（可以先还一部分；不填 = 按手头能还的都还上）" },
         },
         required: ["target"],
       },
@@ -819,8 +823,11 @@ function buildRepayDebtTool(): ActionDefinition {
         ],
         duration: 1,
         observableState: "把一小叠金币郑重地递到对方手里，像是了结一桩心事。",
-        _repayDebt: { lenderId: target },
-      } as ActionResult & { _repayDebt: { lenderId: string } };
+        _repayDebt: {
+          lenderId: target,
+          amount: typeof args.amount === "number" && Number.isFinite(args.amount) ? args.amount : undefined,
+        },
+      } as ActionResult & { _repayDebt: { lenderId: string; amount?: number } };
     },
   };
 }

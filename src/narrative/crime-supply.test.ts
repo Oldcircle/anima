@@ -440,7 +440,12 @@ describe("B3 v2 证据供给", () => {
     expect(replyAsStaticNpc(deps, { speakerId: "alice", targetId: "bob" })).toBeUndefined();
   });
 
-  it("失言闸：案子未公开时不失言；公开后第 3 次试探起说漏受害者名字 + 挂执念", () => {
+  it("失言阈值标定 = 2（r3 判决：两天弧全场只攒到 2 次试探，差一次=没有实证）", () => {
+    // 标定 tripwire（shipped-beats 同款纪律）：改这个数字前先去读 r3 判决的定性
+    expect(NPC_PROBE_SLIP_AT).toBe(2);
+  });
+
+  it("失言闸：案子未公开时不失言；公开后到阈值次试探起说漏受害者名字 + 挂执念", () => {
     const { world, sim, eventBus, injectTick } = injectNpcCrime();
     const deps = { world, memory: sim.memory, eventBus, tick: injectTick };
     // 案子还没公开（受害者没发现）→ 试探到阈值也只是被打发走

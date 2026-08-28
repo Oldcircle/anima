@@ -83,6 +83,36 @@ open_stances:
   - kind: vow                # 缺 summary → 丢弃
     holder: alice
     target: bob
+refusals:
+  - from: alice
+    to: bob
+    kind: debt
+    count: 2
+    broken_promises: 1
+    days_ago: 1
+  - from: alice              # count < 1 → 丢弃
+    to: bob
+    kind: debt
+    count: 0
+  - from: alice              # 缺 kind → 丢弃
+    to: bob
+    count: 2
+deferrals:
+  - from: alice
+    to: bob
+    kind: debt
+    evidence: "明早开门前一定还上。"
+    due_in_ticks: 6
+  - from: alice              # due_in_ticks < 1 → 丢弃
+    to: bob
+    kind: debt
+    evidence: "x"
+    due_in_ticks: 0
+  - from: alice              # evidence 空白 → 丢弃
+    to: bob
+    kind: debt
+    evidence: "  "
+    due_in_ticks: 3
 `,
   );
 
@@ -134,6 +164,20 @@ describe("seeds 扩展：loadSeeds 手工映射回归", () => {
         daysAgo: 1,
         witnesses: ["carol"],
       },
+    ]);
+  });
+
+  it("refusals：snake_case 映射（broken_promises/days_ago），count<1 或缺 kind 丢弃", () => {
+    const s = loadScenario("ext", { projectRoot: root });
+    expect(s.seeds?.refusals).toEqual([
+      { from: "alice", to: "bob", kind: "debt", count: 2, brokenPromises: 1, daysAgo: 1 },
+    ]);
+  });
+
+  it("deferrals：due_in_ticks → dueInTicks；<1 或 evidence 空白丢弃；schema 无 baseline 字段", () => {
+    const s = loadScenario("ext", { projectRoot: root });
+    expect(s.seeds?.deferrals).toEqual([
+      { from: "alice", to: "bob", kind: "debt", evidence: "明早开门前一定还上。", dueInTicks: 6 },
     ]);
   });
 
@@ -270,6 +314,80 @@ describe("applySeeds：frictions / debts / openStance 预热", () => {
       expect(world.getCharacter("bob")!.debts).toHaveLength(1);
     } finally {
       setBreakLevel(prev);
+    }
+  });
+
+  it("refusals：逐次走 recordRefusal（不变式一处真相）——count2+broken1 = tier3，lastTick 可设过去", () => {
+    const { sim, world } = makeSim(["alice", "bob"], 24);
+    sim.applySeeds({
+      refusals: [
+        { from: "alice", to: "bob", kind: "debt", count: 2, brokenPromises: 1, daysAgo: 1 },
+        { from: "ghost", to: "bob", kind: "debt", count: 1 },
+      ],
+    });
+    const r = world.narrative.getRefusal("alice", "bob")!;
+    expect(r).toMatchObject({ fromId: "alice", toId: "bob", kind: "debt", count: 2, brokenPromises: 1, tier: 3 });
+    expect(r.lastTick).toBe(24 - 96);
+    expect(world.narrative.getRefusal("ghost", "bob")).toBeUndefined();
+  });
+
+  it("deferrals：baseline 用 _verifiableProgress 现算（debt=当前欠款），不吃手写", () => {
+    const { sim, world } = makeSim(["alice", "bob"], 24);
+    sim.applySeeds({
+      debts: [{ debtor: "bob", lender: "alice", amount: 15, borrowedDaysAgo: 4 }],
+      deferrals: [{ from: "alice", to: "bob", kind: "debt", evidence: "明早一定还。", dueInTicks: 6 }],
+    });
+    const d = world.narrative.getDeferral("alice", "bob")!;
+    expect(d).toMatchObject({ fromId: "alice", toId: "bob", kind: "debt", evidence: "明早一定还。" });
+    expect(d.createdTick).toBe(24);
+    expect(d.dueTick).toBe(30);
+    expect(d.baseline).toBe(15);
+  });
+
+  it("deferrals：核验不出进度（非 debt 类 / 账已清）→ 欠条仍种但无 baseline（到期不判胜负）", () => {
+    const { sim, world } = makeSim(["alice", "bob"], 24);
+    sim.applySeeds({
+      deferrals: [
+        { from: "alice", to: "bob", kind: "hostile", evidence: "会给你个交代。", dueInTicks: 4 },
+      ],
+    });
+    const d = world.narrative.getDeferral("alice", "bob")!;
+    expect(d.baseline).toBeUndefined();
+    expect(d.dueTick).toBe(28);
+  });
+
+  it("off 档红线：拒绝账/欠条预热整体跳过（与疙瘩/立场同规）", () => {
+    const prev = getBreakLevel();
+    try {
+      setBreakLevel("off");
+      const { sim, world } = makeSim(["alice", "bob"]);
+      sim.applySeeds({
+        refusals: [{ from: "alice", to: "bob", kind: "debt", count: 2 }],
+        deferrals: [{ from: "alice", to: "bob", kind: "debt", evidence: "x", dueInTicks: 3 }],
+      });
+      expect(world.narrative.getRefusal("alice", "bob")).toBeUndefined();
+      expect(world.narrative.getDeferral("alice", "bob")).toBeUndefined();
+    } finally {
+      setBreakLevel(prev);
+    }
+  });
+
+  it("ANIMA_SETTLEMENT=0：拒绝账/欠条预热退场（债照常）——结算关着不留升档尾巴的孤儿", () => {
+    const prevEnv = process.env.ANIMA_SETTLEMENT;
+    try {
+      process.env.ANIMA_SETTLEMENT = "0";
+      const { sim, world } = makeSim(["alice", "bob"]);
+      sim.applySeeds({
+        debts: [{ debtor: "bob", lender: "alice", amount: 10, borrowedDaysAgo: 3 }],
+        refusals: [{ from: "alice", to: "bob", kind: "debt", count: 2 }],
+        deferrals: [{ from: "alice", to: "bob", kind: "debt", evidence: "x", dueInTicks: 3 }],
+      });
+      expect(world.narrative.getRefusal("alice", "bob")).toBeUndefined();
+      expect(world.narrative.getDeferral("alice", "bob")).toBeUndefined();
+      expect(world.getCharacter("bob")!.debts).toHaveLength(1);
+    } finally {
+      if (prevEnv === undefined) delete process.env.ANIMA_SETTLEMENT;
+      else process.env.ANIMA_SETTLEMENT = prevEnv;
     }
   });
 
